@@ -186,10 +186,7 @@ def _build_app(data_dir: Path, search_depth: int, tier4_cache_size: int):
         ) from exc
 
     from t4_visualizer.batch import find_dataset_in_dir
-    from t4_visualizer.downloader import (
-        _looks_like_t4dataset,
-        list_webauto_annotation_dataset_ids,
-    )
+    from t4_visualizer.downloader import list_webauto_annotation_dataset_ids
     from t4_visualizer.visualize import (
         RenderImage,
         TargetObject,
@@ -200,31 +197,9 @@ def _build_app(data_dir: Path, search_depth: int, tier4_cache_size: int):
     app = FastAPI(title="T4 Visualizer", version="0.1.0")
     _cache = _Tier4Cache(max_size=tier4_cache_size)
 
-    # Max directory depth when scanning for T4 roots (annotation/ or data/).
-    _DATASET_LIST_MAX_DEPTH = 64
-
     # ------------------------------------------------------------------
     # Helpers
     # ------------------------------------------------------------------
-
-    def _dataset_list_id(t4_root: Path) -> str:
-        """Public id for *t4_root* (grouped webauto: UUID folder, not the version name)."""
-        try:
-            rel = t4_root.resolve().relative_to(data_dir.resolve())
-        except ValueError:
-            return t4_root.name
-        parts = rel.parts
-        # Typical grouped layout: <group>/<uuid>/<version>
-        if len(parts) == 3:
-            return parts[1]
-        if len(parts) == 2:
-            return parts[1]
-        if len(parts) == 1:
-            return parts[0]
-        for i, name in enumerate(parts):
-            if name == "annotation_dataset" and i + 2 < len(parts):
-                return parts[i + 1]
-        return t4_root.name
 
     def _resolve_dataset(t4dataset_id: str) -> Path:
         path = find_dataset_in_dir(data_dir, t4dataset_id, search_depth)
@@ -269,31 +244,10 @@ def _build_app(data_dir: Path, search_depth: int, tier4_cache_size: int):
             }
             return out
 
-        ids: List[str] = []
-        # webauto: data_dir/annotation_dataset/<uuid>/<version>/ (do not rely on deep walk)
         try:
-            ids.extend(list_webauto_annotation_dataset_ids(data_dir))
+            uniq = list_webauto_annotation_dataset_ids(data_dir)
         except OSError:
-            pass
-
-        def _walk(dirpath: Path, depth: int) -> None:
-            if depth > _DATASET_LIST_MAX_DEPTH:
-                return
-            try:
-                entries = sorted(dirpath.iterdir())
-            except OSError:
-                return
-            for p in entries:
-                if not p.is_dir() or p.name.startswith("."):
-                    continue
-                if _looks_like_t4dataset(p):
-                    ids.append(_dataset_list_id(p))
-                else:
-                    _walk(p, depth + 1)
-
-        _walk(data_dir, 0)
-
-        uniq = sorted(set(ids))
+            uniq = []
         payload: Dict[str, object] = {
             "data_dir": str(data_dir),
             "data_dir_resolved": resolved,
@@ -314,8 +268,8 @@ def _build_app(data_dir: Path, search_depth: int, tier4_cache_size: int):
                 )
             else:
                 payload["hint"] = (
-                    "Grouped folders exist but no T4 datasets matched — "
-                    "check UUID/version subfolders and file permissions."
+                    "No UUID-shaped folder names found under data_dir or "
+                    "one level inside grouped folders (see top_level_dirs)."
                 )
         return payload
 

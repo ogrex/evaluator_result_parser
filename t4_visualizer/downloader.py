@@ -29,6 +29,7 @@ from __future__ import annotations
 import fcntl
 import json
 import os
+import re
 import shutil
 import subprocess
 from contextlib import contextmanager
@@ -405,6 +406,16 @@ def cache_main() -> None:
 # Internal helpers
 # ---------------------------------------------------------------------------
 
+# Directory names that look like RFC-4122 UUID strings (annotation-dataset ids).
+_UUID_DIRNAME = re.compile(
+    r"^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$"
+)
+
+
+def _is_uuid_shaped_dirname(name: str) -> bool:
+    return bool(_UUID_DIRNAME.match(name))
+
+
 def _find_webauto_nested(root: Path, t4dataset_id: str) -> Optional[Path]:
     """Return the versioned T4 root for webauto-style grouped layouts, if present.
 
@@ -441,43 +452,42 @@ def _find_webauto_nested(root: Path, t4dataset_id: str) -> Optional[Path]:
 
 
 def list_webauto_annotation_dataset_ids(data_dir: Path) -> List[str]:
-    """Return dataset IDs (UUID folders) under webauto-style grouped layouts.
+    """List annotation-dataset id strings by directory names only (fast).
 
-    Scans every top-level directory under *data_dir* for
-    ``<group>/<uuid>/<version>/`` and includes each *uuid* when the latest
-    *version* directory looks like a T4 dataset (see :func:`_looks_like_t4dataset`).
+    Collects names that match a UUID-shaped folder:
+
+    - ``data_dir/<uuid>/`` (flat layout)
+    - ``data_dir/<group>/<uuid>/`` (grouped webauto layout; *group* is any
+      non-UUID top-level directory such as ``annotation_dataset`` or
+      ``j6gen6_3``)
+
+    Does not open files or validate T4 contents — intended for quick HTTP listing.
     """
     data_dir = Path(data_dir)
     seen: set[str] = set()
     out: List[str] = []
     try:
-        groups = sorted(
+        top = sorted(
             p for p in data_dir.iterdir()
             if p.is_dir() and not p.name.startswith(".")
         )
     except OSError:
         return []
-    for group in groups:
+    for p in top:
+        if _is_uuid_shaped_dirname(p.name):
+            if p.name not in seen:
+                seen.add(p.name)
+                out.append(p.name)
+            continue
         try:
-            udirs = sorted(
-                p for p in group.iterdir()
-                if p.is_dir() and not p.name.startswith(".")
-            )
+            for sub in p.iterdir():
+                if not sub.is_dir() or sub.name.startswith("."):
+                    continue
+                if _is_uuid_shaped_dirname(sub.name) and sub.name not in seen:
+                    seen.add(sub.name)
+                    out.append(sub.name)
         except OSError:
             continue
-        for udir in udirs:
-            if udir.name in seen:
-                continue
-            versions = sorted(
-                p for p in udir.iterdir()
-                if p.is_dir() and not p.name.startswith(".")
-            )
-            if not versions:
-                continue
-            latest = versions[-1]
-            if _looks_like_t4dataset(latest):
-                seen.add(udir.name)
-                out.append(udir.name)
     return sorted(out)
 
 
