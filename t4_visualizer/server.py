@@ -23,6 +23,10 @@ Endpoints::
     GET  /datasets
         Lists dataset IDs found under the configured data_dir.
 
+    GET  /datasets/{t4dataset_id}/scenarios
+        Lists scenes in that dataset (name, token, description, nbr_samples).
+        Optional query parameter: ``version`` (same as ``POST /render``).
+
 Example request body::
 
     {
@@ -153,6 +157,17 @@ try:
         timestamp_us: int
         images: List[ImageOut]
 
+    class ScenarioOut(BaseModel):
+        name: str
+        token: str
+        description: str = ""
+        nbr_samples: int = 0
+
+    class ScenariosListResponse(BaseModel):
+        t4dataset_id: str
+        scenarios: List[ScenarioOut]
+        version: Optional[str] = None
+
 except ImportError:
     pass  # Proper error is raised inside _build_app when fastapi is missing
 
@@ -171,6 +186,10 @@ def _build_app(data_dir: Path, search_depth: int, tier4_cache_size: int):
         ) from exc
 
     from t4_visualizer.batch import find_dataset_in_dir
+    from t4_visualizer.downloader import (
+        _looks_like_t4dataset,
+        list_webauto_annotation_dataset_ids,
+    )
     from t4_visualizer.visualize import (
         RenderImage,
         TargetObject,
@@ -181,9 +200,31 @@ def _build_app(data_dir: Path, search_depth: int, tier4_cache_size: int):
     app = FastAPI(title="T4 Visualizer", version="0.1.0")
     _cache = _Tier4Cache(max_size=tier4_cache_size)
 
+    # Max directory depth when scanning for T4 roots (annotation/ or data/).
+    _DATASET_LIST_MAX_DEPTH = 64
+
     # ------------------------------------------------------------------
     # Helpers
     # ------------------------------------------------------------------
+
+    def _dataset_list_id(t4_root: Path) -> str:
+        """Public id for *t4_root* (grouped webauto: UUID folder, not the version name)."""
+        try:
+            rel = t4_root.resolve().relative_to(data_dir.resolve())
+        except ValueError:
+            return t4_root.name
+        parts = rel.parts
+        # Typical grouped layout: <group>/<uuid>/<version>
+        if len(parts) == 3:
+            return parts[1]
+        if len(parts) == 2:
+            return parts[1]
+        if len(parts) == 1:
+            return parts[0]
+        for i, name in enumerate(parts):
+            if name == "annotation_dataset" and i + 2 < len(parts):
+                return parts[i + 1]
+        return t4_root.name
 
     def _resolve_dataset(t4dataset_id: str) -> Path:
         path = find_dataset_in_dir(data_dir, t4dataset_id, search_depth)
@@ -208,23 +249,101 @@ def _build_app(data_dir: Path, search_depth: int, tier4_cache_size: int):
     @app.get("/datasets")
     def list_datasets():
         """Return dataset IDs visible under the configured data_dir."""
+        resolved = str(data_dir.resolve())
+        try:
+            top_level_dirs = sorted(
+                p.name for p in data_dir.iterdir()
+                if p.is_dir() and not p.name.startswith(".")
+            )[:32]
+        except OSError:
+            top_level_dirs = []
+        ann_present = (data_dir / "annotation_dataset").is_dir()
         if not data_dir.exists():
-            return {"data_dir": str(data_dir), "datasets": []}
+            out: Dict[str, object] = {
+                "data_dir": str(data_dir),
+                "data_dir_resolved": resolved,
+                "datasets": [],
+                "top_level_dirs": [],
+                "annotation_dataset_present": False,
+                "hint": "data_dir does not exist on this host — check --data-dir.",
+            }
+            return out
 
-        ids = []
-        # Depth 0: flat
-        for p in sorted(data_dir.iterdir()):
-            if p.is_dir() and not p.name.startswith("."):
-                # Determine if this is a T4 dataset root or a grouping folder.
-                if (p / "annotation").exists() or (p / "data").exists():
-                    ids.append(p.name)
-                elif search_depth >= 1:
-                    for sub in sorted(p.iterdir()):
-                        if sub.is_dir() and (
-                            (sub / "annotation").exists() or (sub / "data").exists()
-                        ):
-                            ids.append(sub.name)
-        return {"data_dir": str(data_dir), "datasets": sorted(set(ids))}
+        ids: List[str] = []
+        # webauto: data_dir/annotation_dataset/<uuid>/<version>/ (do not rely on deep walk)
+        try:
+            ids.extend(list_webauto_annotation_dataset_ids(data_dir))
+        except OSError:
+            pass
+
+        def _walk(dirpath: Path, depth: int) -> None:
+            if depth > _DATASET_LIST_MAX_DEPTH:
+                return
+            try:
+                entries = sorted(dirpath.iterdir())
+            except OSError:
+                return
+            for p in entries:
+                if not p.is_dir() or p.name.startswith("."):
+                    continue
+                if _looks_like_t4dataset(p):
+                    ids.append(_dataset_list_id(p))
+                else:
+                    _walk(p, depth + 1)
+
+        _walk(data_dir, 0)
+
+        uniq = sorted(set(ids))
+        payload: Dict[str, object] = {
+            "data_dir": str(data_dir),
+            "data_dir_resolved": resolved,
+            "datasets": uniq,
+            "top_level_dirs": top_level_dirs,
+            "annotation_dataset_present": ann_present,
+        }
+        if not uniq:
+            if not top_level_dirs:
+                payload["hint"] = (
+                    "No subdirectories under data_dir — confirm --data-dir on this host."
+                )
+            elif not ann_present and len(top_level_dirs) <= 8:
+                payload["hint"] = (
+                    "No T4 datasets listed. Data is often under a grouped folder "
+                    "(e.g. annotation_dataset or a project folder like j6gen6_3) "
+                    "as <group>/<uuid>/<version>/."
+                )
+            else:
+                payload["hint"] = (
+                    "Grouped folders exist but no T4 datasets matched — "
+                    "check UUID/version subfolders and file permissions."
+                )
+        return payload
+
+    @app.get(
+        "/datasets/{t4dataset_id}/scenarios",
+        response_model=ScenariosListResponse,
+        tags=["datasets"],
+        summary="List scenarios in a dataset",
+    )
+    def list_dataset_scenarios(
+        t4dataset_id: str,
+        version: Optional[str] = None,
+    ):
+        """Return each scene's name (for ``scenario_name`` in ``POST /render``) and frame count."""
+        dataset_path = _resolve_dataset(t4dataset_id)
+        from t4_visualizer.visualize import list_scene_summaries
+
+        try:
+            t4 = _cache.load(dataset_path, version=version)
+            raw = list_scene_summaries(t4)
+        except Exception as exc:
+            raise HTTPException(status_code=500, detail=str(exc)) from exc
+
+        return ScenariosListResponse(
+            t4dataset_id=t4dataset_id,
+            scenarios=[ScenarioOut(**row) for row in raw],
+            version=version,
+        )
 
     @app.post("/render", response_model=RenderResponse)
     def render(body: RenderRequest):
@@ -322,9 +441,10 @@ def main(argv=None):
         )
         sys.exit(1)
 
-    data_dir = Path(args.data_dir)
-    data_dir.mkdir(parents=True, exist_ok=True)
-    print(f"  Data directory : {data_dir.resolve()}")
+    data_dir = Path(args.data_dir).expanduser().resolve()
+    if not data_dir.exists():
+        data_dir.mkdir(parents=True, exist_ok=True)
+    print(f"  Data directory : {data_dir}")
     print(f"  Search depth   : {args.search_depth}")
     print(f"  Tier4 cache    : {args.tier4_cache} datasets")
     print(f"  Listening on   : http://{args.host}:{args.port}")

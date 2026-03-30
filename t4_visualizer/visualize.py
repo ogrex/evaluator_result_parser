@@ -33,7 +33,7 @@ import os
 import sys
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import List, Optional, Set
+from typing import Any, Dict, List, Optional, Set
 
 import numpy as np
 
@@ -270,6 +270,32 @@ def find_sample_by_scene_and_index(t4, scene_name: str, frame_index: int):
             )
         token = sample.next
     return t4.get("sample", token)
+
+
+def list_scene_summaries(t4) -> List[Dict[str, Any]]:
+    """Return one entry per scene in the dataset (names usable as ``scenario_name`` in :func:`find_sample_by_scene_and_index`).
+
+    Each dict has:
+
+    - ``name``: Scene name (matches ``scene.name`` in the T4 tables).
+    - ``token``: Scene record token.
+    - ``description``: Human-readable description when present.
+    - ``nbr_samples``: Number of frames (samples) in the scene; valid ``frame_index`` is ``0 .. nbr_samples - 1``.
+    """
+    rows: List[Dict[str, Any]] = []
+    for scene in t4.scene:
+        desc = getattr(scene, "description", None)
+        nbr = getattr(scene, "nbr_samples", None)
+        rows.append(
+            {
+                "name": scene.name,
+                "token": scene.token,
+                "description": (desc or "") if desc is not None else "",
+                "nbr_samples": int(nbr) if nbr is not None else 0,
+            }
+        )
+    rows.sort(key=lambda r: (r["name"], r["token"]))
+    return rows
 
 
 def list_camera_channels(t4, sample) -> List[str]:

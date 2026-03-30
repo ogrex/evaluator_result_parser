@@ -219,23 +219,49 @@ def df_to_frames(df: pd.DataFrame) -> List[FrameRow]:
 def find_dataset_in_dir(data_dir: Path, t4dataset_id: str, search_depth: int = 1) -> Optional[Path]:
     """Return the path to *t4dataset_id* under *data_dir*, or None if not found.
 
-    search_depth=0  →  data_dir/<id>          (flat layout)
-    search_depth=1  →  data_dir/*/<id>  AND   data_dir/<id>  (one sub-level)
+    Resolution order:
+
+    1. Flat layout: ``data_dir/<id>/``
+    2. Grouped webauto layout: ``data_dir/<group>/<id>/<version>/`` where *group*
+       is a top-level folder (e.g. ``annotation_dataset``, ``j6gen6_3``, …). The
+       T4 root is the *version* directory (often named ``0``).
+    3. If *search_depth* >= 1: nested folders ``data_dir/*/<id>``, ``data_dir/*/*/<id>``,
+       … up to *search_depth* intermediate directory levels (grouping folders).
     """
+    from t4_visualizer.downloader import _find_webauto_nested
+
+    data_dir = Path(data_dir)
     # Always check the flat layout first.
     flat = data_dir / t4dataset_id
     if flat.exists():
         return flat
 
-    if search_depth >= 1:
-        for subdir in data_dir.iterdir():
-            if not subdir.is_dir():
+    webauto = _find_webauto_nested(data_dir, t4dataset_id)
+    if webauto is not None:
+        return webauto
+
+    if search_depth < 1:
+        return None
+
+    def _search_under(prefix: Path, levels_left: int) -> Optional[Path]:
+        if levels_left < 1:
+            return None
+        try:
+            entries = sorted(prefix.iterdir())
+        except OSError:
+            return None
+        for subdir in entries:
+            if not subdir.is_dir() or subdir.name.startswith("."):
                 continue
             candidate = subdir / t4dataset_id
             if candidate.exists():
                 return candidate
+            found = _search_under(subdir, levels_left - 1)
+            if found is not None:
+                return found
+        return None
 
-    return None
+    return _search_under(data_dir, search_depth)
 
 
 def _unique_datasets(frames: List[FrameRow]) -> List[FrameRow]:

@@ -406,30 +406,90 @@ def cache_main() -> None:
 # ---------------------------------------------------------------------------
 
 def _find_webauto_nested(root: Path, t4dataset_id: str) -> Optional[Path]:
-    """Return the versioned directory webauto places data in, if it exists.
+    """Return the versioned T4 root for webauto-style grouped layouts, if present.
 
-    webauto puts data at::
+    Data may live under any top-level group folder (not only ``annotation_dataset``)::
 
-        root/annotation_dataset/<t4dataset_id>/<version>/
+        root/<group>/<t4dataset_id>/<version>/
 
-    Returns the latest version directory, or None if not found.
+    Common *group* names include ``annotation_dataset``, project-specific names
+    such as ``j6gen6_3``, etc.
+
+    When several group folders contain the same *t4dataset_id*, the first match
+    in sorted order by group folder name is returned. The *version* subdirectory
+    chosen is the last in sorted order (same as before).
     """
-    ann_uuid_dir = root / "annotation_dataset" / t4dataset_id
-    if not ann_uuid_dir.is_dir():
+    root = Path(root)
+    try:
+        groups = sorted(
+            p for p in root.iterdir()
+            if p.is_dir() and not p.name.startswith(".")
+        )
+    except OSError:
         return None
-    versions = sorted(p for p in ann_uuid_dir.iterdir() if p.is_dir())
-    return versions[-1] if versions else None
+    for group in groups:
+        uuid_dir = group / t4dataset_id
+        if not uuid_dir.is_dir():
+            continue
+        versions = sorted(
+            p for p in uuid_dir.iterdir()
+            if p.is_dir() and not p.name.startswith(".")
+        )
+        if versions:
+            return versions[-1]
+    return None
+
+
+def list_webauto_annotation_dataset_ids(data_dir: Path) -> List[str]:
+    """Return dataset IDs (UUID folders) under webauto-style grouped layouts.
+
+    Scans every top-level directory under *data_dir* for
+    ``<group>/<uuid>/<version>/`` and includes each *uuid* when the latest
+    *version* directory looks like a T4 dataset (see :func:`_looks_like_t4dataset`).
+    """
+    data_dir = Path(data_dir)
+    seen: set[str] = set()
+    out: List[str] = []
+    try:
+        groups = sorted(
+            p for p in data_dir.iterdir()
+            if p.is_dir() and not p.name.startswith(".")
+        )
+    except OSError:
+        return []
+    for group in groups:
+        try:
+            udirs = sorted(
+                p for p in group.iterdir()
+                if p.is_dir() and not p.name.startswith(".")
+            )
+        except OSError:
+            continue
+        for udir in udirs:
+            if udir.name in seen:
+                continue
+            versions = sorted(
+                p for p in udir.iterdir()
+                if p.is_dir() and not p.name.startswith(".")
+            )
+            if not versions:
+                continue
+            latest = versions[-1]
+            if _looks_like_t4dataset(latest):
+                seen.add(udir.name)
+                out.append(udir.name)
+    return sorted(out)
 
 
 def _try_flatten(root: Path, t4dataset_id: str, dst: Optional[Path] = None) -> bool:
     """Move webauto's versioned directory to *dst*.
 
-    webauto places data at::
+    webauto may place data under a grouped folder::
 
-        root/annotation_dataset/<t4dataset_id>/<version>/
+        root/<group>/<t4dataset_id>/<version>/
 
     This function moves that versioned directory to *dst* (default: *root*),
-    then removes the now-empty ``annotation_dataset/<t4dataset_id>/`` wrapper.
+    then removes the now-empty ``<group>/<t4dataset_id>/`` wrapper when possible.
 
     Returns True if the directory was moved.
     """
