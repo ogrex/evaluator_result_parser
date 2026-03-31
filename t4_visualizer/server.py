@@ -24,8 +24,10 @@ Endpoints::
         ``format=json`` or ``format=html``.
 
     GET  /render/view
-        Same query parameters as ``GET /render`` but always returns the HTML
-        viewer (bookmark-friendly).
+    GET  /render/html
+        Same query parameters as ``GET /render`` but always return ``text/html``
+        with embedded PNGs (iframes, bookmarks). Prefer these URLs over
+        ``GET /render`` when embedding in ``<iframe src="...">``.
 
     GET  /health
         Returns {"status": "ok"}.
@@ -74,6 +76,7 @@ Example GET (HTML viewer)::
 
     GET /render?t4dataset_id=...&scenario_name=...&frame_index=4&format=html
     GET /render/view?t4dataset_id=...&scenario_name=...&frame_index=4
+    GET /render/html?t4dataset_id=...&scenario_name=...&frame_index=4
 """
 
 from __future__ import annotations
@@ -285,8 +288,16 @@ def _build_app(data_dir: Path, search_depth: int, tier4_cache_size: int):
         parts = [c.strip() for c in str(cameras).split(",") if c.strip()]
         return parts or None
 
-    def _effective_render_format(accept_header: Optional[str], explicit: Optional[str]) -> str:
-        """Return ``json`` or ``html``. When *explicit* is omitted, use Accept header."""
+    def _effective_render_format(
+        accept_header: Optional[str],
+        explicit: Optional[str],
+        sec_fetch_dest: Optional[str],
+    ) -> str:
+        """Return ``json`` or ``html``. When *explicit* is omitted, use Sec-Fetch-Dest and Accept.
+
+        Browsers loading a document or iframe often send ``Accept: */*`` without
+        ``text/html``, so we treat ``Sec-Fetch-Dest: document`` / ``iframe`` as HTML.
+        """
         if explicit is not None and str(explicit).strip() != "":
             fmt = str(explicit).strip().lower()
             if fmt not in ("json", "html"):
@@ -295,6 +306,9 @@ def _build_app(data_dir: Path, search_depth: int, tier4_cache_size: int):
                     detail="Invalid format: use 'json', 'html', or omit for auto (browser→html).",
                 )
             return fmt
+        dest = (sec_fetch_dest or "").strip().lower()
+        if dest in ("document", "iframe"):
+            return "html"
         accept = (accept_header or "").lower()
         if "text/html" in accept:
             return "html"
@@ -557,12 +571,17 @@ def _build_app(data_dir: Path, search_depth: int, tier4_cache_size: int):
         response_format: Optional[str] = Query(
             None,
             alias="format",
-            description="json or html; omit to auto (browsers→html, curl→json).",
+            description="json or html; omit to auto (Sec-Fetch-Dest / Accept; curl→json).",
         ),
         accept: Optional[str] = Header(None, include_in_schema=False),
+        sec_fetch_dest: Optional[str] = Header(
+            None,
+            alias="Sec-Fetch-Dest",
+            include_in_schema=False,
+        ),
     ):
         """Render one frame via query string (no ``target_objects``; use POST for those)."""
-        fmt = _effective_render_format(accept, response_format)
+        fmt = _effective_render_format(accept, response_format, sec_fetch_dest)
         dataset_path = _resolve_dataset(q.t4dataset_id)
         cam_list = _parse_cameras_csv(q.cameras)
         payload, hdrs = _run_render(
@@ -582,9 +601,8 @@ def _build_app(data_dir: Path, search_depth: int, tier4_cache_size: int):
             return _html_response(_render_html_page(payload, q), hdrs)
         return JSONResponse(content=jsonable_encoder(payload), headers=hdrs)
 
-    @app.get("/render/view")
-    def render_get_view(q=Depends(_render_get_query)):
-        """Same parameters as ``GET /render`` but always returns an HTML page with PNGs."""
+    def _render_get_html_always(q):
+        """Shared handler: HTML page with embedded PNGs (same query params as GET /render)."""
         dataset_path = _resolve_dataset(q.t4dataset_id)
         cam_list = _parse_cameras_csv(q.cameras)
         payload, hdrs = _run_render(
@@ -601,6 +619,16 @@ def _build_app(data_dir: Path, search_depth: int, tier4_cache_size: int):
             crop_min_size=q.crop_min_size,
         )
         return _html_response(_render_html_page(payload, q), hdrs)
+
+    @app.get("/render/view")
+    def render_get_view(q=Depends(_render_get_query)):
+        """Same parameters as ``GET /render`` but always returns an HTML page with PNGs."""
+        return _render_get_html_always(q)
+
+    @app.get("/render/html")
+    def render_get_html(q=Depends(_render_get_query)):
+        """Same as ``GET /render/view`` — explicit path for iframe ``src`` and bookmarks."""
+        return _render_get_html_always(q)
 
     return app
 

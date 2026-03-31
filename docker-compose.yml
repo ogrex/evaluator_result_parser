@@ -1,0 +1,11 @@
+services:
+  t4-server:
+    build: .
+    image: evaluator-result-parser:latest
+    ports:
+      - "8000:8000"
+    volumes:
+      # Mount host T4 datasets here (read-only). Adjust the left side to your path.
+      - ./t4datasets:/data:ro
+    environment:
+      - WEBAUTO_PROJECT_ID=${WEBAUTO_PROJECT_ID:-}

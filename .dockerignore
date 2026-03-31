@@ -1,0 +1,37 @@
+# Virtual environments
+.venv/
+venv/
+env/
+
+# Git and VCS
+.git/
+.gitignore
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+*.egg-info/
+.eggs/
+dist/
+build/
+
+# IDE / editor
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# Local datasets and large paths (mount at runtime instead)
+t4datasets/
+**/t4datasets/
+
+# Cursor / plans (not needed in image)
+.cursor/
+
+# Tests / coverage (if added later)
+.pytest_cache/
+.coverage
+htmlcov/
