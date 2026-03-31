@@ -38,6 +38,9 @@ Endpoints::
     GET  /datasets
         Lists dataset IDs found under the configured data_dir.
 
+    GET  /datasets/browser
+        Interactive, read-only browser for datasets and scenarios.
+
     GET  /datasets/{t4dataset_id}/scenarios
         Lists scenes in that dataset (name, token, description, nbr_samples).
         Optional query parameter: ``version`` (same as ``POST /render``).
@@ -585,6 +588,276 @@ def _build_app(
     # Routes
     # ------------------------------------------------------------------
 
+    @app.get("/datasets/browser")
+    def datasets_browser_page():
+        """Interactive read-only browser for datasets and scenarios."""
+        page = """<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>T4 Dataset Browser</title>
+  <style>
+    :root{
+      color-scheme: light dark;
+      --bg:#f5f7fb; --card:#ffffff; --muted:#576075; --text:#101322;
+      --border:#d8e0f0; --accent:#245bda; --ok:#0e7a42; --warn:#9f3f11;
+      --shadow:rgba(8,18,50,0.12);
+    }
+    @media (prefers-color-scheme: dark){
+      :root{
+        --bg:#0f1420; --card:#171e2d; --muted:#9aa8c2; --text:#e6ebf8;
+        --border:#28334a; --accent:#79a6ff; --ok:#4bd08d; --warn:#ff9f73;
+        --shadow:rgba(0,0,0,0.35);
+      }
+    }
+    *{box-sizing:border-box}
+    body{margin:0;background:
+      radial-gradient(1200px 520px at 20% -10%, color-mix(in srgb, var(--accent) 15%, transparent), transparent 70%),
+      radial-gradient(900px 500px at 90% 0%, color-mix(in srgb, var(--ok) 10%, transparent), transparent 68%),
+      var(--bg);
+      color:var(--text);font-family:system-ui,-apple-system,Segoe UI,sans-serif}
+    .wrap{max-width:1400px;margin:0 auto;padding:1.1rem}
+    .hero{display:flex;align-items:end;justify-content:space-between;gap:1rem;margin-bottom:1rem}
+    h1{margin:0;font-size:1.45rem}
+    .muted{color:var(--muted)}
+    .actions a{color:var(--accent);text-decoration:none;margin-left:.9rem}
+    .grid{display:grid;grid-template-columns:320px 1fr 1fr;gap:.9rem}
+    .card{background:var(--card);border:1px solid var(--border);border-radius:12px;padding:.85rem;box-shadow:0 8px 26px var(--shadow)}
+    .title{font-weight:700;font-size:1rem;margin:0 0 .7rem}
+    input,select{width:100%;padding:.58rem .65rem;border:1px solid var(--border);border-radius:9px;background:transparent;color:var(--text)}
+    .pill{display:inline-block;padding:.15rem .55rem;border:1px solid var(--border);border-radius:999px;font-size:.78rem;color:var(--muted)}
+    .list{margin-top:.65rem;max-height:65vh;overflow:auto;border:1px solid var(--border);border-radius:9px}
+    .dataset-item{padding:.55rem .65rem;border-bottom:1px solid var(--border);cursor:pointer}
+    .dataset-item:last-child{border-bottom:none}
+    .dataset-item:hover,.dataset-item.active{background:color-mix(in srgb, var(--accent) 12%, transparent)}
+    .k{color:var(--muted);font-size:.84rem}
+    .v{word-break:break-all}
+    .row{display:grid;grid-template-columns:130px 1fr;gap:.5rem;margin:.42rem 0}
+    .status.ok{color:var(--ok)} .status.warn{color:var(--warn)}
+    table{width:100%;border-collapse:collapse;font-size:.92rem}
+    th,td{padding:.5rem;border-bottom:1px solid var(--border);text-align:left;vertical-align:top}
+    th{font-size:.8rem;color:var(--muted);text-transform:uppercase;letter-spacing:.03em}
+    .toolbar{display:flex;gap:.5rem;margin:.55rem 0}
+    .toolbar input{max-width:340px}
+    .empty,.error,.loading{padding:.7rem;border:1px dashed var(--border);border-radius:8px;color:var(--muted)}
+    .error{color:var(--warn)}
+    .retry{margin-top:.6rem;padding:.45rem .65rem;border:1px solid var(--border);border-radius:8px;background:transparent;color:var(--text);cursor:pointer}
+    @media (max-width:1200px){.grid{grid-template-columns:1fr}}
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <div class="hero">
+      <div>
+        <h1>T4 Dataset Browser</h1>
+        <div class="muted">Read-only explorer for datasets and scenarios on this server.</div>
+      </div>
+      <div class="actions">
+        <a href="/">Home</a>
+        <a href="/datasets">Raw /datasets</a>
+        <a href="/docs">API docs</a>
+      </div>
+    </div>
+    <div class="grid">
+      <section class="card">
+        <div class="title">Datasets <span id="datasetCount" class="pill">0</span></div>
+        <input id="datasetSearch" type="search" placeholder="Filter by dataset id">
+        <div id="datasetList" class="list" aria-label="Dataset list"></div>
+      </section>
+      <section class="card">
+        <div class="title">Dataset Details</div>
+        <div id="detailsState" class="empty">Select a dataset from the left.</div>
+        <div id="detailsPanel" style="display:none">
+          <div class="row"><div class="k">dataset_id</div><div id="dId" class="v"></div></div>
+          <div class="row"><div class="k">availability</div><div id="dAvail" class="v"></div></div>
+          <div class="row"><div class="k">dataset_path</div><div id="dPath" class="v"></div></div>
+          <div class="row"><div class="k">quick links</div><div id="dLinks" class="v"></div></div>
+        </div>
+      </section>
+      <section class="card">
+        <div class="title">Scenarios</div>
+        <div class="toolbar">
+          <input id="scenarioSearch" type="search" placeholder="Filter scenarios by name/description" disabled>
+          <select id="scenarioSort" disabled>
+            <option value="name">Sort: name</option>
+            <option value="nbr_samples">Sort: frame count</option>
+          </select>
+        </div>
+        <div id="scenarioState" class="empty">Select a dataset to load scenarios.</div>
+        <div id="scenarioPanel" style="display:none;max-height:65vh;overflow:auto">
+          <table>
+            <thead><tr><th>name</th><th>description</th><th>frames</th></tr></thead>
+            <tbody id="scenarioRows"></tbody>
+          </table>
+        </div>
+      </section>
+    </div>
+  </div>
+  <script>
+    const el = (id) => document.getElementById(id);
+    const state = {
+      dataDir: "",
+      datasets: [],
+      selectedId: null,
+      scenarios: []
+    };
+
+    function setDatasetCount(n){ el("datasetCount").textContent = String(n); }
+    function showDatasetList(items){
+      const root = el("datasetList");
+      if (!items.length){
+        root.innerHTML = '<div class="empty">No datasets found.</div>';
+        return;
+      }
+      root.innerHTML = items.map((id) => {
+        const active = id === state.selectedId ? " active" : "";
+        return `<div class="dataset-item${active}" data-id="${id}"><code>${id}</code></div>`;
+      }).join("");
+      root.querySelectorAll(".dataset-item").forEach((node) => {
+        node.addEventListener("click", () => selectDataset(node.dataset.id));
+      });
+    }
+
+    function filterDatasets(){
+      const q = el("datasetSearch").value.trim().toLowerCase();
+      const filtered = !q ? state.datasets : state.datasets.filter((d) => d.toLowerCase().includes(q));
+      showDatasetList(filtered);
+    }
+
+    async function getJson(url){
+      const res = await fetch(url, { headers: { "Accept": "application/json" } });
+      const text = await res.text();
+      let data = null;
+      try { data = text ? JSON.parse(text) : null; } catch (_) {}
+      if (!res.ok) {
+        const detail = data && (data.detail || data.hint) ? (data.detail || data.hint) : `HTTP ${res.status}`;
+        throw new Error(detail);
+      }
+      return data;
+    }
+
+    function renderDetails({ id, avail, path }){
+      el("detailsState").style.display = "none";
+      el("detailsPanel").style.display = "block";
+      el("dId").innerHTML = `<code>${id}</code>`;
+      el("dAvail").innerHTML = avail ? '<span class="status ok">available</span>' : '<span class="status warn">not found</span>';
+      el("dPath").innerHTML = path ? `<code>${path}</code>` : '<span class="muted">(none)</span>';
+      const qs = `?t4dataset_id=${encodeURIComponent(id)}`;
+      el("dLinks").innerHTML =
+        `<a href="/datasets/${encodeURIComponent(id)}/availability" target="_blank" rel="noopener">availability</a> · ` +
+        `<a href="/datasets/${encodeURIComponent(id)}/scenarios" target="_blank" rel="noopener">scenarios</a> · ` +
+        `<a href="/render/html${qs}&scenario_name=...&frame_index=0" target="_blank" rel="noopener">render/html template</a>`;
+    }
+
+    function showDetailsError(err, id){
+      el("detailsPanel").style.display = "none";
+      el("detailsState").style.display = "block";
+      el("detailsState").className = "error";
+      el("detailsState").innerHTML =
+        `Failed to load details for <code>${id}</code>: ${err.message}` +
+        `<div><button class="retry" id="retryDetails">Retry</button></div>`;
+      const btn = el("retryDetails");
+      if (btn) btn.onclick = () => selectDataset(id);
+    }
+
+    function renderScenarios(list){
+      const q = el("scenarioSearch").value.trim().toLowerCase();
+      const sortBy = el("scenarioSort").value;
+      let rows = list.slice();
+      if (q){
+        rows = rows.filter((s) => (s.name || "").toLowerCase().includes(q) || (s.description || "").toLowerCase().includes(q));
+      }
+      rows.sort((a,b) => sortBy === "nbr_samples"
+        ? (Number(b.nbr_samples || 0) - Number(a.nbr_samples || 0))
+        : String(a.name || "").localeCompare(String(b.name || ""))
+      );
+      const tbody = el("scenarioRows");
+      if (!rows.length){
+        tbody.innerHTML = `<tr><td colspan="3" class="muted">No scenarios match current filter.</td></tr>`;
+      } else {
+        tbody.innerHTML = rows.map((s) =>
+          `<tr><td><code>${s.name || ""}</code></td><td>${s.description || ""}</td><td>${s.nbr_samples ?? 0}</td></tr>`
+        ).join("");
+      }
+      el("scenarioState").style.display = "none";
+      el("scenarioPanel").style.display = "block";
+    }
+
+    async function selectDataset(id){
+      state.selectedId = id;
+      filterDatasets();
+
+      el("detailsState").className = "loading";
+      el("detailsState").style.display = "block";
+      el("detailsPanel").style.display = "none";
+      el("detailsState").textContent = "Loading dataset details...";
+
+      el("scenarioState").className = "loading";
+      el("scenarioState").style.display = "block";
+      el("scenarioPanel").style.display = "none";
+      el("scenarioState").textContent = "Loading scenarios...";
+      el("scenarioSearch").disabled = true;
+      el("scenarioSort").disabled = true;
+
+      try {
+        const avail = await getJson(`/datasets/${encodeURIComponent(id)}/availability`);
+        renderDetails({ id, avail: !!avail.available, path: avail.dataset_path || "" });
+      } catch (err) {
+        showDetailsError(err, id);
+      }
+
+      try {
+        const data = await getJson(`/datasets/${encodeURIComponent(id)}/scenarios`);
+        state.scenarios = Array.isArray(data.scenarios) ? data.scenarios : [];
+        el("scenarioSearch").disabled = false;
+        el("scenarioSort").disabled = false;
+        renderScenarios(state.scenarios);
+      } catch (err) {
+        el("scenarioPanel").style.display = "none";
+        el("scenarioState").className = "error";
+        el("scenarioState").style.display = "block";
+        el("scenarioState").innerHTML =
+          `Failed to load scenarios for <code>${id}</code>: ${err.message}` +
+          `<div><button class="retry" id="retryScenarios">Retry</button></div>`;
+        const btn = el("retryScenarios");
+        if (btn) btn.onclick = () => selectDataset(id);
+      }
+    }
+
+    async function init(){
+      const listRoot = el("datasetList");
+      listRoot.innerHTML = '<div class="loading">Loading datasets...</div>';
+      try {
+        const data = await getJson("/datasets");
+        state.dataDir = data.data_dir || "";
+        state.datasets = Array.isArray(data.datasets) ? data.datasets : [];
+        setDatasetCount(state.datasets.length);
+        filterDatasets();
+        if (state.datasets.length) {
+          await selectDataset(state.datasets[0]);
+        } else {
+          el("detailsState").className = "empty";
+          el("detailsState").textContent = "No datasets available on this server.";
+          el("scenarioState").className = "empty";
+          el("scenarioState").textContent = "No scenarios to show.";
+        }
+      } catch (err) {
+        listRoot.innerHTML = `<div class="error">Failed to load /datasets: ${err.message}<div><button class="retry" id="retryDatasets">Retry</button></div></div>`;
+        const btn = el("retryDatasets");
+        if (btn) btn.onclick = () => init();
+      }
+    }
+
+    el("datasetSearch").addEventListener("input", filterDatasets);
+    el("scenarioSearch").addEventListener("input", () => renderScenarios(state.scenarios));
+    el("scenarioSort").addEventListener("change", () => renderScenarios(state.scenarios));
+    init();
+  </script>
+</body>
+</html>"""
+        return HTMLResponse(content=page, media_type="text/html; charset=utf-8")
+
     @app.get("/")
     def index_page():
         """Human-friendly landing page for quick server introspection."""
@@ -610,6 +883,7 @@ def _build_app(
 
         links = [
             ("Health", "/health"),
+            ("Dataset Browser", "/datasets/browser"),
             ("Datasets", "/datasets"),
             ("OpenAPI JSON", "/openapi.json"),
             ("Swagger UI", "/docs"),
