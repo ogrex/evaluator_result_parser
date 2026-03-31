@@ -231,23 +231,59 @@ def _build_app(data_dir: Path, search_depth: int, tier4_cache_size: int):
     app = FastAPI(title="T4 Visualizer", version="0.1.0")
     _cache = _Tier4Cache(max_size=tier4_cache_size)
 
+    # Syncs with system / browser theme via prefers-color-scheme (no JS).
     _RENDER_VIEW_CSS = """
-    :root { color-scheme: dark; }
-    body { font-family: system-ui, -apple-system, Segoe UI, sans-serif; margin: 0;
-           background: #141418; color: #e8e8ed; line-height: 1.45; }
+    :root {
+      color-scheme: light dark;
+      --page-bg: #f4f4f6;
+      --text: #18181c;
+      --meta-bg: #ffffff;
+      --meta-border: #e4e4e8;
+      --dt: #52525c;
+      --figcaption: #63636b;
+      --timings: #71717b;
+      --img-border: #d4d4d8;
+      --img-shadow: rgba(15, 23, 42, 0.12);
+    }
+    @media (prefers-color-scheme: dark) {
+      :root {
+        --page-bg: #141418;
+        --text: #e8e8ed;
+        --meta-bg: #1e1e24;
+        --meta-border: #2c2c34;
+        --dt: #8e8e9a;
+        --figcaption: #a0a0ac;
+        --timings: #6e6e78;
+        --img-border: #2c2c34;
+        --img-shadow: rgba(0, 0, 0, 0.35);
+      }
+    }
+    body {
+      font-family: system-ui, -apple-system, Segoe UI, sans-serif;
+      margin: 0;
+      background: var(--page-bg);
+      color: var(--text);
+      line-height: 1.45;
+    }
     h1 { font-size: 1.1rem; font-weight: 600; margin: 0 0 0.75rem 0; }
-    .meta { padding: 1rem 1.25rem; background: #1e1e24; border-bottom: 1px solid #2c2c34; }
+    .meta {
+      padding: 1rem 1.25rem;
+      background: var(--meta-bg);
+      border-bottom: 1px solid var(--meta-border);
+    }
     .meta dl { display: grid; grid-template-columns: 9rem 1fr; gap: 0.35rem 1rem;
                margin: 0; font-size: 0.8125rem; }
-    .meta dt { color: #8e8e9a; margin: 0; }
+    .meta dt { color: var(--dt); margin: 0; }
     .meta dd { margin: 0; word-break: break-all; }
     main { padding: 1rem 1.25rem 2rem; max-width: min(100%, 140rem); margin: 0 auto; }
     figure { margin: 1.25rem 0; }
-    figure img { display: block; max-width: 100%; height: auto;
-                 border: 1px solid #2c2c34; border-radius: 6px;
-                 box-shadow: 0 4px 24px rgba(0,0,0,0.35); }
-    figcaption { margin-top: 0.5rem; font-size: 0.8rem; color: #a0a0ac; }
-    .timings { margin-top: 0.75rem; font-size: 0.75rem; color: #6e6e78; }
+    figure img {
+      display: block; max-width: 100%; height: auto;
+      border: 1px solid var(--img-border); border-radius: 6px;
+      box-shadow: 0 4px 24px var(--img-shadow);
+    }
+    figcaption { margin-top: 0.5rem; font-size: 0.8rem; color: var(--figcaption); }
+    .timings { margin-top: 0.75rem; font-size: 0.75rem; color: var(--timings); }
     """
 
     def _render_get_query(
