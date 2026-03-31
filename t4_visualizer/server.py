@@ -293,7 +293,7 @@ def _build_app(
 ):
     """Construct and return the FastAPI application."""
     try:
-        from fastapi import Depends, FastAPI, Header, HTTPException, Query, Request
+        from fastapi import Depends, FastAPI, Header, HTTPException, Query
         from fastapi.encoders import jsonable_encoder
         from fastapi.responses import HTMLResponse, JSONResponse
     except ImportError as exc:
@@ -315,7 +315,7 @@ def _build_app(
     _path_cache = _DatasetPathCache(ttl_s=dataset_path_cache_ttl_s)
 
     @app.middleware("http")
-    async def _log_http_requests(request: Request, call_next):
+    async def _log_http_requests(request, call_next):
         method = request.method.upper()
         if method not in ("GET", "POST"):
             return await call_next(request)
@@ -1068,7 +1068,7 @@ def _build_app(
         )
 
     @app.post("/render", response_model=RenderResponse)
-    def render_post(body: RenderRequest, request: Request):
+    def render_post(body: RenderRequest):
         """Render a single frame and return base64-encoded PNG images.
 
         Server-side timings are in the JSON body and duplicated on response headers
@@ -1076,7 +1076,6 @@ def _build_app(
         """
         print(
             "[render:POST] "
-            f"path={request.url.path} "
             f"dataset={body.t4dataset_id} "
             f"scenario={body.scenario_name} "
             f"frame={body.frame_index} "
@@ -1118,7 +1117,6 @@ def _build_app(
 
     @app.get("/render")
     def render_get(
-        request: Request,
         q=Depends(_render_get_query),
         response_format: Optional[str] = Query(
             None,
@@ -1135,8 +1133,6 @@ def _build_app(
         """Render one frame via query string (no ``target_objects``; use POST for those)."""
         print(
             "[render:GET] "
-            f"path={request.url.path} "
-            f"query='{request.url.query}' "
             f"dataset={q.t4dataset_id} "
             f"scenario={q.scenario_name} "
             f"frame={q.frame_index} "
@@ -1168,12 +1164,10 @@ def _build_app(
             return _html_response(_render_html_page(payload, q), hdrs)
         return JSONResponse(content=jsonable_encoder(payload), headers=hdrs)
 
-    def _render_get_html_always(request: Request, q):
+    def _render_get_html_always(q):
         """Shared handler: HTML page with embedded PNGs (same query params as GET /render)."""
         print(
             "[render:GET:HTML] "
-            f"path={request.url.path} "
-            f"query='{request.url.query}' "
             f"dataset={q.t4dataset_id} "
             f"scenario={q.scenario_name} "
             f"frame={q.frame_index} "
@@ -1203,14 +1197,14 @@ def _build_app(
         return _html_response(_render_html_page(payload, q), hdrs)
 
     @app.get("/render/view")
-    def render_get_view(request: Request, q=Depends(_render_get_query)):
+    def render_get_view(q=Depends(_render_get_query)):
         """Same parameters as ``GET /render`` but always returns an HTML page with PNGs."""
-        return _render_get_html_always(request, q)
+        return _render_get_html_always(q)
 
     @app.get("/render/html")
-    def render_get_html(request: Request, q=Depends(_render_get_query)):
+    def render_get_html(q=Depends(_render_get_query)):
         """Same as ``GET /render/view`` — explicit path for iframe ``src`` and bookmarks."""
-        return _render_get_html_always(request, q)
+        return _render_get_html_always(q)
 
     return app
 
