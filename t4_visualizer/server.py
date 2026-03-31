@@ -29,6 +29,9 @@ Endpoints::
         with embedded PNGs (iframes, bookmarks). Prefer these URLs over
         ``GET /render`` when embedding in ``<iframe src="...">``.
 
+    GET  /
+        Landing page with server status, quick links, and usage examples.
+
     GET  /health
         Returns {"status": "ok"}.
 
@@ -344,10 +347,26 @@ def _build_app(
     }
     h1 { font-size: 1.1rem; font-weight: 600; margin: 0 0 0.75rem 0; }
     .meta {
-      padding: 1rem 1.25rem;
+      padding: 0.75rem 1.25rem;
       background: var(--meta-bg);
       border-bottom: 1px solid var(--meta-border);
     }
+    .meta summary {
+      cursor: pointer;
+      font-size: 1.1rem;
+      font-weight: 600;
+      list-style: none;
+      user-select: none;
+    }
+    .meta summary::-webkit-details-marker { display: none; }
+    .meta summary::before {
+      content: "▸";
+      display: inline-block;
+      margin-right: 0.45rem;
+      transition: transform 120ms ease;
+    }
+    .meta[open] summary::before { transform: rotate(90deg); }
+    .meta .meta-content { margin-top: 0.75rem; }
     .meta dl { display: grid; grid-template-columns: 9rem 1fr; gap: 0.35rem 1rem;
                margin: 0; font-size: 0.8125rem; }
     .meta dt { color: var(--dt); margin: 0; }
@@ -550,13 +569,13 @@ def _build_app(
             f"<title>{esc(title)} — frame {q.frame_index}</title>"
             f"<style>{_RENDER_VIEW_CSS}</style>"
             "</head><body>"
-            '<div class="meta"><h1>T4 frame render</h1><dl>'
+            '<details class="meta"><summary>T4 frame render</summary><div class="meta-content"><dl>'
             + "".join(dl_parts)
             + "</dl>"
             '<p class="timings">'
             f"elapsed_ms={payload.elapsed_ms} · tier4_load_ms={payload.tier4_load_ms} · "
             f"render_ms={payload.render_ms}"
-            "</p></div>"
+            "</p></div></details>"
             "<main>"
             + "".join(fig_parts)
             + "</main></body></html>"
@@ -565,6 +584,85 @@ def _build_app(
     # ------------------------------------------------------------------
     # Routes
     # ------------------------------------------------------------------
+
+    @app.get("/")
+    def index_page():
+        """Human-friendly landing page for quick server introspection."""
+        esc = html.escape
+        try:
+            top_level_dirs = sorted(
+                p.name for p in data_dir.iterdir()
+                if p.is_dir() and not p.name.startswith(".")
+            )[:12]
+        except OSError:
+            top_level_dirs = []
+        try:
+            dataset_ids = list_webauto_annotation_dataset_ids(data_dir)
+        except OSError:
+            dataset_ids = []
+        dataset_count = len(dataset_ids)
+        sample_ids = dataset_ids[:8]
+        datasets_block = (
+            "<br>".join(f"<code>{esc(did)}</code>" for did in sample_ids)
+            if sample_ids
+            else "(none)"
+        )
+
+        links = [
+            ("Health", "/health"),
+            ("Datasets", "/datasets"),
+            ("OpenAPI JSON", "/openapi.json"),
+            ("Swagger UI", "/docs"),
+            ("ReDoc", "/redoc"),
+        ]
+        link_html = "".join(
+            f'<li><a href="{href}" target="_blank" rel="noopener">{esc(label)}</a></li>'
+            for label, href in links
+        )
+        top_dirs = "<br>".join(esc(name) for name in top_level_dirs) if top_level_dirs else "(none)"
+        page = (
+            "<!DOCTYPE html>"
+            '<html lang="en"><head><meta charset="utf-8">'
+            '<meta name="viewport" content="width=device-width, initial-scale=1">'
+            "<title>T4 Visualizer Server</title>"
+            "<style>"
+            ":root{color-scheme:light dark;--bg:#f6f7fb;--fg:#111318;--card:#fff;--border:#d9deea;--muted:#566072;--link:#1f5fe0;}"
+            "@media (prefers-color-scheme: dark){:root{--bg:#111318;--fg:#e7ebf5;--card:#1a1f29;--border:#2a3342;--muted:#9ba7bd;--link:#79a6ff;}}"
+            "body{font-family:system-ui,-apple-system,Segoe UI,sans-serif;margin:0;background:var(--bg);color:var(--fg);}"
+            "main{max-width:980px;margin:0 auto;padding:1.25rem;}"
+            "h1{margin:0 0 .5rem;font-size:1.35rem;}"
+            "p{margin:.25rem 0 .75rem;color:var(--muted);}"
+            ".grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:.9rem;margin-top:1rem;}"
+            ".card{background:var(--card);border:1px solid var(--border);border-radius:10px;padding:.9rem 1rem;}"
+            "h2{font-size:1rem;margin:0 0 .6rem;} ul{margin:.2rem 0 0 1.1rem;padding:0;} li{margin:.35rem 0;}"
+            "a{color:var(--link);text-decoration:none;} a:hover{text-decoration:underline;}"
+            "code{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:.9em;}"
+            "pre{overflow:auto;white-space:pre-wrap;background:var(--bg);border:1px dashed var(--border);padding:.6rem;border-radius:8px;}"
+            "</style></head><body><main>"
+            "<h1>T4 Visualizer Server</h1>"
+            "<p>Quick status and links for operators and API users.</p>"
+            '<div class="grid">'
+            '<section class="card"><h2>Runtime</h2>'
+            f"<div><strong>data_dir</strong><br><code>{esc(str(data_dir))}</code></div>"
+            f'<div style="margin-top:.55rem;"><strong>search_depth</strong> <code>{search_depth}</code></div>'
+            f'<div style="margin-top:.55rem;"><strong>dataset_path_cache_ttl_s</strong> <code>{dataset_path_cache_ttl_s:g}</code></div>'
+            "</section>"
+            '<section class="card"><h2>Quick Links</h2><ul>' + link_html + "</ul></section>"
+            '<section class="card"><h2>Top-level directories</h2>'
+            f"<code>{top_dirs}</code></section>"
+            '<section class="card"><h2>T4 datasets on this server</h2>'
+            f"<div><strong>count</strong> <code>{dataset_count}</code></div>"
+            '<div style="margin-top:.55rem;"><strong>sample IDs</strong><br>'
+            f"{datasets_block}"
+            "</div>"
+            '<div style="margin-top:.55rem;"><a href="/datasets" target="_blank" rel="noopener">View full dataset list</a></div>'
+            "</section>"
+            '<section class="card"><h2>Example calls</h2>'
+            "<pre>/datasets\n/datasets/{t4dataset_id}/availability\n/render/html?t4dataset_id=...&scenario_name=...&frame_index=0</pre>"
+            "</section>"
+            "</div></main></body></html>"
+        )
+        return HTMLResponse(content=page, media_type="text/html; charset=utf-8")
 
     @app.get("/health")
     def health():
