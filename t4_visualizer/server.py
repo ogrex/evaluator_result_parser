@@ -14,8 +14,18 @@ Usage::
 Endpoints::
 
     POST /render
-        Accepts a JSON body matching RenderRequest.
-        Returns a JSON body matching RenderResponse.
+        Accepts a JSON body matching RenderRequest (includes ``target_objects``).
+        Returns JSON matching RenderResponse.
+
+    GET  /render
+        Same render as POST using query parameters (no ``target_objects``).
+        If ``format`` is omitted, **browsers** (``Accept: text/html``) receive an
+        HTML page with embedded PNGs; typical API clients get JSON. You can force
+        ``format=json`` or ``format=html``.
+
+    GET  /render/view
+        Same query parameters as ``GET /render`` but always returns the HTML
+        viewer (bookmark-friendly).
 
     GET  /health
         Returns {"status": "ok"}.
@@ -55,12 +65,22 @@ Example response body::
     The same timings are also sent as response headers (``X-Server-Elapsed-Ms``,
     ``X-Server-Tier4-Load-Ms``, ``X-Server-Render-Ms``) and ``Server-Timing`` for
     clients that prefer headers over the JSON body.
+
+Example GET (JSON)::
+
+    GET /render?t4dataset_id=...&scenario_name=...&frame_index=4
+
+Example GET (HTML viewer)::
+
+    GET /render?t4dataset_id=...&scenario_name=...&frame_index=4&format=html
+    GET /render/view?t4dataset_id=...&scenario_name=...&frame_index=4
 """
 
 from __future__ import annotations
 
 import argparse
 import base64
+import html
 import sys
 import threading
 import time
@@ -188,9 +208,9 @@ except ImportError:
 def _build_app(data_dir: Path, search_depth: int, tier4_cache_size: int):
     """Construct and return the FastAPI application."""
     try:
-        from fastapi import FastAPI, HTTPException
+        from fastapi import Depends, FastAPI, Header, HTTPException, Query
         from fastapi.encoders import jsonable_encoder
-        from fastapi.responses import JSONResponse
+        from fastapi.responses import HTMLResponse, JSONResponse
     except ImportError as exc:
         raise ImportError(
             "fastapi and pydantic are required for the server. "
@@ -200,7 +220,6 @@ def _build_app(data_dir: Path, search_depth: int, tier4_cache_size: int):
     from t4_visualizer.batch import find_dataset_in_dir
     from t4_visualizer.downloader import list_webauto_annotation_dataset_ids
     from t4_visualizer.visualize import (
-        RenderImage,
         TargetObject,
         VisualizationRequest,
         render_frame,
@@ -209,9 +228,85 @@ def _build_app(data_dir: Path, search_depth: int, tier4_cache_size: int):
     app = FastAPI(title="T4 Visualizer", version="0.1.0")
     _cache = _Tier4Cache(max_size=tier4_cache_size)
 
-    # ------------------------------------------------------------------
-    # Helpers
-    # ------------------------------------------------------------------
+    _RENDER_VIEW_CSS = """
+    :root { color-scheme: dark; }
+    body { font-family: system-ui, -apple-system, Segoe UI, sans-serif; margin: 0;
+           background: #141418; color: #e8e8ed; line-height: 1.45; }
+    h1 { font-size: 1.1rem; font-weight: 600; margin: 0 0 0.75rem 0; }
+    .meta { padding: 1rem 1.25rem; background: #1e1e24; border-bottom: 1px solid #2c2c34; }
+    .meta dl { display: grid; grid-template-columns: 9rem 1fr; gap: 0.35rem 1rem;
+               margin: 0; font-size: 0.8125rem; }
+    .meta dt { color: #8e8e9a; margin: 0; }
+    .meta dd { margin: 0; word-break: break-all; }
+    main { padding: 1rem 1.25rem 2rem; max-width: min(100%, 140rem); margin: 0 auto; }
+    figure { margin: 1.25rem 0; }
+    figure img { display: block; max-width: 100%; height: auto;
+                 border: 1px solid #2c2c34; border-radius: 6px;
+                 box-shadow: 0 4px 24px rgba(0,0,0,0.35); }
+    figcaption { margin-top: 0.5rem; font-size: 0.8rem; color: #a0a0ac; }
+    .timings { margin-top: 0.75rem; font-size: 0.75rem; color: #6e6e78; }
+    """
+
+    def _render_get_query(
+        t4dataset_id: str = Query(..., description="Dataset id (see GET /datasets)"),
+        scenario_name: str = Query(
+            ...,
+            description="Scene name from GET /datasets/{id}/scenarios",
+        ),
+        frame_index: int = Query(..., ge=0, description="Frame index within the scene"),
+        cameras: Optional[str] = Query(
+            None,
+            description="Comma-separated camera channels (omit for all)",
+        ),
+        show_annotations: bool = Query(True),
+        version: Optional[str] = Query(None),
+        crop_cameras: bool = Query(False),
+        crop_padding: int = Query(40, ge=0),
+        crop_min_size: int = Query(300, ge=1),
+    ):
+        """Query parameters shared by ``GET /render`` and ``GET /render/view``."""
+        from types import SimpleNamespace
+
+        return SimpleNamespace(
+            t4dataset_id=t4dataset_id,
+            scenario_name=scenario_name,
+            frame_index=frame_index,
+            cameras=cameras,
+            show_annotations=show_annotations,
+            version=version,
+            crop_cameras=crop_cameras,
+            crop_padding=crop_padding,
+            crop_min_size=crop_min_size,
+        )
+
+    def _parse_cameras_csv(cameras: Optional[str]) -> Optional[List[str]]:
+        if not cameras or not str(cameras).strip():
+            return None
+        parts = [c.strip() for c in str(cameras).split(",") if c.strip()]
+        return parts or None
+
+    def _effective_render_format(accept_header: Optional[str], explicit: Optional[str]) -> str:
+        """Return ``json`` or ``html``. When *explicit* is omitted, use Accept header."""
+        if explicit is not None and str(explicit).strip() != "":
+            fmt = str(explicit).strip().lower()
+            if fmt not in ("json", "html"):
+                raise HTTPException(
+                    status_code=400,
+                    detail="Invalid format: use 'json', 'html', or omit for auto (browser→html).",
+                )
+            return fmt
+        accept = (accept_header or "").lower()
+        if "text/html" in accept:
+            return "html"
+        return "json"
+
+    def _html_response(body: str, hdrs: Dict[str, str]) -> HTMLResponse:
+        """Return HTML with an explicit charset so browsers render the page, not raw text."""
+        return HTMLResponse(
+            content=body,
+            media_type="text/html; charset=utf-8",
+            headers=hdrs,
+        )
 
     def _resolve_dataset(t4dataset_id: str) -> Path:
         path = find_dataset_in_dir(data_dir, t4dataset_id, search_depth)
@@ -224,6 +319,116 @@ def _build_app(data_dir: Path, search_depth: int, tier4_cache_size: int):
                 ),
             )
         return path
+
+    def _run_render(
+        *,
+        t4dataset_id: str,
+        dataset_path: Path,
+        scenario_name: str,
+        frame_index: int,
+        target_objects: List[TargetObject],
+        cameras: Optional[List[str]],
+        show_annotations: bool,
+        version: Optional[str],
+        crop_cameras: bool,
+        crop_padding: int,
+        crop_min_size: int,
+    ):
+        """Execute render_frame and build :class:`RenderResponse` plus timing headers."""
+        request = VisualizationRequest(
+            dataset_path=dataset_path,
+            scenario_name=scenario_name,
+            frame_index=frame_index,
+            target_objects=target_objects,
+            cameras=cameras,
+            show_annotations=show_annotations,
+            version=version,
+            crop_cameras=crop_cameras,
+            crop_padding=crop_padding,
+            crop_min_size=crop_min_size,
+        )
+
+        t0 = time.perf_counter()
+        try:
+            t4 = _cache.load(dataset_path, version=version)
+            t1 = time.perf_counter()
+            result = render_frame(request, t4=t4)
+            t2 = time.perf_counter()
+        except Exception as exc:
+            raise HTTPException(status_code=500, detail=str(exc)) from exc
+
+        elapsed_ms = round((t2 - t0) * 1000.0, 3)
+        tier4_load_ms = round((t1 - t0) * 1000.0, 3)
+        render_ms = round((t2 - t1) * 1000.0, 3)
+
+        payload = RenderResponse(
+            sample_token=result.sample_token,
+            timestamp_us=result.timestamp_us,
+            images=[
+                ImageOut(label=img.label, png_base64=base64.b64encode(img.data).decode())
+                for img in result.images
+            ],
+            elapsed_ms=elapsed_ms,
+            tier4_load_ms=tier4_load_ms,
+            render_ms=render_ms,
+        )
+        hdrs = {
+            "X-Server-Elapsed-Ms": str(elapsed_ms),
+            "X-Server-Tier4-Load-Ms": str(tier4_load_ms),
+            "X-Server-Render-Ms": str(render_ms),
+            "Server-Timing": (
+                f"tier4-load;dur={tier4_load_ms}, render;dur={render_ms}, total;dur={elapsed_ms}"
+            ),
+        }
+        return payload, hdrs
+
+    def _render_html_page(payload: RenderResponse, q) -> str:
+        """Build a self-contained HTML document with embedded PNG data URLs."""
+        esc = html.escape
+        rows = [
+            ("Dataset", esc(q.t4dataset_id)),
+            ("Scenario", esc(q.scenario_name)),
+            ("Frame index", str(q.frame_index)),
+            ("Sample token", esc(payload.sample_token)),
+            ("Timestamp (µs)", str(payload.timestamp_us)),
+        ]
+        if q.cameras:
+            rows.append(("Cameras filter", esc(q.cameras)))
+        rows.append(("Images", str(len(payload.images))))
+
+        dl_parts = []
+        for dt, dd in rows:
+            dl_parts.append(f"<dt>{esc(dt)}</dt><dd>{dd}</dd>")
+
+        fig_parts = []
+        for im in payload.images:
+            fig_parts.append(
+                "<figure>"
+                f'<img src="data:image/png;base64,{im.png_base64}" '
+                f'alt="{esc(im.label)}">'
+                f"<figcaption>{esc(im.label)}</figcaption>"
+                "</figure>"
+            )
+
+        title = f"{q.scenario_name[:48]}…" if len(q.scenario_name) > 48 else q.scenario_name
+        return (
+            "<!DOCTYPE html>"
+            '<html lang="en"><head><meta charset="utf-8">'
+            '<meta name="viewport" content="width=device-width, initial-scale=1">'
+            f"<title>{esc(title)} — frame {q.frame_index}</title>"
+            f"<style>{_RENDER_VIEW_CSS}</style>"
+            "</head><body>"
+            '<div class="meta"><h1>T4 frame render</h1><dl>'
+            + "".join(dl_parts)
+            + "</dl>"
+            '<p class="timings">'
+            f"elapsed_ms={payload.elapsed_ms} · tier4_load_ms={payload.tier4_load_ms} · "
+            f"render_ms={payload.render_ms}"
+            "</p></div>"
+            "<main>"
+            + "".join(fig_parts)
+            + "</main></body></html>"
+        )
 
     # ------------------------------------------------------------------
     # Routes
@@ -312,7 +517,7 @@ def _build_app(data_dir: Path, search_depth: int, tier4_cache_size: int):
         )
 
     @app.post("/render", response_model=RenderResponse)
-    def render(body: RenderRequest):
+    def render_post(body: RenderRequest):
         """Render a single frame and return base64-encoded PNG images.
 
         Server-side timings are in the JSON body and duplicated on response headers
@@ -331,7 +536,8 @@ def _build_app(data_dir: Path, search_depth: int, tier4_cache_size: int):
             for o in body.target_objects
         ]
 
-        request = VisualizationRequest(
+        payload, hdrs = _run_render(
+            t4dataset_id=body.t4dataset_id,
             dataset_path=dataset_path,
             scenario_name=body.scenario_name,
             frame_index=body.frame_index,
@@ -343,41 +549,58 @@ def _build_app(data_dir: Path, search_depth: int, tier4_cache_size: int):
             crop_padding=body.crop_padding,
             crop_min_size=body.crop_min_size,
         )
-
-        t0 = time.perf_counter()
-        try:
-            t4 = _cache.load(dataset_path, version=body.version)
-            t1 = time.perf_counter()
-            result = render_frame(request, t4=t4)
-            t2 = time.perf_counter()
-        except Exception as exc:
-            raise HTTPException(status_code=500, detail=str(exc)) from exc
-
-        elapsed_ms = round((t2 - t0) * 1000.0, 3)
-        tier4_load_ms = round((t1 - t0) * 1000.0, 3)
-        render_ms = round((t2 - t1) * 1000.0, 3)
-
-        # Expose server-side timings to all clients (body + headers).
-        payload = RenderResponse(
-            sample_token=result.sample_token,
-            timestamp_us=result.timestamp_us,
-            images=[
-                ImageOut(label=img.label, png_base64=base64.b64encode(img.data).decode())
-                for img in result.images
-            ],
-            elapsed_ms=elapsed_ms,
-            tier4_load_ms=tier4_load_ms,
-            render_ms=render_ms,
-        )
-        hdrs = {
-            "X-Server-Elapsed-Ms": str(elapsed_ms),
-            "X-Server-Tier4-Load-Ms": str(tier4_load_ms),
-            "X-Server-Render-Ms": str(render_ms),
-            "Server-Timing": (
-                f"tier4-load;dur={tier4_load_ms}, render;dur={render_ms}, total;dur={elapsed_ms}"
-            ),
-        }
         return JSONResponse(content=jsonable_encoder(payload), headers=hdrs)
+
+    @app.get("/render")
+    def render_get(
+        q=Depends(_render_get_query),
+        response_format: Optional[str] = Query(
+            None,
+            alias="format",
+            description="json or html; omit to auto (browsers→html, curl→json).",
+        ),
+        accept: Optional[str] = Header(None, include_in_schema=False),
+    ):
+        """Render one frame via query string (no ``target_objects``; use POST for those)."""
+        fmt = _effective_render_format(accept, response_format)
+        dataset_path = _resolve_dataset(q.t4dataset_id)
+        cam_list = _parse_cameras_csv(q.cameras)
+        payload, hdrs = _run_render(
+            t4dataset_id=q.t4dataset_id,
+            dataset_path=dataset_path,
+            scenario_name=q.scenario_name,
+            frame_index=q.frame_index,
+            target_objects=[],
+            cameras=cam_list,
+            show_annotations=q.show_annotations,
+            version=q.version,
+            crop_cameras=q.crop_cameras,
+            crop_padding=q.crop_padding,
+            crop_min_size=q.crop_min_size,
+        )
+        if fmt == "html":
+            return _html_response(_render_html_page(payload, q), hdrs)
+        return JSONResponse(content=jsonable_encoder(payload), headers=hdrs)
+
+    @app.get("/render/view")
+    def render_get_view(q=Depends(_render_get_query)):
+        """Same parameters as ``GET /render`` but always returns an HTML page with PNGs."""
+        dataset_path = _resolve_dataset(q.t4dataset_id)
+        cam_list = _parse_cameras_csv(q.cameras)
+        payload, hdrs = _run_render(
+            t4dataset_id=q.t4dataset_id,
+            dataset_path=dataset_path,
+            scenario_name=q.scenario_name,
+            frame_index=q.frame_index,
+            target_objects=[],
+            cameras=cam_list,
+            show_annotations=q.show_annotations,
+            version=q.version,
+            crop_cameras=q.crop_cameras,
+            crop_padding=q.crop_padding,
+            crop_min_size=q.crop_min_size,
+        )
+        return _html_response(_render_html_page(payload, q), hdrs)
 
     return app
 
