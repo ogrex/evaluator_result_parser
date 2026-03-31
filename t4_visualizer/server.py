@@ -293,7 +293,7 @@ def _build_app(
 ):
     """Construct and return the FastAPI application."""
     try:
-        from fastapi import Depends, FastAPI, Header, HTTPException, Query
+        from fastapi import Depends, FastAPI, Header, HTTPException, Query, Request
         from fastapi.encoders import jsonable_encoder
         from fastapi.responses import HTMLResponse, JSONResponse
     except ImportError as exc:
@@ -313,6 +313,22 @@ def _build_app(
     app = FastAPI(title="T4 Visualizer", version="0.1.0")
     _cache = _Tier4Cache(max_size=tier4_cache_size)
     _path_cache = _DatasetPathCache(ttl_s=dataset_path_cache_ttl_s)
+
+    @app.middleware("http")
+    async def _log_http_requests(request: Request, call_next):
+        method = request.method.upper()
+        if method not in ("GET", "POST"):
+            return await call_next(request)
+        t0 = time.perf_counter()
+        response = await call_next(request)
+        elapsed_ms = (time.perf_counter() - t0) * 1000.0
+        query = request.url.query
+        query_txt = f"?{query}" if query else ""
+        print(
+            f"[http] {method} {request.url.path}{query_txt} "
+            f"-> {response.status_code} ({elapsed_ms:.1f} ms)"
+        )
+        return response
 
     # Syncs with system / browser theme via prefers-color-scheme (no JS).
     _RENDER_VIEW_CSS = """
@@ -1052,12 +1068,26 @@ def _build_app(
         )
 
     @app.post("/render", response_model=RenderResponse)
-    def render_post(body: RenderRequest):
+    def render_post(body: RenderRequest, request: Request):
         """Render a single frame and return base64-encoded PNG images.
 
         Server-side timings are in the JSON body and duplicated on response headers
         so any HTTP client can read them without parsing JSON.
         """
+        print(
+            "[render:POST] "
+            f"path={request.url.path} "
+            f"dataset={body.t4dataset_id} "
+            f"scenario={body.scenario_name} "
+            f"frame={body.frame_index} "
+            f"targets={len(body.target_objects)} "
+            f"cameras={body.cameras} "
+            f"show_annotations={body.show_annotations} "
+            f"crop_cameras={body.crop_cameras} "
+            f"crop_padding={body.crop_padding} "
+            f"crop_min_size={body.crop_min_size} "
+            f"version={body.version}"
+        )
         dataset_path = _resolve_dataset(body.t4dataset_id)
 
         target_objects = [
@@ -1088,6 +1118,7 @@ def _build_app(
 
     @app.get("/render")
     def render_get(
+        request: Request,
         q=Depends(_render_get_query),
         response_format: Optional[str] = Query(
             None,
@@ -1102,6 +1133,21 @@ def _build_app(
         ),
     ):
         """Render one frame via query string (no ``target_objects``; use POST for those)."""
+        print(
+            "[render:GET] "
+            f"path={request.url.path} "
+            f"query='{request.url.query}' "
+            f"dataset={q.t4dataset_id} "
+            f"scenario={q.scenario_name} "
+            f"frame={q.frame_index} "
+            f"targets=0 "
+            f"cameras={q.cameras} "
+            f"show_annotations={q.show_annotations} "
+            f"crop_cameras={q.crop_cameras} "
+            f"crop_padding={q.crop_padding} "
+            f"crop_min_size={q.crop_min_size} "
+            f"version={q.version}"
+        )
         fmt = _effective_render_format(accept, response_format, sec_fetch_dest)
         dataset_path = _resolve_dataset(q.t4dataset_id)
         cam_list = _parse_cameras_csv(q.cameras)
@@ -1122,8 +1168,23 @@ def _build_app(
             return _html_response(_render_html_page(payload, q), hdrs)
         return JSONResponse(content=jsonable_encoder(payload), headers=hdrs)
 
-    def _render_get_html_always(q):
+    def _render_get_html_always(request: Request, q):
         """Shared handler: HTML page with embedded PNGs (same query params as GET /render)."""
+        print(
+            "[render:GET:HTML] "
+            f"path={request.url.path} "
+            f"query='{request.url.query}' "
+            f"dataset={q.t4dataset_id} "
+            f"scenario={q.scenario_name} "
+            f"frame={q.frame_index} "
+            f"targets=0 "
+            f"cameras={q.cameras} "
+            f"show_annotations={q.show_annotations} "
+            f"crop_cameras={q.crop_cameras} "
+            f"crop_padding={q.crop_padding} "
+            f"crop_min_size={q.crop_min_size} "
+            f"version={q.version}"
+        )
         dataset_path = _resolve_dataset(q.t4dataset_id)
         cam_list = _parse_cameras_csv(q.cameras)
         payload, hdrs = _run_render(
@@ -1142,14 +1203,14 @@ def _build_app(
         return _html_response(_render_html_page(payload, q), hdrs)
 
     @app.get("/render/view")
-    def render_get_view(q=Depends(_render_get_query)):
+    def render_get_view(request: Request, q=Depends(_render_get_query)):
         """Same parameters as ``GET /render`` but always returns an HTML page with PNGs."""
-        return _render_get_html_always(q)
+        return _render_get_html_always(request, q)
 
     @app.get("/render/html")
-    def render_get_html(q=Depends(_render_get_query)):
+    def render_get_html(request: Request, q=Depends(_render_get_query)):
         """Same as ``GET /render/view`` — explicit path for iframe ``src`` and bookmarks."""
-        return _render_get_html_always(q)
+        return _render_get_html_always(request, q)
 
     return app
 
