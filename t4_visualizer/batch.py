@@ -468,9 +468,9 @@ def visualize_frame(
             filename = f"{prefix}_visualization.png"
         else:
             filename = f"{prefix}_{img.label}_visualization_crop.png"
-        out_path = frame_out / filename
-        out_path.write_bytes(img.data)
-        print(f"  Saved: {out_path}")
+        #out_path = frame_out / filename
+        #out_path.write_bytes(img.data)
+        #print(f"  Saved: {out_path}")
 
     return frame_out
 

@@ -46,8 +46,15 @@ Example response body::
         "timestamp_us": 1609459200000000,
         "images": [
             {"label": "CAM_FRONT", "png_base64": "iVBORw0KGgo..."}
-        ]
+        ],
+        "elapsed_ms": 1234.5,
+        "tier4_load_ms": 344.3,
+        "render_ms": 890.2
     }
+
+    The same timings are also sent as response headers (``X-Server-Elapsed-Ms``,
+    ``X-Server-Tier4-Load-Ms``, ``X-Server-Render-Ms``) and ``Server-Timing`` for
+    clients that prefer headers over the JSON body.
 """
 
 from __future__ import annotations
@@ -56,6 +63,7 @@ import argparse
 import base64
 import sys
 import threading
+import time
 from pathlib import Path
 from typing import Dict, List, Optional
 
@@ -156,6 +164,9 @@ try:
         sample_token: str
         timestamp_us: int
         images: List[ImageOut]
+        elapsed_ms: float
+        tier4_load_ms: float
+        render_ms: float
 
     class ScenarioOut(BaseModel):
         name: str
@@ -178,6 +189,7 @@ def _build_app(data_dir: Path, search_depth: int, tier4_cache_size: int):
     """Construct and return the FastAPI application."""
     try:
         from fastapi import FastAPI, HTTPException
+        from fastapi.encoders import jsonable_encoder
         from fastapi.responses import JSONResponse
     except ImportError as exc:
         raise ImportError(
@@ -301,7 +313,11 @@ def _build_app(data_dir: Path, search_depth: int, tier4_cache_size: int):
 
     @app.post("/render", response_model=RenderResponse)
     def render(body: RenderRequest):
-        """Render a single frame and return base64-encoded PNG images."""
+        """Render a single frame and return base64-encoded PNG images.
+
+        Server-side timings are in the JSON body and duplicated on response headers
+        so any HTTP client can read them without parsing JSON.
+        """
         dataset_path = _resolve_dataset(body.t4dataset_id)
 
         target_objects = [
@@ -328,20 +344,40 @@ def _build_app(data_dir: Path, search_depth: int, tier4_cache_size: int):
             crop_min_size=body.crop_min_size,
         )
 
+        t0 = time.perf_counter()
         try:
             t4 = _cache.load(dataset_path, version=body.version)
+            t1 = time.perf_counter()
             result = render_frame(request, t4=t4)
+            t2 = time.perf_counter()
         except Exception as exc:
             raise HTTPException(status_code=500, detail=str(exc)) from exc
 
-        return RenderResponse(
+        elapsed_ms = round((t2 - t0) * 1000.0, 3)
+        tier4_load_ms = round((t1 - t0) * 1000.0, 3)
+        render_ms = round((t2 - t1) * 1000.0, 3)
+
+        # Expose server-side timings to all clients (body + headers).
+        payload = RenderResponse(
             sample_token=result.sample_token,
             timestamp_us=result.timestamp_us,
             images=[
                 ImageOut(label=img.label, png_base64=base64.b64encode(img.data).decode())
                 for img in result.images
             ],
+            elapsed_ms=elapsed_ms,
+            tier4_load_ms=tier4_load_ms,
+            render_ms=render_ms,
         )
+        hdrs = {
+            "X-Server-Elapsed-Ms": str(elapsed_ms),
+            "X-Server-Tier4-Load-Ms": str(tier4_load_ms),
+            "X-Server-Render-Ms": str(render_ms),
+            "Server-Timing": (
+                f"tier4-load;dur={tier4_load_ms}, render;dur={render_ms}, total;dur={elapsed_ms}"
+            ),
+        }
+        return JSONResponse(content=jsonable_encoder(payload), headers=hdrs)
 
     return app
 

@@ -669,24 +669,32 @@ def patch_missing_t4_tables(t4_root: Path) -> None:
     to exist (even if empty), so we create ``[]`` stubs on-the-fly without
     modifying the original data for tables that are known-safe to be empty.
     """
-    # Locate annotation directories by searching for `sample.json`, which is
-    # the canonical anchor file for T4 annotation dirs regardless of the
-    # directory name (annotation/, v1.0-trainval/, 1/, etc.).
+    # Locate annotation directories by finding `sample.json` anywhere under the
+    # dataset root.  The previous two-level scan missed deeper layouts (e.g.
+    # ``<uuid>/<ver>/annotation/sample.json``), so ``attribute.json`` was never
+    # stubbed and t4_devkit raised ``FileNotFoundError: attribute is mandatory``.
     ann_dirs: list[Path] = []
-    for depth1 in [t4_root, *t4_root.iterdir()]:
-        if not depth1.is_dir():
-            continue
-        if (depth1 / "sample.json").exists():
-            ann_dirs.append(depth1)
-            continue
-        try:
-            for depth2 in depth1.iterdir():
-                if depth2.is_dir() and (depth2 / "sample.json").exists():
-                    ann_dirs.append(depth2)
-        except OSError:
-            pass
+    try:
+        for sample_json in t4_root.rglob("sample.json"):
+            parent = sample_json.parent
+            if parent.is_dir():
+                ann_dirs.append(parent)
+    except OSError:
+        pass
 
-    if not ann_dirs:
+    # Deduplicate (same dir reachable via symlinks / multiple matches).
+    seen: set[Path] = set()
+    uniq_ann: list[Path] = []
+    for d in ann_dirs:
+        try:
+            key = d.resolve()
+        except OSError:
+            key = d
+        if key not in seen:
+            seen.add(key)
+            uniq_ann.append(d)
+
+    if not uniq_ann:
         return
 
     # Tables that are safe to be empty (no entries = valid empty list).
@@ -697,7 +705,7 @@ def patch_missing_t4_tables(t4_root: Path) -> None:
         "visibility.json",
         "lidarseg.json",
     ]
-    for ann_dir in ann_dirs:
+    for ann_dir in uniq_ann:
         for name in SAFE_EMPTY:
             target = ann_dir / name
             if not target.exists():
