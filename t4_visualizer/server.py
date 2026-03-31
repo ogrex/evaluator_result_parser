@@ -39,6 +39,10 @@ Endpoints::
         Lists scenes in that dataset (name, token, description, nbr_samples).
         Optional query parameter: ``version`` (same as ``POST /render``).
 
+    GET  /datasets/{t4dataset_id}/availability
+        Returns whether the dataset id exists under ``data_dir`` (same lookup as
+        render). JSON: ``available``, optional ``dataset_path`` when present.
+
 Example request body::
 
     {
@@ -88,7 +92,7 @@ import sys
 import threading
 import time
 from pathlib import Path
-from typing import Dict, List, Optional
+from typing import Dict, List, Optional, Tuple
 
 # ---------------------------------------------------------------------------
 # Tier4 in-memory cache
@@ -147,6 +151,66 @@ class _Tier4Cache:
         return t4
 
 
+class _DatasetPathCache:
+    """Thread-safe TTL cache for :func:`find_dataset_in_dir` results.
+
+    Caches both hits (resolved ``Path``) and misses (``None``) so repeated
+    availability checks and renders avoid rescanning large directory trees.
+    Positive entries are dropped if the path disappears before TTL expires.
+    Set *ttl_s* to ``0`` to disable caching.
+    """
+
+    def __init__(self, ttl_s: float = 30.0, max_entries: int = 4096):
+        self._ttl_s = ttl_s
+        self._max_entries = max_entries
+        self._lock = threading.Lock()
+        # key -> (Optional[Path], deadline monotonic); None path = negative cache
+        self._entries: Dict[str, Tuple[Optional[Path], float]] = {}
+
+    @staticmethod
+    def _key(data_dir: Path, search_depth: int, t4dataset_id: str) -> str:
+        return f"{data_dir.resolve()}|{search_depth}|{t4dataset_id}"
+
+    def resolve(
+        self,
+        data_dir: Path,
+        search_depth: int,
+        t4dataset_id: str,
+        find_fn,
+    ) -> Optional[Path]:
+        """Return cached path, call *find_fn* () -> Optional[Path] on miss."""
+        if self._ttl_s <= 0:
+            return find_fn()
+
+        key = self._key(data_dir, search_depth, t4dataset_id)
+        now = time.monotonic()
+
+        with self._lock:
+            hit = self._entries.get(key)
+            if hit is not None:
+                path, deadline = hit
+                if now < deadline:
+                    if path is None:
+                        return None
+                    try:
+                        if path.exists():
+                            return path
+                    except OSError:
+                        pass
+                    del self._entries[key]
+
+        found = find_fn()
+        deadline = now + self._ttl_s
+        with self._lock:
+            while len(self._entries) >= self._max_entries:
+                try:
+                    self._entries.pop(next(iter(self._entries)))
+                except StopIteration:
+                    break
+            self._entries[key] = (found, deadline)
+        return found
+
+
 # ---------------------------------------------------------------------------
 # Pydantic models (request / response)
 # Must be defined at module level — Pydantic v2 cannot resolve forward
@@ -202,13 +266,25 @@ try:
         scenarios: List[ScenarioOut]
         version: Optional[str] = None
 
+    class DatasetAvailabilityResponse(BaseModel):
+        """Result of ``GET /datasets/{id}/availability``."""
+
+        t4dataset_id: str
+        available: bool
+        dataset_path: Optional[str] = None
+
 except ImportError:
     pass  # Proper error is raised inside _build_app when fastapi is missing
 
 
 # ---------------------------------------------------------------------------
 
-def _build_app(data_dir: Path, search_depth: int, tier4_cache_size: int):
+def _build_app(
+    data_dir: Path,
+    search_depth: int,
+    tier4_cache_size: int,
+    dataset_path_cache_ttl_s: float = 30.0,
+):
     """Construct and return the FastAPI application."""
     try:
         from fastapi import Depends, FastAPI, Header, HTTPException, Query
@@ -230,6 +306,7 @@ def _build_app(data_dir: Path, search_depth: int, tier4_cache_size: int):
 
     app = FastAPI(title="T4 Visualizer", version="0.1.0")
     _cache = _Tier4Cache(max_size=tier4_cache_size)
+    _path_cache = _DatasetPathCache(ttl_s=dataset_path_cache_ttl_s)
 
     # Syncs with system / browser theme via prefers-color-scheme (no JS).
     _RENDER_VIEW_CSS = """
@@ -359,7 +436,12 @@ def _build_app(data_dir: Path, search_depth: int, tier4_cache_size: int):
         )
 
     def _resolve_dataset(t4dataset_id: str) -> Path:
-        path = find_dataset_in_dir(data_dir, t4dataset_id, search_depth)
+        path = _path_cache.resolve(
+            data_dir,
+            search_depth,
+            t4dataset_id,
+            lambda: find_dataset_in_dir(data_dir, t4dataset_id, search_depth),
+        )
         if path is None:
             raise HTTPException(
                 status_code=404,
@@ -541,6 +623,37 @@ def _build_app(data_dir: Path, search_depth: int, tier4_cache_size: int):
         return payload
 
     @app.get(
+        "/datasets/{t4dataset_id}/availability",
+        response_model=DatasetAvailabilityResponse,
+        tags=["datasets"],
+        summary="Check whether a dataset id is available under data_dir",
+    )
+    def dataset_availability(t4dataset_id: str):
+        """Return whether *t4dataset_id* resolves under the configured ``data_dir``.
+
+        Uses the same lookup as ``POST /render`` and ``GET /datasets/.../scenarios``
+        (:func:`t4_visualizer.batch.find_dataset_in_dir`). Does not load Tier4.
+        Results are cached briefly (see ``--dataset-path-cache-ttl``).
+        """
+        found = _path_cache.resolve(
+            data_dir,
+            search_depth,
+            t4dataset_id,
+            lambda: find_dataset_in_dir(data_dir, t4dataset_id, search_depth),
+        )
+        if found is not None:
+            return DatasetAvailabilityResponse(
+                t4dataset_id=t4dataset_id,
+                available=True,
+                dataset_path=str(found.resolve()),
+            )
+        return DatasetAvailabilityResponse(
+            t4dataset_id=t4dataset_id,
+            available=False,
+            dataset_path=None,
+        )
+
+    @app.get(
         "/datasets/{t4dataset_id}/scenarios",
         response_model=ScenariosListResponse,
         tags=["datasets"],
@@ -698,6 +811,13 @@ def _parse_args(argv=None):
         help="Max number of Tier4 instances to keep in memory (default: 8).",
     )
     parser.add_argument(
+        "--dataset-path-cache-ttl", type=float, default=30.0, metavar="SEC",
+        help=(
+            "Seconds to cache dataset id → path lookups (0 = disable). "
+            "Default: 30."
+        ),
+    )
+    parser.add_argument(
         "--reload", action="store_true", default=False,
         help="Enable uvicorn auto-reload (development only).",
     )
@@ -724,12 +844,18 @@ def main(argv=None):
     print(f"  Data directory : {data_dir}")
     print(f"  Search depth   : {args.search_depth}")
     print(f"  Tier4 cache    : {args.tier4_cache} datasets")
+    ttl = args.dataset_path_cache_ttl
+    print(
+        f"  Path lookup cache: "
+        f"{'off' if ttl <= 0 else f'{ttl:g}s TTL'}"
+    )
     print(f"  Listening on   : http://{args.host}:{args.port}")
 
     app = _build_app(
         data_dir=data_dir,
         search_depth=args.search_depth,
         tier4_cache_size=args.tier4_cache,
+        dataset_path_cache_ttl_s=ttl,
     )
 
     uvicorn.run(
