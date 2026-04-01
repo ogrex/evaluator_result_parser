@@ -93,6 +93,7 @@ from __future__ import annotations
 
 import argparse
 import base64
+import datetime
 import html
 import sys
 import threading
@@ -112,6 +113,10 @@ class _Tier4Cache:
         self._order: List[Path] = []           # LRU order (most-recent last)
         self._max_size = max_size
         self._lock = threading.Lock()
+        self._hits = 0
+        self._misses = 0
+        self._loads = 0
+        self._evictions = 0
 
     def get(self, path: Path):
         """Return cached Tier4 for *path*, or None if not present."""
@@ -119,7 +124,9 @@ class _Tier4Cache:
             if path in self._cache:
                 self._order.remove(path)
                 self._order.append(path)
+                self._hits += 1
                 return self._cache[path]
+            self._misses += 1
         return None
 
     def put(self, path: Path, t4) -> None:
@@ -130,6 +137,7 @@ class _Tier4Cache:
             elif len(self._cache) >= self._max_size:
                 evict = self._order.pop(0)
                 del self._cache[evict]
+                self._evictions += 1
             self._cache[path] = t4
             self._order.append(path)
 
@@ -153,8 +161,23 @@ class _Tier4Cache:
         patch_missing_t4_tables(t4_root)
         kwargs = {"version": version} if version else {}
         t4 = Tier4(str(t4_root), **kwargs)
+        with self._lock:
+            self._loads += 1
         self.put(path, t4)
         return t4
+
+    def stats(self) -> Dict[str, object]:
+        """Return in-memory cache counters and keys for diagnostics pages."""
+        with self._lock:
+            return {
+                "max_size": self._max_size,
+                "size": len(self._cache),
+                "hits": self._hits,
+                "misses": self._misses,
+                "loads": self._loads,
+                "evictions": self._evictions,
+                "keys": [str(p) for p in self._order],
+            }
 
 
 class _DatasetPathCache:
@@ -172,6 +195,10 @@ class _DatasetPathCache:
         self._lock = threading.Lock()
         # key -> (Optional[Path], deadline monotonic); None path = negative cache
         self._entries: Dict[str, Tuple[Optional[Path], float]] = {}
+        self._hits = 0
+        self._misses = 0
+        self._stores = 0
+        self._evictions = 0
 
     @staticmethod
     def _key(data_dir: Path, search_depth: int, t4dataset_id: str) -> str:
@@ -197,13 +224,16 @@ class _DatasetPathCache:
                 path, deadline = hit
                 if now < deadline:
                     if path is None:
+                        self._hits += 1
                         return None
                     try:
                         if path.exists():
+                            self._hits += 1
                             return path
                     except OSError:
                         pass
                     del self._entries[key]
+            self._misses += 1
 
         found = find_fn()
         deadline = now + self._ttl_s
@@ -211,10 +241,31 @@ class _DatasetPathCache:
             while len(self._entries) >= self._max_entries:
                 try:
                     self._entries.pop(next(iter(self._entries)))
+                    self._evictions += 1
                 except StopIteration:
                     break
             self._entries[key] = (found, deadline)
+            self._stores += 1
         return found
+
+    def stats(self) -> Dict[str, object]:
+        """Return TTL cache counters and occupancy for diagnostics endpoints."""
+        now = time.monotonic()
+        with self._lock:
+            active = 0
+            for _, deadline in self._entries.values():
+                if now < deadline:
+                    active += 1
+            return {
+                "ttl_s": self._ttl_s,
+                "max_entries": self._max_entries,
+                "entries": len(self._entries),
+                "active_entries": active,
+                "hits": self._hits,
+                "misses": self._misses,
+                "stores": self._stores,
+                "evictions": self._evictions,
+            }
 
 
 # ---------------------------------------------------------------------------
@@ -271,6 +322,10 @@ try:
         t4dataset_id: str
         scenarios: List[ScenarioOut]
         version: Optional[str] = None
+        total_scenarios: int = 0
+        total_frames: int = 0
+        min_frames: int = 0
+        max_frames: int = 0
 
     class DatasetAvailabilityResponse(BaseModel):
         """Result of ``GET /datasets/{id}/availability``."""
@@ -290,6 +345,7 @@ def _build_app(
     search_depth: int,
     tier4_cache_size: int,
     dataset_path_cache_ttl_s: float = 30.0,
+    visibility_mode: str = "public",
 ):
     """Construct and return the FastAPI application."""
     try:
@@ -313,6 +369,19 @@ def _build_app(
     app = FastAPI(title="T4 Visualizer", version="0.1.0")
     _cache = _Tier4Cache(max_size=tier4_cache_size)
     _path_cache = _DatasetPathCache(ttl_s=dataset_path_cache_ttl_s)
+    _debug_visibility = str(visibility_mode).strip().lower() == "debug"
+
+    def _public_error(status_code: int, code: str, message: str, hint: Optional[str] = None):
+        detail: Dict[str, object] = {"code": code, "message": message}
+        if hint:
+            detail["hint"] = hint
+        raise HTTPException(status_code=status_code, detail=detail)
+
+    def _safe_error(status_code: int, code: str, message: str, exc: Optional[Exception] = None):
+        detail: Dict[str, object] = {"code": code, "message": message}
+        if _debug_visibility and exc is not None:
+            detail["debug"] = str(exc)
+        raise HTTPException(status_code=status_code, detail=detail)
 
     @app.middleware("http")
     async def _log_http_requests(request, call_next):
@@ -481,12 +550,11 @@ def _build_app(
             lambda: find_dataset_in_dir(data_dir, t4dataset_id, search_depth),
         )
         if path is None:
-            raise HTTPException(
+            _public_error(
                 status_code=404,
-                detail=(
-                    f"Dataset '{t4dataset_id}' not found under {data_dir} "
-                    f"(search_depth={search_depth})"
-                ),
+                code="dataset_not_found",
+                message=f"Dataset '{t4dataset_id}' was not found.",
+                hint="Call GET /datasets to inspect visible dataset IDs.",
             )
         return path
 
@@ -525,7 +593,12 @@ def _build_app(
             result = render_frame(request, t4=t4)
             t2 = time.perf_counter()
         except Exception as exc:
-            raise HTTPException(status_code=500, detail=str(exc)) from exc
+            _safe_error(
+                status_code=500,
+                code="render_failed",
+                message="Failed to render the requested frame.",
+                exc=exc,
+            )
 
         elapsed_ms = round((t2 - t0) * 1000.0, 3)
         tier4_load_ms = round((t1 - t0) * 1000.0, 3)
@@ -638,7 +711,8 @@ def _build_app(
     h1{margin:0;font-size:1.45rem}
     .muted{color:var(--muted)}
     .actions a{color:var(--accent);text-decoration:none;margin-left:.9rem}
-    .grid{display:grid;grid-template-columns:320px 1fr 1fr;gap:.9rem}
+    .grid{display:grid;grid-template-columns:minmax(260px,320px) minmax(340px,1fr) minmax(340px,1fr);gap:.9rem}
+    .grid-diag{display:grid;grid-template-columns:1fr 1fr;gap:.9rem;margin-top:.9rem}
     .card{background:var(--card);border:1px solid var(--border);border-radius:12px;padding:.85rem;box-shadow:0 8px 26px var(--shadow)}
     .title{font-weight:700;font-size:1rem;margin:0 0 .7rem}
     input,select{width:100%;padding:.58rem .65rem;border:1px solid var(--border);border-radius:9px;background:transparent;color:var(--text)}
@@ -648,10 +722,10 @@ def _build_app(
     .dataset-item:last-child{border-bottom:none}
     .dataset-item:hover,.dataset-item.active{background:color-mix(in srgb, var(--accent) 12%, transparent)}
     .k{color:var(--muted);font-size:.84rem}
-    .v{word-break:break-all}
-    .row{display:grid;grid-template-columns:130px 1fr;gap:.5rem;margin:.42rem 0}
+    .v{word-break:normal;overflow-wrap:anywhere;line-break:auto}
+    .row{display:grid;grid-template-columns:minmax(120px,160px) minmax(0,1fr);gap:.5rem;margin:.42rem 0;align-items:start}
     .status.ok{color:var(--ok)} .status.warn{color:var(--warn)}
-    table{width:100%;border-collapse:collapse;font-size:.92rem}
+    table{width:100%;border-collapse:collapse;font-size:.9rem}
     th,td{padding:.5rem;border-bottom:1px solid var(--border);text-align:left;vertical-align:top}
     th{font-size:.8rem;color:var(--muted);text-transform:uppercase;letter-spacing:.03em}
     .toolbar{display:flex;gap:.5rem;margin:.55rem 0}
@@ -659,7 +733,11 @@ def _build_app(
     .empty,.error,.loading{padding:.7rem;border:1px dashed var(--border);border-radius:8px;color:var(--muted)}
     .error{color:var(--warn)}
     .retry{margin-top:.6rem;padding:.45rem .65rem;border:1px solid var(--border);border-radius:8px;background:transparent;color:var(--text);cursor:pointer}
+    .diag pre{max-height:28vh;overflow:auto;border:1px solid var(--border);padding:.5rem;border-radius:8px;background:color-mix(in srgb, var(--card) 75%, transparent)}
+    .mono{font-family:ui-monospace,SFMono-Regular,Menlo,monospace}
+    .tiny{font-size:.8rem;color:var(--muted)}
     @media (max-width:1200px){.grid{grid-template-columns:1fr}}
+    @media (max-width:1200px){.grid-diag{grid-template-columns:1fr}}
   </style>
 </head>
 <body>
@@ -694,7 +772,7 @@ def _build_app(
       <section class="card">
         <div class="title">Scenarios</div>
         <div class="toolbar">
-          <input id="scenarioSearch" type="search" placeholder="Filter scenarios by name/description" disabled>
+          <input id="scenarioSearch" type="search" placeholder="Filter by name/description/token" disabled>
           <select id="scenarioSort" disabled>
             <option value="name">Sort: name</option>
             <option value="nbr_samples">Sort: frame count</option>
@@ -702,9 +780,32 @@ def _build_app(
         </div>
         <div id="scenarioState" class="empty">Select a dataset to load scenarios.</div>
         <div id="scenarioPanel" style="display:none;max-height:65vh;overflow:auto">
+          <div id="scenarioMeta" class="tiny" style="margin-bottom:.5rem"></div>
           <table>
-            <thead><tr><th>name</th><th>description</th><th>frames</th></tr></thead>
+            <thead><tr><th>name</th><th>token</th><th>description</th><th>frames</th><th>actions</th></tr></thead>
             <tbody id="scenarioRows"></tbody>
+          </table>
+        </div>
+      </section>
+    </div>
+    <div class="grid-diag">
+      <section class="card diag">
+        <div class="title">Server Diagnostics</div>
+        <div id="diagState" class="loading">Loading diagnostics...</div>
+        <pre id="diagJson" style="display:none"></pre>
+      </section>
+      <section class="card">
+        <div class="title">Frame Summary</div>
+        <div class="toolbar">
+          <input id="frameOffset" type="number" min="0" value="0" placeholder="offset" disabled>
+          <input id="frameLimit" type="number" min="1" max="500" value="50" placeholder="limit" disabled>
+          <button class="retry" id="loadFramesBtn" disabled>Load</button>
+        </div>
+        <div id="frameState" class="empty">Select a scenario action to load frame summaries.</div>
+        <div id="framePanel" style="display:none;max-height:42vh;overflow:auto">
+          <table>
+            <thead><tr><th>idx</th><th>timestamp_us</th><th>sample_token</th><th>render</th></tr></thead>
+            <tbody id="frameRows"></tbody>
           </table>
         </div>
       </section>
@@ -716,7 +817,9 @@ def _build_app(
       dataDir: "",
       datasets: [],
       selectedId: null,
-      scenarios: []
+      scenarios: [],
+      selectedScenario: null,
+      scenarioMeta: { total_scenarios: 0, total_frames: 0, min_frames: 0, max_frames: 0 }
     };
 
     function setDatasetCount(n){ el("datasetCount").textContent = String(n); }
@@ -758,7 +861,9 @@ def _build_app(
       el("detailsPanel").style.display = "block";
       el("dId").innerHTML = `<code>${id}</code>`;
       el("dAvail").innerHTML = avail ? '<span class="status ok">available</span>' : '<span class="status warn">not found</span>';
-      el("dPath").innerHTML = path ? `<code>${path}</code>` : '<span class="muted">(none)</span>';
+      el("dPath").innerHTML = path
+        ? `<code style="display:block;max-width:100%;overflow:auto;white-space:nowrap">${path}</code>`
+        : '<span class="muted">(none)</span>';
       const qs = `?t4dataset_id=${encodeURIComponent(id)}`;
       el("dLinks").innerHTML =
         `<a href="/datasets/${encodeURIComponent(id)}/availability" target="_blank" rel="noopener">availability</a> · ` +
@@ -777,12 +882,16 @@ def _build_app(
       if (btn) btn.onclick = () => selectDataset(id);
     }
 
-    function renderScenarios(list){
+    function renderScenarios(list, meta){
       const q = el("scenarioSearch").value.trim().toLowerCase();
       const sortBy = el("scenarioSort").value;
       let rows = list.slice();
       if (q){
-        rows = rows.filter((s) => (s.name || "").toLowerCase().includes(q) || (s.description || "").toLowerCase().includes(q));
+        rows = rows.filter((s) =>
+          (s.name || "").toLowerCase().includes(q) ||
+          (s.description || "").toLowerCase().includes(q) ||
+          (s.token || "").toLowerCase().includes(q)
+        );
       }
       rows.sort((a,b) => sortBy === "nbr_samples"
         ? (Number(b.nbr_samples || 0) - Number(a.nbr_samples || 0))
@@ -790,14 +899,88 @@ def _build_app(
       );
       const tbody = el("scenarioRows");
       if (!rows.length){
-        tbody.innerHTML = `<tr><td colspan="3" class="muted">No scenarios match current filter.</td></tr>`;
+        tbody.innerHTML = `<tr><td colspan="5" class="muted">No scenarios match current filter.</td></tr>`;
       } else {
         tbody.innerHTML = rows.map((s) =>
-          `<tr><td><code>${s.name || ""}</code></td><td>${s.description || ""}</td><td>${s.nbr_samples ?? 0}</td></tr>`
+          `<tr>
+            <td><code>${s.name || ""}</code></td>
+            <td class="mono">${s.token || ""}</td>
+            <td>${s.description || ""}</td>
+            <td>${s.nbr_samples ?? 0}</td>
+            <td>
+              <a href="#" data-scenario="${encodeURIComponent(s.name || "")}" class="load-frames">frames</a> ·
+              <a href="/render/html?t4dataset_id=${encodeURIComponent(state.selectedId)}&scenario_name=${encodeURIComponent(s.name || "")}&frame_index=0" target="_blank" rel="noopener">render</a>
+            </td>
+          </tr>`
         ).join("");
       }
+      const totalScenarios = meta && Number(meta.total_scenarios || 0);
+      const totalFrames = meta && Number(meta.total_frames || 0);
+      const minFrames = meta && Number(meta.min_frames || 0);
+      const maxFrames = meta && Number(meta.max_frames || 0);
+      el("scenarioMeta").textContent =
+        `total_scenarios=${totalScenarios} total_frames=${totalFrames} min_frames=${minFrames} max_frames=${maxFrames}`;
       el("scenarioState").style.display = "none";
       el("scenarioPanel").style.display = "block";
+      tbody.querySelectorAll(".load-frames").forEach((n) => {
+        n.addEventListener("click", async (ev) => {
+          ev.preventDefault();
+          const scenario = decodeURIComponent(n.dataset.scenario || "");
+          state.selectedScenario = scenario;
+          await loadFrameSummary();
+        });
+      });
+    }
+
+    async function loadFrameSummary(){
+      if (!state.selectedId || !state.selectedScenario){
+        return;
+      }
+      const offset = Math.max(0, Number(el("frameOffset").value || 0));
+      const limit = Math.max(1, Math.min(500, Number(el("frameLimit").value || 50)));
+      el("frameState").className = "loading";
+      el("frameState").style.display = "block";
+      el("framePanel").style.display = "none";
+      el("frameState").textContent =
+        `Loading frames for ${state.selectedScenario} (offset=${offset}, limit=${limit})...`;
+      try {
+        const data = await getJson(
+          `/datasets/${encodeURIComponent(state.selectedId)}/scenarios/${encodeURIComponent(state.selectedScenario)}/frames/summary?offset=${offset}&limit=${limit}`
+        );
+        const rows = Array.isArray(data.frames) ? data.frames : [];
+        const tbody = el("frameRows");
+        if (!rows.length){
+          tbody.innerHTML = `<tr><td colspan="4" class="muted">No frame rows in selected window.</td></tr>`;
+        } else {
+          tbody.innerHTML = rows.map((f) =>
+            `<tr>
+              <td>${f.frame_index ?? ""}</td>
+              <td>${f.timestamp_us ?? ""}</td>
+              <td class="mono">${f.sample_token ?? ""}</td>
+              <td><a href="/render/html?t4dataset_id=${encodeURIComponent(state.selectedId)}&scenario_name=${encodeURIComponent(state.selectedScenario)}&frame_index=${encodeURIComponent(String(f.frame_index ?? 0))}" target="_blank" rel="noopener">open</a></td>
+            </tr>`
+          ).join("");
+        }
+        el("frameState").style.display = "none";
+        el("framePanel").style.display = "block";
+      } catch (err) {
+        el("framePanel").style.display = "none";
+        el("frameState").className = "error";
+        el("frameState").style.display = "block";
+        el("frameState").textContent = `Failed to load frame summary: ${err.message}`;
+      }
+    }
+
+    async function loadDiagnostics(){
+      try {
+        const data = await getJson("/browser/diagnostics");
+        el("diagState").style.display = "none";
+        el("diagJson").style.display = "block";
+        el("diagJson").textContent = JSON.stringify(data, null, 2);
+      } catch (err) {
+        el("diagState").className = "error";
+        el("diagState").textContent = `Failed to load diagnostics: ${err.message}`;
+      }
     }
 
     async function selectDataset(id){
@@ -815,6 +998,10 @@ def _build_app(
       el("scenarioState").textContent = "Loading scenarios...";
       el("scenarioSearch").disabled = true;
       el("scenarioSort").disabled = true;
+      el("frameOffset").disabled = true;
+      el("frameLimit").disabled = true;
+      el("loadFramesBtn").disabled = true;
+      state.selectedScenario = null;
 
       try {
         const avail = await getJson(`/datasets/${encodeURIComponent(id)}/availability`);
@@ -826,9 +1013,13 @@ def _build_app(
       try {
         const data = await getJson(`/datasets/${encodeURIComponent(id)}/scenarios`);
         state.scenarios = Array.isArray(data.scenarios) ? data.scenarios : [];
+        state.scenarioMeta = data || { total_scenarios: 0, total_frames: 0, min_frames: 0, max_frames: 0 };
         el("scenarioSearch").disabled = false;
         el("scenarioSort").disabled = false;
-        renderScenarios(state.scenarios);
+        el("frameOffset").disabled = false;
+        el("frameLimit").disabled = false;
+        el("loadFramesBtn").disabled = false;
+        renderScenarios(state.scenarios, state.scenarioMeta);
       } catch (err) {
         el("scenarioPanel").style.display = "none";
         el("scenarioState").className = "error";
@@ -863,11 +1054,13 @@ def _build_app(
         const btn = el("retryDatasets");
         if (btn) btn.onclick = () => init();
       }
+      await loadDiagnostics();
     }
 
     el("datasetSearch").addEventListener("input", filterDatasets);
-    el("scenarioSearch").addEventListener("input", () => renderScenarios(state.scenarios));
-    el("scenarioSort").addEventListener("change", () => renderScenarios(state.scenarios));
+    el("scenarioSearch").addEventListener("input", () => renderScenarios(state.scenarios, state.scenarioMeta));
+    el("scenarioSort").addEventListener("change", () => renderScenarios(state.scenarios, state.scenarioMeta));
+    el("loadFramesBtn").addEventListener("click", () => loadFrameSummary());
     init();
   </script>
 </body>
@@ -901,6 +1094,7 @@ def _build_app(
             ("Health", "/health"),
             ("Dataset Browser", "/datasets/browser"),
             ("Datasets", "/datasets"),
+            ("Browser Diagnostics", "/browser/diagnostics"),
             ("OpenAPI JSON", "/openapi.json"),
             ("Swagger UI", "/docs"),
             ("ReDoc", "/redoc"),
@@ -956,26 +1150,32 @@ def _build_app(
 
     @app.get("/health")
     def health():
-        return {"status": "ok"}
+        return {
+            "status": "ok",
+            "visibility_mode": "debug" if _debug_visibility else "public",
+        }
 
     @app.get("/datasets")
     def list_datasets():
-        """Return dataset IDs visible under the configured data_dir."""
+        """Return dataset IDs plus discovery diagnostics under the configured data_dir."""
         resolved = str(data_dir.resolve())
         try:
-            top_level_dirs = sorted(
+            all_top_level_dirs = sorted(
                 p.name for p in data_dir.iterdir()
                 if p.is_dir() and not p.name.startswith(".")
-            )[:32]
+            )
         except OSError:
-            top_level_dirs = []
+            all_top_level_dirs = []
+        top_level_dirs = all_top_level_dirs[:32]
+        top_level_dir_count = len(all_top_level_dirs)
         ann_present = (data_dir / "annotation_dataset").is_dir()
         if not data_dir.exists():
             out: Dict[str, object] = {
                 "data_dir": str(data_dir),
-                "data_dir_resolved": resolved,
+                "data_dir_resolved": resolved if _debug_visibility else "(redacted)",
                 "datasets": [],
                 "top_level_dirs": [],
+                "top_level_dir_count": 0,
                 "annotation_dataset_present": False,
                 "hint": "data_dir does not exist on this host — check --data-dir.",
             }
@@ -987,10 +1187,16 @@ def _build_app(
             uniq = []
         payload: Dict[str, object] = {
             "data_dir": str(data_dir),
-            "data_dir_resolved": resolved,
+            "data_dir_resolved": resolved if _debug_visibility else "(redacted)",
             "datasets": uniq,
             "top_level_dirs": top_level_dirs,
+            "top_level_dir_count": top_level_dir_count,
             "annotation_dataset_present": ann_present,
+            "runtime": {
+                "search_depth": search_depth,
+                "dataset_path_cache_ttl_s": dataset_path_cache_ttl_s,
+                "visibility_mode": "debug" if _debug_visibility else "public",
+            },
         }
         if not uniq:
             if not top_level_dirs:
@@ -1033,7 +1239,7 @@ def _build_app(
             return DatasetAvailabilityResponse(
                 t4dataset_id=t4dataset_id,
                 available=True,
-                dataset_path=str(found.resolve()),
+                dataset_path=str(found.resolve()) if _debug_visibility else None,
             )
         return DatasetAvailabilityResponse(
             t4dataset_id=t4dataset_id,
@@ -1059,13 +1265,130 @@ def _build_app(
             t4 = _cache.load(dataset_path, version=version)
             raw = list_scene_summaries(t4)
         except Exception as exc:
-            raise HTTPException(status_code=500, detail=str(exc)) from exc
+            _safe_error(
+                status_code=500,
+                code="scenarios_list_failed",
+                message="Failed to list scenarios for dataset.",
+                exc=exc,
+            )
+
+        frames = [int(row.get("nbr_samples") or 0) for row in raw]
+        total_frames = sum(frames)
 
         return ScenariosListResponse(
             t4dataset_id=t4dataset_id,
             scenarios=[ScenarioOut(**row) for row in raw],
             version=version,
+            total_scenarios=len(raw),
+            total_frames=total_frames,
+            min_frames=min(frames) if frames else 0,
+            max_frames=max(frames) if frames else 0,
         )
+
+    @app.get(
+        "/browser/diagnostics",
+        tags=["server"],
+        summary="Diagnostics for dataset browser and server runtime",
+    )
+    def browser_diagnostics():
+        now_iso = datetime.datetime.now(datetime.timezone.utc).isoformat()
+        tier4_stats = _cache.stats()
+        if not _debug_visibility:
+            tier4_stats["keys"] = [f"{len(tier4_stats.get('keys', []))} dataset(s) cached"]
+        out: Dict[str, object] = {
+            "status": "ok",
+            "timestamp_utc": now_iso,
+            "visibility_mode": "debug" if _debug_visibility else "public",
+            "runtime": {
+                "search_depth": search_depth,
+                "dataset_path_cache_ttl_s": dataset_path_cache_ttl_s,
+                "tier4_cache_size_limit": tier4_cache_size,
+            },
+            "caches": {
+                "dataset_path_cache": _path_cache.stats(),
+                "tier4_cache": tier4_stats,
+            },
+        }
+        if _debug_visibility:
+            out["runtime"]["data_dir"] = str(data_dir)
+            out["runtime"]["data_dir_resolved"] = str(data_dir.resolve())
+        return out
+
+    @app.get(
+        "/datasets/{t4dataset_id}/scenarios/{scenario_name}/frames/summary",
+        tags=["datasets"],
+        summary="List lightweight frame metadata for one scenario",
+    )
+    def scenario_frames_summary(
+        t4dataset_id: str,
+        scenario_name: str,
+        version: Optional[str] = None,
+        offset: int = Query(0, ge=0),
+        limit: int = Query(100, ge=1, le=1000),
+    ):
+        dataset_path = _resolve_dataset(t4dataset_id)
+        from t4_visualizer.visualize import list_scene_summaries
+
+        try:
+            t4 = _cache.load(dataset_path, version=version)
+            scenes = list_scene_summaries(t4)
+            scene_meta = next((s for s in scenes if s.get("name") == scenario_name), None)
+            if scene_meta is None:
+                _public_error(
+                    status_code=404,
+                    code="scenario_not_found",
+                    message=f"Scenario '{scenario_name}' was not found.",
+                    hint="Call GET /datasets/{id}/scenarios to inspect valid scenario names.",
+                )
+            total = int(scene_meta.get("nbr_samples") or 0)
+            rows = []
+            if offset < total:
+                token = next((s.first_sample_token for s in t4.scene if s.name == scenario_name), None)
+                if token is None:
+                    _public_error(
+                        status_code=404,
+                        code="scenario_first_sample_missing",
+                        message=f"Scenario '{scenario_name}' has no first sample token.",
+                    )
+                idx = 0
+                while idx < offset and token:
+                    sample = t4.get("sample", token)
+                    token = sample.next or None
+                    idx += 1
+                remaining = min(limit, max(0, total - offset))
+                for i in range(remaining):
+                    if not token:
+                        break
+                    sample = t4.get("sample", token)
+                    rows.append(
+                        {
+                            "frame_index": offset + i,
+                            "sample_token": str(sample.token),
+                            "timestamp_us": int(sample.timestamp),
+                            "has_next": bool(getattr(sample, "next", None)),
+                            "has_prev": bool(getattr(sample, "prev", None)),
+                        }
+                    )
+                    token = sample.next or None
+        except HTTPException:
+            raise
+        except Exception as exc:
+            _safe_error(
+                status_code=500,
+                code="frame_summary_failed",
+                message="Failed to list frame summary for scenario.",
+                exc=exc,
+            )
+
+        return {
+            "t4dataset_id": t4dataset_id,
+            "scenario_name": scenario_name,
+            "version": version,
+            "offset": offset,
+            "limit": limit,
+            "total_frames": total,
+            "frames": rows,
+        }
 
     @app.post("/render", response_model=RenderResponse)
     def render_post(body: RenderRequest):
@@ -1248,6 +1571,15 @@ def _parse_args(argv=None):
         "--reload", action="store_true", default=False,
         help="Enable uvicorn auto-reload (development only).",
     )
+    parser.add_argument(
+        "--visibility-mode",
+        choices=("public", "debug"),
+        default="public",
+        help=(
+            "Field visibility in JSON responses: "
+            "'public' redacts sensitive host paths; 'debug' exposes internals."
+        ),
+    )
     return parser.parse_args(argv)
 
 
@@ -1271,6 +1603,7 @@ def main(argv=None):
     print(f"  Data directory : {data_dir}")
     print(f"  Search depth   : {args.search_depth}")
     print(f"  Tier4 cache    : {args.tier4_cache} datasets")
+    print(f"  Visibility mode: {args.visibility_mode}")
     ttl = args.dataset_path_cache_ttl
     print(
         f"  Path lookup cache: "
@@ -1283,6 +1616,7 @@ def main(argv=None):
         search_depth=args.search_depth,
         tier4_cache_size=args.tier4_cache,
         dataset_path_cache_ttl_s=ttl,
+        visibility_mode=args.visibility_mode,
     )
 
     uvicorn.run(
