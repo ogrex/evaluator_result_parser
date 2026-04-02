@@ -1,0 +1,467 @@
+<!DOCTYPE html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>T4 Three.js Viewer</title>
+<style>
+  :root{--bg:#060812;--panel:#0f1324cc;--text:#e8edff;--muted:#9aa6d4;--accent:#6ea8ff;--ok:#4bd08d;}
+  html,body{margin:0;height:100%;background:radial-gradient(1200px 600px at 20% 0%,#1a2552 0%,#060812 65%);color:var(--text);font-family:ui-sans-serif,system-ui,sans-serif;}
+  #app{display:grid;grid-template-rows:auto 1fr;height:100%;}
+  .top{display:flex;gap:.7rem;align-items:center;padding:.7rem .9rem;background:var(--panel);backdrop-filter:blur(8px);border-bottom:1px solid #24315f;}
+  .pill{font-size:.82rem;color:var(--muted)}
+  .controls{display:flex;gap:.45rem;align-items:center;flex-wrap:wrap}
+  button,input[type=range],select{background:#111a35;color:var(--text);border:1px solid #2a3d78;border-radius:8px;padding:.3rem .5rem}
+  #canvasWrap{position:relative;min-height:0}
+  #canvas{width:100%;height:100%;display:block}
+  #hud{position:absolute;right:12px;top:12px;background:var(--panel);border:1px solid #2b3f7d;border-radius:10px;padding:.6rem;min-width:260px}
+  #status{font-size:.82rem;color:var(--muted)}
+  a{color:var(--accent)}
+</style>
+</head><body><div id="app">
+  <div class="top">
+    <strong>Three.js Viewer</strong>
+    <span class="pill">dataset=<code>__DATASET_ID__</code></span>
+    <span class="pill">scenario=<code>__SCENARIO_NAME__</code></span>
+    <div class="controls">
+      <button id="playBtn">Play</button>
+      <label>speed <select id="speed"><option>0.25</option><option>0.5</option><option selected>1</option><option>2</option><option>4</option></select>x</label>
+      <button id="camReset">Reset Cam</button>
+      <button id="camTop">Top</button>
+      <button id="camFollow">Follow</button>
+      <button id="toggleOverlay2d">Cam Viewport</button>
+      <select id="overlayCamera" style="min-width:150px"></select>
+      <input id="slider" type="range" min="0" max="0" value="0" />
+      <span id="frameTxt">frame 0/0</span>
+    </div>
+    <a href="/datasets/browser">Back</a>
+  </div>
+  <div id="canvasWrap"><canvas id="canvas"></canvas>
+    <div id="overlayWrap" style="position:absolute;left:12px;bottom:12px;width:min(46vw,820px);height:min(40vh,360px);display:none;border:1px solid #2b3f7d;border-radius:10px;overflow:hidden;background:#090d1a">
+      <canvas id="overlayCanvas" style="width:100%;height:100%;display:block"></canvas>
+    </div>
+    <div id="hud">
+      <div id="status">loading...</div>
+      <div id="meta"></div>
+      <hr style="border-color:#24315f;opacity:.6">
+      <div style="display:grid;gap:.4rem;font-size:.82rem">
+        <div>projection: <strong id="projMode">perspective</strong></div>
+        <label>point size <input id="pointSize" type="range" min="0.02" max="0.25" step="0.01" value="0.08"></label>
+        <label>point opacity <input id="pointOpacity" type="range" min="0.2" max="1.0" step="0.05" value="0.95"></label>
+        <label>intensity gain <input id="intensityGain" type="range" min="0.4" max="2.5" step="0.1" value="1.0"></label>
+        <label>box opacity <input id="boxOpacity" type="range" min="0.2" max="1.0" step="0.05" value="0.9"></label>
+      </div>
+    </div>
+  </div>
+</div>
+<script type="importmap">{"imports":{"three":"https://esm.sh/three@0.161.0","three/addons/":"https://esm.sh/three@0.161.0/examples/jsm/"}}</script>
+<script type="module">
+import * as THREE from "three";
+import { OrbitControls } from "three/addons/controls/OrbitControls.js";
+
+const params = new URLSearchParams("__QS__");
+const dataset = params.get("t4dataset_id");
+const scenario = params.get("scenario_name");
+const startFrame = Number(params.get("frame_index") || "0");
+const version = params.get("version");
+const qv = version ? `&version=${encodeURIComponent(version)}` : "";
+const metaUrl = `/viewer/three/meta?t4dataset_id=${encodeURIComponent(dataset)}&scenario_name=${encodeURIComponent(scenario)}${qv}`;
+
+const canvas = document.getElementById("canvas");
+const renderer = new THREE.WebGLRenderer({canvas, antialias:true});
+renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
+renderer.setSize(canvas.clientWidth || window.innerWidth, canvas.clientHeight || (window.innerHeight-64), false);
+renderer.outputColorSpace = THREE.SRGBColorSpace;
+const scene = new THREE.Scene();
+scene.fog = new THREE.Fog(0x070b16, 90, 230);
+const perspCamera = new THREE.PerspectiveCamera(74, 1, 0.1, 1000);
+const orthoCamera = new THREE.OrthographicCamera(-20, 20, 20, -20, 0.1, 1000);
+let camera = perspCamera;
+camera.position.set(-12, -8, 4.5);
+camera.up.set(0, 0, 1);
+const controls = new OrbitControls(camera, renderer.domElement);
+controls.target.set(0,0,0); controls.update();
+scene.add(new THREE.AmbientLight(0x8aa6ff, 0.7));
+const dl = new THREE.DirectionalLight(0xffffff, 0.9); dl.position.set(12, -10, 30); scene.add(dl);
+const grid = new THREE.GridHelper(180, 90, 0x2b3a6f, 0x1a2342);
+grid.rotation.x = Math.PI / 2; // XY ground plane (z-up)
+scene.add(grid);
+
+const pointsGeom = new THREE.BufferGeometry();
+const pointsMat = new THREE.PointsMaterial({size:0.08, vertexColors:true, transparent:true, opacity:0.95});
+const pointsObj = new THREE.Points(pointsGeom, pointsMat);
+scene.add(pointsObj);
+const boxesGroup = new THREE.Group(); scene.add(boxesGroup);
+const egoAxes = new THREE.AxesHelper(2.8); scene.add(egoAxes);
+const egoBody = new THREE.Mesh(
+  new THREE.BoxGeometry(4.6, 1.9, 1.6),
+  new THREE.MeshBasicMaterial({color:0x6ea8ff, wireframe:true, transparent:true, opacity:0.45})
+);
+egoBody.position.set(0,0,0.8); scene.add(egoBody);
+const cache = new Map(); const MAX_CACHE = 28;
+let totalFrames = 0; let playing = false; let frame = startFrame; let fps = 6;
+let lastFrameTs = 0;
+let followEgo = true;
+let intensityGain = 1.0;
+let overlayEnabled = false;
+let overlayData = null;
+let overlayTexture = null;
+let overlayImageKey = "";
+const overlayTextureCache = new Map();
+
+const overlayCanvas = document.getElementById("overlayCanvas");
+const overlayRenderer = new THREE.WebGLRenderer({canvas: overlayCanvas, antialias:true, alpha:true});
+overlayRenderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
+overlayRenderer.outputColorSpace = THREE.SRGBColorSpace;
+overlayRenderer.toneMapping = THREE.NoToneMapping;
+const overlayScene = new THREE.Scene();
+const overlayCamera3d = new THREE.OrthographicCamera(-1, 1, 1, -1, 0.1, 10);
+overlayCamera3d.position.set(0,0,2);
+const overlayImgMesh = new THREE.Mesh(
+  new THREE.PlaneGeometry(2,2),
+  new THREE.MeshBasicMaterial({color:0xffffff, toneMapped:false})
+);
+overlayScene.add(overlayImgMesh);
+const overlayBoxes = new THREE.Group(); overlayScene.add(overlayBoxes);
+
+const slider = document.getElementById("slider");
+const frameTxt = document.getElementById("frameTxt");
+const statusEl = document.getElementById("status");
+const metaEl = document.getElementById("meta");
+function setStatus(t){ statusEl.textContent = t; }
+function setFrameText(){ frameTxt.textContent = `frame ${frame}/${Math.max(0,totalFrames-1)}`; slider.value = String(frame); }
+
+function readFloat32Copied(buf, off, count){
+  const bytes = new Uint8Array(buf, off, count * 4);
+  const copied = new Uint8Array(bytes.length);
+  copied.set(bytes);
+  return new Float32Array(copied.buffer);
+}
+
+function parseFrameBuffer(buf){
+  const dv = new DataView(buf);
+  const magic = new TextDecoder().decode(new Uint8Array(buf, 0, 8));
+  if (magic !== "T4V3D001" && magic !== "T4V3D002") throw new Error(`unexpected format ${magic}`);
+  const frameIndex = dv.getUint32(12, true);
+  const timestampUs = Number(dv.getBigUint64(16, true));
+  const pointCount = dv.getUint32(24, true);
+  const boxCount = dv.getUint32(28, true);
+  const tokenLen = dv.getUint16(32, true);
+  let off = 34;
+  const sampleToken = new TextDecoder().decode(new Uint8Array(buf, off, tokenLen)); off += tokenLen;
+  const pts = readFloat32Copied(buf, off, pointCount * 4); off += pointCount * 16;
+  const boxStride = magic === "T4V3D002" ? 24 : 7;
+  const boxes = readFloat32Copied(buf, off, boxCount * boxStride); off += boxCount * boxStride * 4;
+  const labelLen = dv.getUint32(off, true); off += 4;
+  const labels = JSON.parse(new TextDecoder().decode(new Uint8Array(buf, off, labelLen)));
+  return { frameIndex, timestampUs, sampleToken, pointCount, boxCount, pts, boxes, labels, format: magic };
+}
+
+async function fetchFrame(i){
+  if (cache.has(i)) return cache.get(i);
+  const url = `/viewer/three/frame.bin?t4dataset_id=${encodeURIComponent(dataset)}&scenario_name=${encodeURIComponent(scenario)}&frame_index=${i}${qv}`;
+  const res = await fetch(url);
+  if (!res.ok) throw new Error(`frame ${i}: HTTP ${res.status}`);
+  const parsed = parseFrameBuffer(await res.arrayBuffer());
+  cache.set(i, parsed);
+  if (cache.size > MAX_CACHE) {
+    const k = cache.keys().next().value;
+    cache.delete(k);
+  }
+  return parsed;
+}
+
+async function fetchCameraOverlay(i){
+  if (!overlayEnabled) return null;
+  const camSel = document.getElementById("overlayCamera");
+  const selected = camSel && camSel.value ? camSel.value : "";
+  const allMode = selected === "__ALL__";
+  const cam = selected && !allMode ? `&camera=${encodeURIComponent(selected)}` : "";
+  const allFlag = allMode ? "&all_cameras=true" : "";
+  const url = `/viewer/three/camera-overlay?t4dataset_id=${encodeURIComponent(dataset)}&scenario_name=${encodeURIComponent(scenario)}&frame_index=${i}${qv}${cam}${allFlag}&show_annotations=true`;
+  const res = await fetch(url);
+  if (!res.ok) throw new Error(`camera overlay HTTP ${res.status}`);
+  return await res.json();
+}
+
+function ensureOverlayCameraOptions(payload){
+  const sel = document.getElementById("overlayCamera");
+  const cams = Array.isArray(payload.available_cameras) ? payload.available_cameras : [];
+  if (!sel || !cams.length) return;
+  const prev = sel.value;
+  sel.innerHTML = ['<option value="__ALL__">ALL CAMERAS</option>']
+    .concat(cams.map((c) => `<option value="${c}">${c}</option>`))
+    .join("");
+  if (prev === "__ALL__") sel.value = "__ALL__";
+  else sel.value = cams.includes(prev) ? prev : (payload.camera || cams[0]);
+}
+
+function renderCameraOverlay(payload){
+  overlayData = payload;
+  const wrap = document.getElementById("overlayWrap");
+  if (!wrap || wrap.style.display === "none") return;
+  const selected = (document.getElementById("overlayCamera") || {value:""}).value;
+  const allMode = selected === "__ALL__";
+  overlayCanvas.style.display = "block";
+  const w = wrap.clientWidth || 640;
+  const h = wrap.clientHeight || 360;
+  overlayRenderer.setSize(w, h, false);
+  while (overlayScene.children.length) overlayScene.remove(overlayScene.children[0]);
+  const rows = allMode
+    ? (Array.isArray(payload.cameras_payload) ? payload.cameras_payload : [payload])
+    : [payload];
+  const n = Math.max(1, rows.length);
+  const cols = Math.ceil(Math.sqrt(n));
+  const tileW = 2 / cols;
+  const tileH = 2 / cols;
+  for (let i = 0; i < rows.length; i++) {
+    const p = rows[i];
+    const r = Math.floor(i / cols);
+    const c = i % cols;
+    const cx = -1 + tileW * c + tileW / 2;
+    const cy = 1 - tileH * r - tileH / 2;
+    const iw = Math.max(1, Number(p.width || 1));
+    const ih = Math.max(1, Number(p.height || 1));
+    const imgAspect = iw / ih;
+    const tileAspect = (w * tileW / 2) / (h * tileH / 2);
+    let sx = tileW, sy = tileH;
+    if (imgAspect > tileAspect) sy = tileW / imgAspect;
+    else sx = tileH * imgAspect;
+
+    const key = `${p.sample_token || payload.sample_token || ""}:${p.camera || ""}:${p.image_format || ""}:${(p.image_base64 || "").length}`;
+    let tex = overlayTextureCache.get(key);
+    if (!tex) {
+      const img = new Image();
+      img.src = `data:${p.image_format === "png" ? "image/png" : "image/jpeg"};base64,${p.image_base64 || ""}`;
+      tex = new THREE.Texture(img);
+      tex.colorSpace = THREE.SRGBColorSpace;
+      tex.needsUpdate = true;
+      overlayTextureCache.set(key, tex);
+      if (overlayTextureCache.size > 24) {
+        const first = overlayTextureCache.keys().next().value;
+        const old = overlayTextureCache.get(first);
+        if (old) old.dispose();
+        overlayTextureCache.delete(first);
+      }
+    }
+    const plane = new THREE.Mesh(
+      new THREE.PlaneGeometry(sx, sy),
+      new THREE.MeshBasicMaterial({map: tex, color:0xffffff, toneMapped:false})
+    );
+    plane.position.set(cx, cy, 0);
+    overlayScene.add(plane);
+
+    const bxs = Array.isArray(p.boxes_2d) ? p.boxes_2d : [];
+    for (const b of bxs) {
+      const nx0 = ((b.x0 / iw) - 0.5) * sx + cx;
+      const nx1 = ((b.x1 / iw) - 0.5) * sx + cx;
+      const ny0 = (0.5 - (b.y0 / ih)) * sy + cy;
+      const ny1 = (0.5 - (b.y1 / ih)) * sy + cy;
+      const pts = [nx0,ny0,0, nx1,ny0,0, nx1,ny1,0, nx0,ny1,0, nx0,ny0,0];
+      const g = new THREE.BufferGeometry();
+      g.setAttribute("position", new THREE.Float32BufferAttribute(pts, 3));
+      const m = new THREE.LineBasicMaterial({color:0xff5ec4, transparent:true, opacity:0.95});
+      overlayScene.add(new THREE.Line(g, m));
+    }
+  }
+  overlayRenderer.render(overlayScene, overlayCamera3d);
+}
+
+async function prefetchAround(i){
+  const tasks = [];
+  for (let d = 1; d <= 3; d++) {
+    for (const j of [i + d, i - d]) {
+      if (j >= 0 && j < totalFrames && !cache.has(j)) {
+        tasks.push(fetchFrame(j).catch(() => null));
+      }
+    }
+  }
+  await Promise.all(tasks);
+}
+
+function setFrameData(data){
+  const pos = new Float32Array(data.pointCount * 3);
+  const col = new Float32Array(data.pointCount * 3);
+  for (let i=0;i<data.pointCount;i++) {
+    const x = data.pts[i*4], y=data.pts[i*4+1], z=data.pts[i*4+2], inten=data.pts[i*4+3];
+    pos[i*3]=x; pos[i*3+1]=y; pos[i*3+2]=z;
+    const t = Math.max(0, Math.min(1, inten * intensityGain));
+    col[i*3]=0.15+0.85*t; col[i*3+1]=0.35+0.5*(1-t); col[i*3+2]=1.0-0.6*t;
+  }
+  pointsGeom.setAttribute("position", new THREE.BufferAttribute(pos, 3));
+  pointsGeom.setAttribute("color", new THREE.BufferAttribute(col, 3));
+  pointsGeom.computeBoundingSphere();
+  while (boxesGroup.children.length) boxesGroup.remove(boxesGroup.children[0]);
+  const edges = [
+    [0,1],[1,2],[2,3],[3,0],
+    [4,5],[5,6],[6,7],[7,4],
+    [0,4],[1,5],[2,6],[3,7]
+  ];
+  for (let i=0;i<data.boxCount;i++) {
+    if (data.format === "T4V3D002") {
+      const base = i * 24;
+      const linePts = [];
+      for (const [a,b] of edges) {
+        const a0 = base + a * 3;
+        const b0 = base + b * 3;
+        linePts.push(
+          data.boxes[a0], data.boxes[a0 + 1], data.boxes[a0 + 2],
+          data.boxes[b0], data.boxes[b0 + 1], data.boxes[b0 + 2]
+        );
+      }
+      const g = new THREE.BufferGeometry();
+      g.setAttribute("position", new THREE.Float32BufferAttribute(linePts, 3));
+      const m = new THREE.LineBasicMaterial({
+        color:0xffd166, transparent:true,
+        opacity:Number(document.getElementById("boxOpacity").value || "0.9")
+      });
+      const lines = new THREE.LineSegments(g, m);
+      boxesGroup.add(lines);
+    } else {
+      const cx=data.boxes[i*7], cy=data.boxes[i*7+1], cz=data.boxes[i*7+2];
+      const sx=data.boxes[i*7+3], sy=data.boxes[i*7+4], sz=data.boxes[i*7+5], yaw=data.boxes[i*7+6];
+      const g = new THREE.BoxGeometry(sx, sy, sz);
+      const m = new THREE.MeshBasicMaterial({color:0xffd166, wireframe:true, transparent:true, opacity:Number(document.getElementById("boxOpacity").value || "0.9")});
+      const box = new THREE.Mesh(g, m);
+      box.position.set(cx, cy, cz);
+      box.rotation.set(0, 0, yaw);
+      boxesGroup.add(box);
+    }
+  }
+  metaEl.innerHTML = `<div>sample=<code>${data.sampleToken}</code></div><div>timestamp_us=${data.timestampUs}</div><div>points=${data.pointCount} boxes=${data.boxCount}</div>`;
+}
+
+async function showFrame(i){
+  frame = Math.max(0, Math.min(totalFrames-1, i));
+  setFrameText();
+  setStatus(`loading frame ${frame} ...`);
+  const data = await fetchFrame(frame);
+  setFrameData(data);
+  if (followEgo) {
+    controls.target.set(0, 0, 0);
+    controls.update();
+  }
+  if (overlayEnabled) {
+    const payload = await fetchCameraOverlay(frame);
+    if (payload) {
+      ensureOverlayCameraOptions(payload);
+      renderCameraOverlay(payload);
+    }
+  }
+  setStatus(`ready · cached=${cache.size}`);
+  prefetchAround(frame);
+}
+
+document.getElementById("playBtn").addEventListener("click", () => {
+  playing = !playing;
+  document.getElementById("playBtn").textContent = playing ? "Pause" : "Play";
+});
+document.getElementById("speed").addEventListener("change", (e) => {
+  fps = 6 * Number(e.target.value || "1");
+});
+slider.addEventListener("input", () => showFrame(Number(slider.value)));
+document.getElementById("camReset").addEventListener("click", () => {
+  followEgo = false;
+  camera.position.set(-12,-8,4.5); controls.target.set(0,0,0); controls.update();
+});
+document.getElementById("camTop").addEventListener("click", () => {
+  followEgo = false;
+  camera.position.set(0,0,60); controls.target.set(0,0,0); controls.update();
+});
+document.getElementById("camFollow").addEventListener("click", () => {
+  followEgo = true;
+  camera.position.set(-10,-2,3.8); controls.target.set(0,0,0); controls.update();
+  setStatus("follow ego: on");
+});
+document.getElementById("toggleOverlay2d").addEventListener("click", () => {
+  const wrap = document.getElementById("overlayWrap");
+  const btn = document.getElementById("toggleOverlay2d");
+  const show = wrap.style.display === "none";
+  wrap.style.display = show ? "block" : "none";
+  overlayEnabled = show;
+  btn.textContent = show ? "Hide Cam" : "Cam Viewport";
+  if (show) showFrame(frame).catch((err) => setStatus(`overlay error: ${err.message}`));
+});
+document.getElementById("overlayCamera").addEventListener("change", () => {
+  if (overlayEnabled) {
+    showFrame(frame).catch((err) => setStatus(`overlay error: ${err.message}`));
+  }
+});
+document.getElementById("pointSize").addEventListener("input", (e) => {
+  pointsMat.size = Number(e.target.value || "0.08");
+});
+document.getElementById("pointOpacity").addEventListener("input", (e) => {
+  pointsMat.opacity = Number(e.target.value || "0.95");
+});
+document.getElementById("intensityGain").addEventListener("input", async (e) => {
+  intensityGain = Number(e.target.value || "1.0");
+  const data = cache.get(frame);
+  if (data) setFrameData(data);
+});
+document.getElementById("boxOpacity").addEventListener("input", () => {
+  for (const child of boxesGroup.children) {
+    if (child.material) child.material.opacity = Number(document.getElementById("boxOpacity").value || "0.9");
+  }
+});
+document.getElementById("projMode").addEventListener("click", () => {
+  const wasPersp = camera === perspCamera;
+  const next = wasPersp ? orthoCamera : perspCamera;
+  next.position.copy(camera.position);
+  next.up.set(0, 0, 1);
+  if (wasPersp) {
+    const fr = 22;
+    orthoCamera.left = -fr; orthoCamera.right = fr; orthoCamera.top = fr; orthoCamera.bottom = -fr;
+    orthoCamera.updateProjectionMatrix();
+    document.getElementById("projMode").textContent = "orthographic";
+  } else {
+    perspCamera.fov = 74;
+    perspCamera.updateProjectionMatrix();
+    document.getElementById("projMode").textContent = "perspective";
+  }
+  controls.object = next;
+  camera = next;
+  controls.update();
+});
+window.addEventListener("resize", () => {
+  const w = canvas.clientWidth || window.innerWidth;
+  const h = canvas.clientHeight || (window.innerHeight-64);
+  renderer.setSize(w, h, false);
+  if (camera.isPerspectiveCamera) {
+    camera.aspect = w / h;
+  } else {
+    const fr = 22;
+    camera.left = -fr * (w / h);
+    camera.right = fr * (w / h);
+    camera.top = fr;
+    camera.bottom = -fr;
+  }
+  camera.updateProjectionMatrix();
+});
+
+function animate(ts){
+  requestAnimationFrame(animate);
+  if (playing && totalFrames > 0 && ts - lastFrameTs > (1000 / Math.max(1, fps))) {
+    lastFrameTs = ts;
+    const nxt = frame + 1 >= totalFrames ? 0 : frame + 1;
+    showFrame(nxt).catch((err) => setStatus(`error: ${err.message}`));
+  }
+  controls.update();
+  renderer.render(scene, camera);
+  if (overlayEnabled && overlayData) overlayRenderer.render(overlayScene, overlayCamera3d);
+}
+
+(async function boot(){
+  setStatus("bootstrapping...");
+  const metaRes = await fetch(metaUrl);
+  if (!metaRes.ok) throw new Error(`meta HTTP ${metaRes.status}`);
+  const meta = await metaRes.json();
+  totalFrames = Number(meta.total_frames || 0);
+  slider.max = String(Math.max(0, totalFrames - 1));
+  camera = perspCamera;
+  document.getElementById("projMode").textContent = "perspective";
+  camera.position.set(-10, -2, 3.8);
+  controls.target.set(0,0,0);
+  controls.update();
+  await showFrame(Math.min(startFrame, Math.max(0, totalFrames - 1)));
+  animate(0);
+})().catch((err) => {
+  setStatus(`boot error: ${err.message}`);
+});
+</script></body></html>
