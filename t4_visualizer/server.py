@@ -95,6 +95,8 @@ import argparse
 import base64
 import datetime
 import html
+import json
+import struct
 import sys
 import threading
 import time
@@ -351,7 +353,7 @@ def _build_app(
     try:
         from fastapi import Depends, FastAPI, Header, HTTPException, Query
         from fastapi.encoders import jsonable_encoder
-        from fastapi.responses import HTMLResponse, JSONResponse
+        from fastapi.responses import HTMLResponse, JSONResponse, Response
     except ImportError as exc:
         raise ImportError(
             "fastapi and pydantic are required for the server. "
@@ -624,6 +626,240 @@ def _build_app(
             ),
         }
         return payload, hdrs
+
+    def _get_scenario_sample(t4, scenario_name: str, frame_index: int):
+        from t4_visualizer.visualize import find_sample_by_scene_and_index
+
+        try:
+            return find_sample_by_scene_and_index(t4, scenario_name, frame_index)
+        except ValueError as exc:
+            _public_error(
+                status_code=404,
+                code="scenario_not_found",
+                message=f"Scenario '{scenario_name}' was not found.",
+                hint="Call GET /datasets/{id}/scenarios to inspect valid scenario names.",
+            )
+        except IndexError as exc:
+            _public_error(
+                status_code=400,
+                code="frame_index_out_of_range",
+                message=str(exc),
+            )
+        except Exception as exc:
+            _safe_error(
+                status_code=500,
+                code="scenario_sample_lookup_failed",
+                message="Failed to resolve sample for scenario/frame.",
+                exc=exc,
+            )
+
+    def _pointcloud_and_boxes_for_sample(t4, sample):
+        import numpy as np
+        from t4_visualizer.visualize import _load_pointcloud, list_lidar_channels
+
+        lidar_channels = list_lidar_channels(t4, sample)
+        if not lidar_channels:
+            return np.zeros((0, 4), dtype=np.float32), []
+        lidar_channel = lidar_channels[0]
+        token = sample.data.get(lidar_channel)
+        if token is None:
+            return np.zeros((0, 4), dtype=np.float32), []
+        data_path, boxes_3d, _ = t4.get_sample_data(
+            token, as_3d=True, as_sensor_coord=True
+        )
+        # Schema-first decode:
+        # - .pcd.bin is defined by t4-devkit as (x,y,z,intensity,ring_idx) float32[5]
+        # - .bin in some legacy datasets can be float32[4] (x,y,z,intensity)
+        # We preserve a cautious fallback chain for compatibility.
+        points = None
+        path_txt = str(data_path).lower()
+        if path_txt.endswith(".pcd.bin") or path_txt.endswith(".bin"):
+            try:
+                raw = np.fromfile(data_path, dtype=np.float32)
+                stride_order = (5, 4, 6, 3) if path_txt.endswith(".pcd.bin") else (4, 5, 6, 3)
+                for ncols in stride_order:
+                    if raw.size % ncols != 0:
+                        continue
+                    pts = raw.reshape(-1, ncols)
+                    xyz = pts[:, :3]
+                    # Basic sanity: avoid wildly implausible decode.
+                    p99 = np.percentile(np.abs(xyz), 99, axis=0)
+                    if np.any(p99 > 2000):
+                        continue
+                    if ncols >= 4:
+                        points = pts[:, :4]
+                    else:
+                        points = np.column_stack(
+                            [pts[:, :3], np.ones(len(pts), dtype=np.float32)]
+                        )
+                    break
+            except Exception:
+                points = None
+        if points is None:
+            points = _load_pointcloud(data_path)
+        if points is None or points.shape[0] == 0:
+            return np.zeros((0, 4), dtype=np.float32), boxes_3d or []
+        points = np.asarray(points)
+        if points.shape[1] >= 4:
+            out = points[:, :4].astype(np.float32, copy=False)
+        else:
+            pad = np.ones((points.shape[0], 1), dtype=np.float32)
+            out = np.concatenate([points[:, :3].astype(np.float32, copy=False), pad], axis=1)
+        # Drop non-finite points early to prevent viewport artifacts.
+        finite_mask = np.isfinite(out).all(axis=1)
+        if finite_mask is not None and finite_mask.size == out.shape[0]:
+            out = out[finite_mask]
+        return out, boxes_3d or []
+
+    def _camera_overlay_payload_for_sample(
+        t4,
+        sample,
+        camera: Optional[str] = None,
+        show_annotations: bool = True,
+    ) -> Dict[str, object]:
+        from t4_visualizer.visualize import list_camera_channels
+
+        channels = list_camera_channels(t4, sample)
+        if not channels:
+            return {
+                "camera": None,
+                "available_cameras": [],
+                "image_base64": "",
+                "image_format": "jpeg",
+                "boxes_2d": [],
+                "width": 0,
+                "height": 0,
+            }
+        channel = camera if camera in channels else channels[0]
+        token = sample.data.get(channel)
+        if token is None:
+            _public_error(404, "camera_token_not_found", f"Camera token not found for channel '{channel}'.")
+        if show_annotations:
+            data_path, boxes_2d, _ = t4.get_sample_data(token, as_3d=False, as_sensor_coord=True)
+        else:
+            data_path, _, _ = t4.get_sample_data(token, as_3d=False)
+            boxes_2d = []
+        sample_data = t4.get("sample_data", token)
+        img_path = Path(str(data_path))
+        try:
+            img_bytes = img_path.read_bytes()
+        except Exception as exc:
+            _safe_error(500, "camera_image_read_failed", "Failed to read camera image.", exc=exc)
+        fmt = img_path.suffix.lower().lstrip(".") or "jpeg"
+        width = int(getattr(sample_data, "width", 0) or 0)
+        height = int(getattr(sample_data, "height", 0) or 0)
+        try:
+            # Fallback to image probing only if table metadata is unavailable.
+            if width <= 0 or height <= 0:
+                from PIL import Image
+
+                with Image.open(img_path) as im:
+                    width, height = int(im.width), int(im.height)
+        except Exception:
+            pass
+        box_rows = []
+        for b in boxes_2d or []:
+            try:
+                roi = getattr(b, "roi", None)
+                if roi is None or len(roi) < 4:
+                    continue
+                x0, y0, x1, y1 = float(roi[0]), float(roi[1]), float(roi[2]), float(roi[3])
+                box_rows.append(
+                    {
+                        "x0": x0,
+                        "y0": y0,
+                        "x1": x1,
+                        "y1": y1,
+                        "label": str(getattr(b, "label", "") or ""),
+                    }
+                )
+            except Exception:
+                continue
+        return {
+            "camera": channel,
+            "available_cameras": channels,
+            "image_base64": base64.b64encode(img_bytes).decode("ascii"),
+            "image_format": fmt,
+            "boxes_2d": box_rows,
+            "width": width,
+            "height": height,
+        }
+
+    def _pack_viewer_frame_binary(
+        *,
+        frame_index: int,
+        sample_token: str,
+        timestamp_us: int,
+        points_xyz_i,
+        boxes_3d,
+    ):
+        """
+        Binary wire format (little-endian):
+          magic[8]        : b'T4V3D002'
+          header_len      : uint32
+          frame_index     : uint32
+          timestamp_us    : uint64
+          point_count     : uint32
+          box_count       : uint32
+          sample_token_len: uint16
+          sample_token    : UTF-8 bytes
+          points          : point_count * float32[4]  # x,y,z,intensity
+          box_corners_f32 : box_count * float32[24]   # 8 corners * xyz
+          box_labels_json : UTF-8 JSON list[str], length-prefixed uint32
+        """
+        import numpy as np
+
+        token_bytes = str(sample_token).encode("utf-8")
+        pts = np.asarray(points_xyz_i, dtype=np.float32)
+        if pts.size == 0:
+            pts = np.zeros((0, 4), dtype=np.float32)
+        point_count = int(pts.shape[0])
+
+        box_rows = []
+        labels = []
+        for box in boxes_3d:
+            try:
+                corners = box.corners()
+                flat = [float(v) for v in corners.reshape(-1).tolist()]
+            except Exception:
+                # Fallback: axis-aligned cuboid from center/size.
+                center = getattr(box, "center", [0.0, 0.0, 0.0])
+                size = getattr(box, "size", [0.0, 0.0, 0.0])
+                cx, cy, cz = float(center[0]), float(center[1]), float(center[2])
+                sx, sy, sz = float(size[0]), float(size[1]), float(size[2])
+                hx, hy, hz = sx / 2.0, sy / 2.0, sz / 2.0
+                pts = [
+                    [cx + hx, cy + hy, cz + hz], [cx + hx, cy - hy, cz + hz],
+                    [cx + hx, cy - hy, cz - hz], [cx + hx, cy + hy, cz - hz],
+                    [cx - hx, cy + hy, cz + hz], [cx - hx, cy - hy, cz + hz],
+                    [cx - hx, cy - hy, cz - hz], [cx - hx, cy + hy, cz - hz],
+                ]
+                flat = [float(v) for p in pts for v in p]
+            box_rows.append(flat)
+            labels.append(str(getattr(box, "label", "") or ""))
+        box_arr = np.asarray(box_rows, dtype=np.float32) if box_rows else np.zeros((0, 24), dtype=np.float32)
+        label_blob = json.dumps(labels, ensure_ascii=True).encode("utf-8")
+        box_count = int(box_arr.shape[0])
+
+        header = struct.pack(
+            "<8sIIQIIH",
+            b"T4V3D002",
+            34,  # fixed header bytes
+            int(frame_index),
+            int(timestamp_us),
+            point_count,
+            box_count,
+            len(token_bytes),
+        ) + token_bytes
+        return b"".join(
+            [
+                header,
+                pts.tobytes(order="C"),
+                box_arr.tobytes(order="C"),
+                struct.pack("<I", len(label_blob)),
+                label_blob,
+            ]
+        )
 
     def _render_html_page(payload: RenderResponse, q) -> str:
         """Build a self-contained HTML document with embedded PNG data URLs."""
@@ -909,7 +1145,8 @@ def _build_app(
             <td>${s.nbr_samples ?? 0}</td>
             <td>
               <a href="#" data-scenario="${encodeURIComponent(s.name || "")}" class="load-frames">frames</a> ·
-              <a href="/render/html?t4dataset_id=${encodeURIComponent(state.selectedId)}&scenario_name=${encodeURIComponent(s.name || "")}&frame_index=0" target="_blank" rel="noopener">render</a>
+              <a href="/render/html?t4dataset_id=${encodeURIComponent(state.selectedId)}&scenario_name=${encodeURIComponent(s.name || "")}&frame_index=0" target="_blank" rel="noopener">render</a> ·
+              <a href="/viewer/three?t4dataset_id=${encodeURIComponent(state.selectedId)}&scenario_name=${encodeURIComponent(s.name || "")}&frame_index=0" target="_blank" rel="noopener">3d</a>
             </td>
           </tr>`
         ).join("");
@@ -957,7 +1194,10 @@ def _build_app(
               <td>${f.frame_index ?? ""}</td>
               <td>${f.timestamp_us ?? ""}</td>
               <td class="mono">${f.sample_token ?? ""}</td>
-              <td><a href="/render/html?t4dataset_id=${encodeURIComponent(state.selectedId)}&scenario_name=${encodeURIComponent(state.selectedScenario)}&frame_index=${encodeURIComponent(String(f.frame_index ?? 0))}" target="_blank" rel="noopener">open</a></td>
+              <td>
+                <a href="/render/html?t4dataset_id=${encodeURIComponent(state.selectedId)}&scenario_name=${encodeURIComponent(state.selectedScenario)}&frame_index=${encodeURIComponent(String(f.frame_index ?? 0))}" target="_blank" rel="noopener">render</a> ·
+                <a href="/viewer/three?t4dataset_id=${encodeURIComponent(state.selectedId)}&scenario_name=${encodeURIComponent(state.selectedScenario)}&frame_index=${encodeURIComponent(String(f.frame_index ?? 0))}" target="_blank" rel="noopener">3d</a>
+              </td>
             </tr>`
           ).join("");
         }
@@ -1389,6 +1629,726 @@ def _build_app(
             "total_frames": total,
             "frames": rows,
         }
+
+    @app.get(
+        "/viewer/three/schema",
+        tags=["viewer"],
+        summary="Binary schema for Three.js frame payload",
+    )
+    def viewer_three_schema():
+        return {
+            "format_version": "T4V3D002",
+            "endianness": "little",
+            "header_layout": [
+                "magic:8",
+                "header_len:uint32",
+                "frame_index:uint32",
+                "timestamp_us:uint64",
+                "point_count:uint32",
+                "box_count:uint32",
+                "sample_token_len:uint16",
+                "sample_token:utf8 bytes",
+            ],
+            "body_layout": {
+                "points_f32": "[point_count][4] -> x,y,z,intensity",
+                "box_corners_f32": "[box_count][24] -> 8 corners * xyz (x forward, y left, z up)",
+                "box_labels_json": "uint32 length + utf8 json list[str]",
+            },
+        }
+
+    @app.get(
+        "/viewer/three/meta",
+        tags=["viewer"],
+        summary="Metadata bootstrap for Three.js viewer",
+    )
+    def viewer_three_meta(
+        t4dataset_id: str,
+        scenario_name: str,
+        version: Optional[str] = None,
+    ):
+        dataset_path = _resolve_dataset(t4dataset_id)
+        from t4_visualizer.visualize import list_scene_summaries
+
+        try:
+            t4 = _cache.load(dataset_path, version=version)
+            scenes = list_scene_summaries(t4)
+            scene_meta = next((s for s in scenes if s.get("name") == scenario_name), None)
+            if scene_meta is None:
+                _public_error(
+                    status_code=404,
+                    code="scenario_not_found",
+                    message=f"Scenario '{scenario_name}' was not found.",
+                )
+        except HTTPException:
+            raise
+        except Exception as exc:
+            _safe_error(
+                status_code=500,
+                code="viewer_meta_failed",
+                message="Failed to prepare viewer metadata.",
+                exc=exc,
+            )
+
+        return {
+            "t4dataset_id": t4dataset_id,
+            "scenario_name": scenario_name,
+            "version": version,
+            "total_frames": int(scene_meta.get("nbr_samples") or 0),
+            "format_version": "T4V3D002",
+            "binary_endpoint_template": (
+                f"/viewer/three/frame.bin?t4dataset_id={t4dataset_id}"
+                f"&scenario_name={scenario_name}&frame_index={{frame_index}}"
+                f"{f'&version={version}' if version else ''}"
+            ),
+        }
+
+    @app.get(
+        "/viewer/three/frame.bin",
+        tags=["viewer"],
+        summary="Binary 3D frame payload for Three.js viewer",
+    )
+    def viewer_three_frame_binary(
+        t4dataset_id: str,
+        scenario_name: str,
+        frame_index: int = Query(..., ge=0),
+        version: Optional[str] = None,
+        response_format: str = Query("binary", alias="format"),
+    ):
+        dataset_path = _resolve_dataset(t4dataset_id)
+        try:
+            t4 = _cache.load(dataset_path, version=version)
+            sample = _get_scenario_sample(t4, scenario_name, frame_index)
+            points, boxes_3d = _pointcloud_and_boxes_for_sample(t4, sample)
+            if response_format == "json":
+                if not _debug_visibility:
+                    _public_error(403, "json_debug_only", "JSON frame format is allowed in debug mode only.")
+                return {
+                    "frame_index": frame_index,
+                    "sample_token": str(sample.token),
+                    "timestamp_us": int(sample.timestamp),
+                    "points": points[:, :4].tolist(),
+                    "boxes": [
+                        {
+                            "center": [float(v) for v in getattr(b, "center", [0.0, 0.0, 0.0])[:3]],
+                            "size": [float(v) for v in getattr(b, "size", [0.0, 0.0, 0.0])[:3]],
+                            "label": str(getattr(b, "label", "") or ""),
+                        }
+                        for b in boxes_3d
+                    ],
+                }
+            if response_format != "binary":
+                _public_error(400, "invalid_format", "Use format=binary or format=json.")
+            blob = _pack_viewer_frame_binary(
+                frame_index=frame_index,
+                sample_token=str(sample.token),
+                timestamp_us=int(sample.timestamp),
+                points_xyz_i=points,
+                boxes_3d=boxes_3d,
+            )
+            return Response(
+                content=blob,
+                media_type="application/octet-stream",
+                headers={
+                    "X-T4V-Format": "T4V3D002",
+                    "X-T4V-Frame-Index": str(frame_index),
+                    "X-T4V-Sample-Token": str(sample.token),
+                    "X-T4V-Timestamp-Us": str(sample.timestamp),
+                    "X-T4V-Point-Fields": "x,y,z,intensity",
+                    "X-T4V-Box-Fields": "8corners_xyz",
+                },
+            )
+        except HTTPException:
+            raise
+        except Exception as exc:
+            _safe_error(
+                status_code=500,
+                code="viewer_frame_binary_failed",
+                message="Failed to build binary frame payload.",
+                exc=exc,
+            )
+
+    @app.get(
+        "/viewer/three/frames/window",
+        tags=["viewer"],
+        summary="Frame window metadata for prefetch planning",
+    )
+    def viewer_three_frames_window(
+        t4dataset_id: str,
+        scenario_name: str,
+        center: int = Query(..., ge=0),
+        radius: int = Query(2, ge=0, le=20),
+        version: Optional[str] = None,
+    ):
+        dataset_path = _resolve_dataset(t4dataset_id)
+        from t4_visualizer.visualize import list_scene_summaries
+
+        try:
+            t4 = _cache.load(dataset_path, version=version)
+            scenes = list_scene_summaries(t4)
+            scene_meta = next((s for s in scenes if s.get("name") == scenario_name), None)
+            if scene_meta is None:
+                _public_error(404, "scenario_not_found", f"Scenario '{scenario_name}' was not found.")
+            total = int(scene_meta.get("nbr_samples") or 0)
+            lo = max(0, center - radius)
+            hi = min(total - 1, center + radius) if total > 0 else -1
+        except HTTPException:
+            raise
+        except Exception as exc:
+            _safe_error(500, "viewer_window_failed", "Failed to compute prefetch window.", exc=exc)
+
+        frames = []
+        for i in range(lo, hi + 1):
+            frames.append(
+                {
+                    "frame_index": i,
+                    "binary_url": (
+                        f"/viewer/three/frame.bin?t4dataset_id={t4dataset_id}"
+                        f"&scenario_name={scenario_name}&frame_index={i}"
+                        f"{f'&version={version}' if version else ''}"
+                    ),
+                }
+            )
+        return {
+            "t4dataset_id": t4dataset_id,
+            "scenario_name": scenario_name,
+            "version": version,
+            "total_frames": total,
+            "center": center,
+            "radius": radius,
+            "frames": frames,
+        }
+
+    @app.get(
+        "/viewer/three/camera-overlay",
+        tags=["viewer"],
+        summary="Camera image + 2D annotation payload for Three.js overlay viewport",
+    )
+    def viewer_three_camera_overlay(
+        t4dataset_id: str,
+        scenario_name: str,
+        frame_index: int = Query(..., ge=0),
+        camera: Optional[str] = None,
+        version: Optional[str] = None,
+        show_annotations: bool = Query(True),
+        all_cameras: bool = Query(False),
+    ):
+        dataset_path = _resolve_dataset(t4dataset_id)
+        try:
+            t4 = _cache.load(dataset_path, version=version)
+            sample = _get_scenario_sample(t4, scenario_name, frame_index)
+            payload = _camera_overlay_payload_for_sample(
+                t4, sample, camera=camera, show_annotations=show_annotations
+            )
+            if all_cameras:
+                cams = payload.get("available_cameras", []) or []
+                all_rows = []
+                for ch in cams:
+                    row = _camera_overlay_payload_for_sample(
+                        t4, sample, camera=str(ch), show_annotations=show_annotations
+                    )
+                    all_rows.append(row)
+                payload["cameras_payload"] = all_rows
+            payload.update(
+                {
+                    "t4dataset_id": t4dataset_id,
+                    "scenario_name": scenario_name,
+                    "frame_index": frame_index,
+                    "sample_token": str(sample.token),
+                    "timestamp_us": int(sample.timestamp),
+                }
+            )
+            return payload
+        except HTTPException:
+            raise
+        except Exception as exc:
+            _safe_error(
+                status_code=500,
+                code="viewer_camera_overlay_failed",
+                message="Failed to generate camera overlay payload.",
+                exc=exc,
+            )
+
+    @app.get("/viewer/three")
+    def viewer_three_page(
+        t4dataset_id: str = Query(...),
+        scenario_name: str = Query(...),
+        frame_index: int = Query(0, ge=0),
+        version: Optional[str] = Query(None),
+    ):
+        esc = html.escape
+        qs = (
+            f"t4dataset_id={esc(t4dataset_id)}&scenario_name={esc(scenario_name)}"
+            f"&frame_index={frame_index}"
+            f"{f'&version={esc(version)}' if version else ''}"
+        )
+        page = f"""<!DOCTYPE html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>T4 Three.js Viewer</title>
+<style>
+  :root{{--bg:#060812;--panel:#0f1324cc;--text:#e8edff;--muted:#9aa6d4;--accent:#6ea8ff;--ok:#4bd08d;}}
+  html,body{{margin:0;height:100%;background:radial-gradient(1200px 600px at 20% 0%,#1a2552 0%,#060812 65%);color:var(--text);font-family:ui-sans-serif,system-ui,sans-serif;}}
+  #app{{display:grid;grid-template-rows:auto 1fr;height:100%;}}
+  .top{{display:flex;gap:.7rem;align-items:center;padding:.7rem .9rem;background:var(--panel);backdrop-filter:blur(8px);border-bottom:1px solid #24315f;}}
+  .pill{{font-size:.82rem;color:var(--muted)}}
+  .controls{{display:flex;gap:.45rem;align-items:center;flex-wrap:wrap}}
+  button,input[type=range],select{{background:#111a35;color:var(--text);border:1px solid #2a3d78;border-radius:8px;padding:.3rem .5rem}}
+  #canvasWrap{{position:relative;min-height:0}}
+  #canvas{{width:100%;height:100%;display:block}}
+  #hud{{position:absolute;right:12px;top:12px;background:var(--panel);border:1px solid #2b3f7d;border-radius:10px;padding:.6rem;min-width:260px}}
+  #status{{font-size:.82rem;color:var(--muted)}}
+  a{{color:var(--accent)}}
+</style>
+</head><body><div id="app">
+  <div class="top">
+    <strong>Three.js Viewer</strong>
+    <span class="pill">dataset=<code>{esc(t4dataset_id)}</code></span>
+    <span class="pill">scenario=<code>{esc(scenario_name)}</code></span>
+    <div class="controls">
+      <button id="playBtn">Play</button>
+      <label>speed <select id="speed"><option>0.25</option><option>0.5</option><option selected>1</option><option>2</option><option>4</option></select>x</label>
+      <button id="camReset">Reset Cam</button>
+      <button id="camTop">Top</button>
+      <button id="camFollow">Follow</button>
+      <button id="toggleOverlay2d">Cam Viewport</button>
+      <select id="overlayCamera" style="min-width:150px"></select>
+      <input id="slider" type="range" min="0" max="0" value="0" />
+      <span id="frameTxt">frame 0/0</span>
+    </div>
+    <a href="/datasets/browser">Back</a>
+  </div>
+  <div id="canvasWrap"><canvas id="canvas"></canvas>
+    <div id="overlayWrap" style="position:absolute;left:12px;bottom:12px;width:min(46vw,820px);height:min(40vh,360px);display:none;border:1px solid #2b3f7d;border-radius:10px;overflow:hidden;background:#090d1a">
+      <canvas id="overlayCanvas" style="width:100%;height:100%;display:block"></canvas>
+    </div>
+    <div id="hud">
+      <div id="status">loading...</div>
+      <div id="meta"></div>
+      <hr style="border-color:#24315f;opacity:.6">
+      <div style="display:grid;gap:.4rem;font-size:.82rem">
+        <div>projection: <strong id="projMode">perspective</strong></div>
+        <label>point size <input id="pointSize" type="range" min="0.02" max="0.25" step="0.01" value="0.08"></label>
+        <label>point opacity <input id="pointOpacity" type="range" min="0.2" max="1.0" step="0.05" value="0.95"></label>
+        <label>intensity gain <input id="intensityGain" type="range" min="0.4" max="2.5" step="0.1" value="1.0"></label>
+        <label>box opacity <input id="boxOpacity" type="range" min="0.2" max="1.0" step="0.05" value="0.9"></label>
+      </div>
+    </div>
+  </div>
+</div>
+<script type="importmap">{{"imports":{{"three":"https://esm.sh/three@0.161.0","three/addons/":"https://esm.sh/three@0.161.0/examples/jsm/"}}}}</script>
+<script type="module">
+import * as THREE from "three";
+import {{ OrbitControls }} from "three/addons/controls/OrbitControls.js";
+
+const params = new URLSearchParams("{qs}");
+const dataset = params.get("t4dataset_id");
+const scenario = params.get("scenario_name");
+const startFrame = Number(params.get("frame_index") || "0");
+const version = params.get("version");
+const qv = version ? `&version=${{encodeURIComponent(version)}}` : "";
+const metaUrl = `/viewer/three/meta?t4dataset_id=${{encodeURIComponent(dataset)}}&scenario_name=${{encodeURIComponent(scenario)}}${{qv}}`;
+
+const canvas = document.getElementById("canvas");
+const renderer = new THREE.WebGLRenderer({{canvas, antialias:true}});
+renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
+renderer.setSize(canvas.clientWidth || window.innerWidth, canvas.clientHeight || (window.innerHeight-64), false);
+renderer.outputColorSpace = THREE.SRGBColorSpace;
+const scene = new THREE.Scene();
+scene.fog = new THREE.Fog(0x070b16, 90, 230);
+const perspCamera = new THREE.PerspectiveCamera(74, 1, 0.1, 1000);
+const orthoCamera = new THREE.OrthographicCamera(-20, 20, 20, -20, 0.1, 1000);
+let camera = perspCamera;
+camera.position.set(-12, -8, 4.5);
+camera.up.set(0, 0, 1);
+const controls = new OrbitControls(camera, renderer.domElement);
+controls.target.set(0,0,0); controls.update();
+scene.add(new THREE.AmbientLight(0x8aa6ff, 0.7));
+const dl = new THREE.DirectionalLight(0xffffff, 0.9); dl.position.set(12, -10, 30); scene.add(dl);
+const grid = new THREE.GridHelper(180, 90, 0x2b3a6f, 0x1a2342);
+grid.rotation.x = Math.PI / 2; // XY ground plane (z-up)
+scene.add(grid);
+
+const pointsGeom = new THREE.BufferGeometry();
+const pointsMat = new THREE.PointsMaterial({{size:0.08, vertexColors:true, transparent:true, opacity:0.95}});
+const pointsObj = new THREE.Points(pointsGeom, pointsMat);
+scene.add(pointsObj);
+const boxesGroup = new THREE.Group(); scene.add(boxesGroup);
+const egoAxes = new THREE.AxesHelper(2.8); scene.add(egoAxes);
+const egoBody = new THREE.Mesh(
+  new THREE.BoxGeometry(4.6, 1.9, 1.6),
+  new THREE.MeshBasicMaterial({{color:0x6ea8ff, wireframe:true, transparent:true, opacity:0.45}})
+);
+egoBody.position.set(0,0,0.8); scene.add(egoBody);
+const cache = new Map(); const MAX_CACHE = 28;
+let totalFrames = 0; let playing = false; let frame = startFrame; let fps = 6;
+let lastFrameTs = 0;
+let followEgo = true;
+let intensityGain = 1.0;
+let overlayEnabled = false;
+let overlayData = null;
+let overlayTexture = null;
+let overlayImageKey = "";
+const overlayTextureCache = new Map();
+
+const overlayCanvas = document.getElementById("overlayCanvas");
+const overlayRenderer = new THREE.WebGLRenderer({{canvas: overlayCanvas, antialias:true, alpha:true}});
+overlayRenderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
+overlayRenderer.outputColorSpace = THREE.SRGBColorSpace;
+overlayRenderer.toneMapping = THREE.NoToneMapping;
+const overlayScene = new THREE.Scene();
+const overlayCamera3d = new THREE.OrthographicCamera(-1, 1, 1, -1, 0.1, 10);
+overlayCamera3d.position.set(0,0,2);
+const overlayImgMesh = new THREE.Mesh(
+  new THREE.PlaneGeometry(2,2),
+  new THREE.MeshBasicMaterial({{color:0xffffff, toneMapped:false}})
+);
+overlayScene.add(overlayImgMesh);
+const overlayBoxes = new THREE.Group(); overlayScene.add(overlayBoxes);
+
+const slider = document.getElementById("slider");
+const frameTxt = document.getElementById("frameTxt");
+const statusEl = document.getElementById("status");
+const metaEl = document.getElementById("meta");
+function setStatus(t){{ statusEl.textContent = t; }}
+function setFrameText(){{ frameTxt.textContent = `frame ${{frame}}/${{Math.max(0,totalFrames-1)}}`; slider.value = String(frame); }}
+
+function readFloat32Copied(buf, off, count){{
+  const bytes = new Uint8Array(buf, off, count * 4);
+  const copied = new Uint8Array(bytes.length);
+  copied.set(bytes);
+  return new Float32Array(copied.buffer);
+}}
+
+function parseFrameBuffer(buf){{
+  const dv = new DataView(buf);
+  const magic = new TextDecoder().decode(new Uint8Array(buf, 0, 8));
+  if (magic !== "T4V3D001" && magic !== "T4V3D002") throw new Error(`unexpected format ${{magic}}`);
+  const frameIndex = dv.getUint32(12, true);
+  const timestampUs = Number(dv.getBigUint64(16, true));
+  const pointCount = dv.getUint32(24, true);
+  const boxCount = dv.getUint32(28, true);
+  const tokenLen = dv.getUint16(32, true);
+  let off = 34;
+  const sampleToken = new TextDecoder().decode(new Uint8Array(buf, off, tokenLen)); off += tokenLen;
+  const pts = readFloat32Copied(buf, off, pointCount * 4); off += pointCount * 16;
+  const boxStride = magic === "T4V3D002" ? 24 : 7;
+  const boxes = readFloat32Copied(buf, off, boxCount * boxStride); off += boxCount * boxStride * 4;
+  const labelLen = dv.getUint32(off, true); off += 4;
+  const labels = JSON.parse(new TextDecoder().decode(new Uint8Array(buf, off, labelLen)));
+  return {{ frameIndex, timestampUs, sampleToken, pointCount, boxCount, pts, boxes, labels, format: magic }};
+}}
+
+async function fetchFrame(i){{
+  if (cache.has(i)) return cache.get(i);
+  const url = `/viewer/three/frame.bin?t4dataset_id=${{encodeURIComponent(dataset)}}&scenario_name=${{encodeURIComponent(scenario)}}&frame_index=${{i}}${{qv}}`;
+  const res = await fetch(url);
+  if (!res.ok) throw new Error(`frame ${{i}}: HTTP ${{res.status}}`);
+  const parsed = parseFrameBuffer(await res.arrayBuffer());
+  cache.set(i, parsed);
+  if (cache.size > MAX_CACHE) {{
+    const k = cache.keys().next().value;
+    cache.delete(k);
+  }}
+  return parsed;
+}}
+
+async function fetchCameraOverlay(i){{
+  if (!overlayEnabled) return null;
+  const camSel = document.getElementById("overlayCamera");
+  const selected = camSel && camSel.value ? camSel.value : "";
+  const allMode = selected === "__ALL__";
+  const cam = selected && !allMode ? `&camera=${{encodeURIComponent(selected)}}` : "";
+  const allFlag = allMode ? "&all_cameras=true" : "";
+  const url = `/viewer/three/camera-overlay?t4dataset_id=${{encodeURIComponent(dataset)}}&scenario_name=${{encodeURIComponent(scenario)}}&frame_index=${{i}}${{qv}}${{cam}}${{allFlag}}&show_annotations=true`;
+  const res = await fetch(url);
+  if (!res.ok) throw new Error(`camera overlay HTTP ${{res.status}}`);
+  return await res.json();
+}}
+
+function ensureOverlayCameraOptions(payload){{
+  const sel = document.getElementById("overlayCamera");
+  const cams = Array.isArray(payload.available_cameras) ? payload.available_cameras : [];
+  if (!sel || !cams.length) return;
+  const prev = sel.value;
+  sel.innerHTML = ['<option value="__ALL__">ALL CAMERAS</option>']
+    .concat(cams.map((c) => `<option value="${{c}}">${{c}}</option>`))
+    .join("");
+  if (prev === "__ALL__") sel.value = "__ALL__";
+  else sel.value = cams.includes(prev) ? prev : (payload.camera || cams[0]);
+}}
+
+function renderCameraOverlay(payload){{
+  overlayData = payload;
+  const wrap = document.getElementById("overlayWrap");
+  if (!wrap || wrap.style.display === "none") return;
+  const selected = (document.getElementById("overlayCamera") || {{value:""}}).value;
+  const allMode = selected === "__ALL__";
+  overlayCanvas.style.display = "block";
+  const w = wrap.clientWidth || 640;
+  const h = wrap.clientHeight || 360;
+  overlayRenderer.setSize(w, h, false);
+  while (overlayScene.children.length) overlayScene.remove(overlayScene.children[0]);
+  const rows = allMode
+    ? (Array.isArray(payload.cameras_payload) ? payload.cameras_payload : [payload])
+    : [payload];
+  const n = Math.max(1, rows.length);
+  const cols = Math.ceil(Math.sqrt(n));
+  const tileW = 2 / cols;
+  const tileH = 2 / cols;
+  for (let i = 0; i < rows.length; i++) {{
+    const p = rows[i];
+    const r = Math.floor(i / cols);
+    const c = i % cols;
+    const cx = -1 + tileW * c + tileW / 2;
+    const cy = 1 - tileH * r - tileH / 2;
+    const iw = Math.max(1, Number(p.width || 1));
+    const ih = Math.max(1, Number(p.height || 1));
+    const imgAspect = iw / ih;
+    const tileAspect = (w * tileW / 2) / (h * tileH / 2);
+    let sx = tileW, sy = tileH;
+    if (imgAspect > tileAspect) sy = tileW / imgAspect;
+    else sx = tileH * imgAspect;
+
+    const key = `${{p.sample_token || payload.sample_token || ""}}:${{p.camera || ""}}:${{p.image_format || ""}}:${{(p.image_base64 || "").length}}`;
+    let tex = overlayTextureCache.get(key);
+    if (!tex) {{
+      const img = new Image();
+      img.src = `data:${{p.image_format === "png" ? "image/png" : "image/jpeg"}};base64,${{p.image_base64 || ""}}`;
+      tex = new THREE.Texture(img);
+      tex.colorSpace = THREE.SRGBColorSpace;
+      tex.needsUpdate = true;
+      overlayTextureCache.set(key, tex);
+      if (overlayTextureCache.size > 24) {{
+        const first = overlayTextureCache.keys().next().value;
+        const old = overlayTextureCache.get(first);
+        if (old) old.dispose();
+        overlayTextureCache.delete(first);
+      }}
+    }}
+    const plane = new THREE.Mesh(
+      new THREE.PlaneGeometry(sx, sy),
+      new THREE.MeshBasicMaterial({{map: tex, color:0xffffff, toneMapped:false}})
+    );
+    plane.position.set(cx, cy, 0);
+    overlayScene.add(plane);
+
+    const bxs = Array.isArray(p.boxes_2d) ? p.boxes_2d : [];
+    for (const b of bxs) {{
+      const nx0 = ((b.x0 / iw) - 0.5) * sx + cx;
+      const nx1 = ((b.x1 / iw) - 0.5) * sx + cx;
+      const ny0 = (0.5 - (b.y0 / ih)) * sy + cy;
+      const ny1 = (0.5 - (b.y1 / ih)) * sy + cy;
+      const pts = [nx0,ny0,0, nx1,ny0,0, nx1,ny1,0, nx0,ny1,0, nx0,ny0,0];
+      const g = new THREE.BufferGeometry();
+      g.setAttribute("position", new THREE.Float32BufferAttribute(pts, 3));
+      const m = new THREE.LineBasicMaterial({{color:0xff5ec4, transparent:true, opacity:0.95}});
+      overlayScene.add(new THREE.Line(g, m));
+    }}
+  }}
+  overlayRenderer.render(overlayScene, overlayCamera3d);
+}}
+
+async function prefetchAround(i){{
+  const tasks = [];
+  for (let d = 1; d <= 3; d++) {{
+    for (const j of [i + d, i - d]) {{
+      if (j >= 0 && j < totalFrames && !cache.has(j)) {{
+        tasks.push(fetchFrame(j).catch(() => null));
+      }}
+    }}
+  }}
+  await Promise.all(tasks);
+}}
+
+function setFrameData(data){{
+  const pos = new Float32Array(data.pointCount * 3);
+  const col = new Float32Array(data.pointCount * 3);
+  for (let i=0;i<data.pointCount;i++) {{
+    const x = data.pts[i*4], y=data.pts[i*4+1], z=data.pts[i*4+2], inten=data.pts[i*4+3];
+    pos[i*3]=x; pos[i*3+1]=y; pos[i*3+2]=z;
+    const t = Math.max(0, Math.min(1, inten * intensityGain));
+    col[i*3]=0.15+0.85*t; col[i*3+1]=0.35+0.5*(1-t); col[i*3+2]=1.0-0.6*t;
+  }}
+  pointsGeom.setAttribute("position", new THREE.BufferAttribute(pos, 3));
+  pointsGeom.setAttribute("color", new THREE.BufferAttribute(col, 3));
+  pointsGeom.computeBoundingSphere();
+  while (boxesGroup.children.length) boxesGroup.remove(boxesGroup.children[0]);
+  const edges = [
+    [0,1],[1,2],[2,3],[3,0],
+    [4,5],[5,6],[6,7],[7,4],
+    [0,4],[1,5],[2,6],[3,7]
+  ];
+  for (let i=0;i<data.boxCount;i++) {{
+    if (data.format === "T4V3D002") {{
+      const base = i * 24;
+      const linePts = [];
+      for (const [a,b] of edges) {{
+        const a0 = base + a * 3;
+        const b0 = base + b * 3;
+        linePts.push(
+          data.boxes[a0], data.boxes[a0 + 1], data.boxes[a0 + 2],
+          data.boxes[b0], data.boxes[b0 + 1], data.boxes[b0 + 2]
+        );
+      }}
+      const g = new THREE.BufferGeometry();
+      g.setAttribute("position", new THREE.Float32BufferAttribute(linePts, 3));
+      const m = new THREE.LineBasicMaterial({{
+        color:0xffd166, transparent:true,
+        opacity:Number(document.getElementById("boxOpacity").value || "0.9")
+      }});
+      const lines = new THREE.LineSegments(g, m);
+      boxesGroup.add(lines);
+    }} else {{
+      const cx=data.boxes[i*7], cy=data.boxes[i*7+1], cz=data.boxes[i*7+2];
+      const sx=data.boxes[i*7+3], sy=data.boxes[i*7+4], sz=data.boxes[i*7+5], yaw=data.boxes[i*7+6];
+      const g = new THREE.BoxGeometry(sx, sy, sz);
+      const m = new THREE.MeshBasicMaterial({{color:0xffd166, wireframe:true, transparent:true, opacity:Number(document.getElementById("boxOpacity").value || "0.9")}});
+      const box = new THREE.Mesh(g, m);
+      box.position.set(cx, cy, cz);
+      box.rotation.set(0, 0, yaw);
+      boxesGroup.add(box);
+    }}
+  }}
+  metaEl.innerHTML = `<div>sample=<code>${{data.sampleToken}}</code></div><div>timestamp_us=${{data.timestampUs}}</div><div>points=${{data.pointCount}} boxes=${{data.boxCount}}</div>`;
+}}
+
+async function showFrame(i){{
+  frame = Math.max(0, Math.min(totalFrames-1, i));
+  setFrameText();
+  setStatus(`loading frame ${{frame}} ...`);
+  const data = await fetchFrame(frame);
+  setFrameData(data);
+  if (followEgo) {{
+    controls.target.set(0, 0, 0);
+    controls.update();
+  }}
+  if (overlayEnabled) {{
+    const payload = await fetchCameraOverlay(frame);
+    if (payload) {{
+      ensureOverlayCameraOptions(payload);
+      renderCameraOverlay(payload);
+    }}
+  }}
+  setStatus(`ready · cached=${{cache.size}}`);
+  prefetchAround(frame);
+}}
+
+document.getElementById("playBtn").addEventListener("click", () => {{
+  playing = !playing;
+  document.getElementById("playBtn").textContent = playing ? "Pause" : "Play";
+}});
+document.getElementById("speed").addEventListener("change", (e) => {{
+  fps = 6 * Number(e.target.value || "1");
+}});
+slider.addEventListener("input", () => showFrame(Number(slider.value)));
+document.getElementById("camReset").addEventListener("click", () => {{
+  followEgo = false;
+  camera.position.set(-12,-8,4.5); controls.target.set(0,0,0); controls.update();
+}});
+document.getElementById("camTop").addEventListener("click", () => {{
+  followEgo = false;
+  camera.position.set(0,0,60); controls.target.set(0,0,0); controls.update();
+}});
+document.getElementById("camFollow").addEventListener("click", () => {{
+  followEgo = true;
+  camera.position.set(-10,-2,3.8); controls.target.set(0,0,0); controls.update();
+  setStatus("follow ego: on");
+}});
+document.getElementById("toggleOverlay2d").addEventListener("click", () => {{
+  const wrap = document.getElementById("overlayWrap");
+  const btn = document.getElementById("toggleOverlay2d");
+  const show = wrap.style.display === "none";
+  wrap.style.display = show ? "block" : "none";
+  overlayEnabled = show;
+  btn.textContent = show ? "Hide Cam" : "Cam Viewport";
+  if (show) showFrame(frame).catch((err) => setStatus(`overlay error: ${{err.message}}`));
+}});
+document.getElementById("overlayCamera").addEventListener("change", () => {{
+  if (overlayEnabled) {{
+    showFrame(frame).catch((err) => setStatus(`overlay error: ${{err.message}}`));
+  }}
+}});
+document.getElementById("pointSize").addEventListener("input", (e) => {{
+  pointsMat.size = Number(e.target.value || "0.08");
+}});
+document.getElementById("pointOpacity").addEventListener("input", (e) => {{
+  pointsMat.opacity = Number(e.target.value || "0.95");
+}});
+document.getElementById("intensityGain").addEventListener("input", async (e) => {{
+  intensityGain = Number(e.target.value || "1.0");
+  const data = cache.get(frame);
+  if (data) setFrameData(data);
+}});
+document.getElementById("boxOpacity").addEventListener("input", () => {{
+  for (const child of boxesGroup.children) {{
+    if (child.material) child.material.opacity = Number(document.getElementById("boxOpacity").value || "0.9");
+  }}
+}});
+document.getElementById("projMode").addEventListener("click", () => {{
+  const wasPersp = camera === perspCamera;
+  const next = wasPersp ? orthoCamera : perspCamera;
+  next.position.copy(camera.position);
+  next.up.set(0, 0, 1);
+  if (wasPersp) {{
+    const fr = 22;
+    orthoCamera.left = -fr; orthoCamera.right = fr; orthoCamera.top = fr; orthoCamera.bottom = -fr;
+    orthoCamera.updateProjectionMatrix();
+    document.getElementById("projMode").textContent = "orthographic";
+  }} else {{
+    perspCamera.fov = 74;
+    perspCamera.updateProjectionMatrix();
+    document.getElementById("projMode").textContent = "perspective";
+  }}
+  controls.object = next;
+  camera = next;
+  controls.update();
+}});
+window.addEventListener("resize", () => {{
+  const w = canvas.clientWidth || window.innerWidth;
+  const h = canvas.clientHeight || (window.innerHeight-64);
+  renderer.setSize(w, h, false);
+  if (camera.isPerspectiveCamera) {{
+    camera.aspect = w / h;
+  }} else {{
+    const fr = 22;
+    camera.left = -fr * (w / h);
+    camera.right = fr * (w / h);
+    camera.top = fr;
+    camera.bottom = -fr;
+  }}
+  camera.updateProjectionMatrix();
+}});
+
+function animate(ts){{
+  requestAnimationFrame(animate);
+  if (playing && totalFrames > 0 && ts - lastFrameTs > (1000 / Math.max(1, fps))) {{
+    lastFrameTs = ts;
+    const nxt = frame + 1 >= totalFrames ? 0 : frame + 1;
+    showFrame(nxt).catch((err) => setStatus(`error: ${{err.message}}`));
+  }}
+  controls.update();
+  renderer.render(scene, camera);
+  if (overlayEnabled && overlayData) overlayRenderer.render(overlayScene, overlayCamera3d);
+}}
+
+(async function boot(){{
+  setStatus("bootstrapping...");
+  const metaRes = await fetch(metaUrl);
+  if (!metaRes.ok) throw new Error(`meta HTTP ${{metaRes.status}}`);
+  const meta = await metaRes.json();
+  totalFrames = Number(meta.total_frames || 0);
+  slider.max = String(Math.max(0, totalFrames - 1));
+  camera = perspCamera;
+  document.getElementById("projMode").textContent = "perspective";
+  camera.position.set(-10, -2, 3.8);
+  controls.target.set(0,0,0);
+  controls.update();
+  await showFrame(Math.min(startFrame, Math.max(0, totalFrames - 1)));
+  animate(0);
+}})().catch((err) => {{
+  setStatus(`boot error: ${{err.message}}`);
+}});
+</script></body></html>"""
+        return HTMLResponse(content=page, media_type="text/html; charset=utf-8")
 
     @app.post("/render", response_model=RenderResponse)
     def render_post(body: RenderRequest):
