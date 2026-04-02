@@ -1766,6 +1766,36 @@ def _build_app(
                 exc=exc,
             )
 
+    @app.get(
+        "/viewer/three/debug/message-received",
+        tags=["viewer"],
+        summary="Debug ack: viewer received bbox_layers message",
+    )
+    def viewer_three_debug_message_received(
+        t4dataset_id: Optional[str] = None,
+        scenario_name: Optional[str] = None,
+        frame_index: Optional[int] = None,
+        gt_count: int = Query(0, ge=0),
+        pred_count: int = Query(0, ge=0),
+        matched_count: int = Query(0, ge=0),
+    ):
+        print(
+            "[viewer:message] "
+            f"dataset={t4dataset_id} "
+            f"scenario={scenario_name} "
+            f"frame={frame_index} "
+            f"gt={gt_count} pred={pred_count} matched={matched_count}"
+        )
+        return {
+            "ok": True,
+            "dataset": t4dataset_id,
+            "scenario": scenario_name,
+            "frame_index": frame_index,
+            "gt_count": gt_count,
+            "pred_count": pred_count,
+            "matched_count": matched_count,
+        }
+
     @app.get("/viewer/three")
     def viewer_three_page(
         t4dataset_id: str = Query(...),

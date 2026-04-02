@@ -48,6 +48,9 @@
         <label>point opacity <input id="pointOpacity" type="range" min="0.2" max="1.0" step="0.05" value="0.95"></label>
         <label>intensity gain <input id="intensityGain" type="range" min="0.4" max="2.5" step="0.1" value="1.0"></label>
         <label>box opacity <input id="boxOpacity" type="range" min="0.2" max="1.0" step="0.05" value="0.9"></label>
+        <label><input id="showGtLayer" type="checkbox" checked> show GT</label>
+        <label><input id="showPredLayer" type="checkbox" checked> show Pred</label>
+        <label><input id="showMatchedLayer" type="checkbox" checked> show Matched</label>
       </div>
     </div>
   </div>
@@ -89,6 +92,9 @@ const pointsMat = new THREE.PointsMaterial({size:0.08, vertexColors:true, transp
 const pointsObj = new THREE.Points(pointsGeom, pointsMat);
 scene.add(pointsObj);
 const boxesGroup = new THREE.Group(); scene.add(boxesGroup);
+const gtLayerGroup = new THREE.Group(); scene.add(gtLayerGroup);
+const predLayerGroup = new THREE.Group(); scene.add(predLayerGroup);
+const matchedLayerGroup = new THREE.Group(); scene.add(matchedLayerGroup);
 const laneletGroup = new THREE.Group(); scene.add(laneletGroup);
 const egoAxes = new THREE.AxesHelper(2.8); scene.add(egoAxes);
 const egoBody = new THREE.Mesh(
@@ -110,6 +116,7 @@ let laneletEnabled = false;
 let laneletLoaded = false;
 let laneletBounds = null;
 let laneletFrame = -1;
+let externalLayers = { gt: [], pred: [], matched: [], gtPairs: [], predPairs: [] };
 
 const overlayCanvas = document.getElementById("overlayCanvas");
 const overlayRenderer = new THREE.WebGLRenderer({canvas: overlayCanvas, antialias:true, alpha:true});
@@ -174,6 +181,99 @@ function parseFrameBuffer(buf){
   const labelLen = dv.getUint32(off, true); off += 4;
   const labels = JSON.parse(new TextDecoder().decode(new Uint8Array(buf, off, labelLen)));
   return { frameIndex, timestampUs, sampleToken, pointCount, boxCount, pts, boxes, labels, format: magic };
+}
+
+function clearGroup(g){
+  while (g.children.length) g.remove(g.children[0]);
+}
+
+function boxEdgesFromCenter(box){
+  const cx = Number(box.x ?? box.cx ?? 0);
+  const cy = Number(box.y ?? box.cy ?? 0);
+  const cz = Number(box.z ?? box.cz ?? 0);
+  const w = Math.max(0.01, Number(box.width ?? box.w ?? 1.0));
+  const l = Math.max(0.01, Number(box.length ?? box.l ?? 1.0));
+  const h = Math.max(0.01, Number(box.height ?? box.h ?? 1.0));
+  const yaw = Number(box.yaw ?? box.heading ?? 0.0);
+  const hw = w / 2, hl = l / 2, hh = h / 2;
+  const c = Math.cos(yaw), s = Math.sin(yaw);
+  const body = [
+    [ hl,  hw,  hh], [ hl, -hw,  hh], [ hl, -hw, -hh], [ hl,  hw, -hh],
+    [-hl,  hw,  hh], [-hl, -hw,  hh], [-hl, -hw, -hh], [-hl,  hw, -hh],
+  ];
+  const corners = body.map(([bx, by, bz]) => [cx + bx * c - by * s, cy + bx * s + by * c, cz + bz]);
+  const edges = [[0,1],[1,2],[2,3],[3,0],[4,5],[5,6],[6,7],[7,4],[0,4],[1,5],[2,6],[3,7]];
+  const out = [];
+  for (const [a,b] of edges){
+    out.push(...corners[a], ...corners[b]);
+  }
+  return out;
+}
+
+function boxEdgesFromCorners(box){
+  const arr = Array.isArray(box.corners) ? box.corners : [];
+  if (arr.length !== 24) return null;
+  const edges = [[0,1],[1,2],[2,3],[3,0],[4,5],[5,6],[6,7],[7,4],[0,4],[1,5],[2,6],[3,7]];
+  const out = [];
+  for (const [a,b] of edges){
+    const a0 = a * 3, b0 = b * 3;
+    out.push(arr[a0], arr[a0+1], arr[a0+2], arr[b0], arr[b0+1], arr[b0+2]);
+  }
+  return out;
+}
+
+function drawLayerBoxes(group, boxes, color, width=1.4, opacity=0.95){
+  clearGroup(group);
+  if (!Array.isArray(boxes)) return;
+  for (const b of boxes){
+    const edges = boxEdgesFromCorners(b) || boxEdgesFromCenter(b);
+    const g = new THREE.BufferGeometry();
+    g.setAttribute("position", new THREE.Float32BufferAttribute(edges, 3));
+    const m = new THREE.LineBasicMaterial({ color, transparent:true, opacity });
+    const seg = new THREE.LineSegments(g, m);
+    seg.userData.lineWidth = width;
+    group.add(seg);
+  }
+}
+
+function renderExternalLayers(){
+  drawLayerBoxes(gtLayerGroup, externalLayers.gt, 0x4bd08d, 1.2, 0.9);
+  drawLayerBoxes(predLayerGroup, externalLayers.pred, 0xff5ec4, 1.2, 0.9);
+  drawLayerBoxes(matchedLayerGroup, externalLayers.matched, 0x58d8ff, 1.8, 1.0);
+  gtLayerGroup.visible = !!document.getElementById("showGtLayer").checked;
+  predLayerGroup.visible = !!document.getElementById("showPredLayer").checked;
+  matchedLayerGroup.visible = !!document.getElementById("showMatchedLayer").checked;
+}
+
+function setExternalLayerPayload(payload){
+  const gt = Array.isArray(payload.gt) ? payload.gt : [];
+  const pred = Array.isArray(payload.pred) ? payload.pred : [];
+  let matched = Array.isArray(payload.matched) ? payload.matched : [];
+  const pairs = Array.isArray(payload.matched_pairs) ? payload.matched_pairs : [];
+  if (!matched.length && pairs.length){
+    matched = [];
+    for (const p of pairs){
+      const gi = Number(p.gt_idx);
+      const pi = Number(p.pred_idx);
+      if (Number.isFinite(gi) && gt[gi]) matched.push(gt[gi]);
+      if (Number.isFinite(pi) && pred[pi]) matched.push(pred[pi]);
+    }
+  }
+  externalLayers = { gt, pred, matched };
+  renderExternalLayers();
+  setStatus(`ready · cached=${cache.size} · ext(gt=${gt.length},pred=${pred.length},match=${matched.length})`);
+  const ack = `/viewer/three/debug/message-received?t4dataset_id=${encodeURIComponent(dataset)}&scenario_name=${encodeURIComponent(scenario)}&frame_index=${frame}&gt_count=${gt.length}&pred_count=${pred.length}&matched_count=${matched.length}`;
+  fetch(ack)
+    .then((r) => {
+      if (!r.ok) throw new Error(`HTTP ${r.status}`);
+      return r.json();
+    })
+    .then((body) => {
+      console.info("[viewer-debug] bbox_layers ack ok", body);
+    })
+    .catch((err) => {
+      console.warn("[viewer-debug] bbox_layers ack failed", err);
+    });
 }
 
 async function fetchFrame(i){
@@ -482,6 +582,9 @@ document.getElementById("boxOpacity").addEventListener("input", () => {
     if (child.material) child.material.opacity = Number(document.getElementById("boxOpacity").value || "0.9");
   }
 });
+document.getElementById("showGtLayer").addEventListener("change", () => { gtLayerGroup.visible = !!document.getElementById("showGtLayer").checked; });
+document.getElementById("showPredLayer").addEventListener("change", () => { predLayerGroup.visible = !!document.getElementById("showPredLayer").checked; });
+document.getElementById("showMatchedLayer").addEventListener("change", () => { matchedLayerGroup.visible = !!document.getElementById("showMatchedLayer").checked; });
 document.getElementById("projMode").addEventListener("click", () => {
   const wasPersp = camera === perspCamera;
   const next = wasPersp ? orthoCamera : perspCamera;
@@ -501,6 +604,22 @@ document.getElementById("projMode").addEventListener("click", () => {
   camera = next;
   controls.update();
 });
+window.addEventListener("message", (ev) => {
+  const d = ev && ev.data ? ev.data : null;
+  if (!d || typeof d !== "object") return;
+  console.info("[viewer-debug] message received", { type: d.type, origin: ev.origin || "null" });
+  if (d.type === "bbox_layers") {
+    setExternalLayerPayload(d);
+  } else if (d.type === "bbox_layers_clear") {
+    externalLayers = { gt: [], pred: [], matched: [] };
+    renderExternalLayers();
+  }
+});
+window.T4ViewerAPI = {
+  setLayers(payload){ setExternalLayerPayload(payload || {}); },
+  clearLayers(){ externalLayers = { gt: [], pred: [], matched: [] }; renderExternalLayers(); },
+  getFrameContext(){ return { dataset, scenario, frame, totalFrames }; },
+};
 window.addEventListener("resize", () => {
   resizeMainRenderer();
 });
