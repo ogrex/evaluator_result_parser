@@ -35,6 +35,9 @@
   .metrics-legend{position:absolute;right:8px;top:6px;z-index:1;font-size:9px;letter-spacing:.06em;color:#8a9bc4;pointer-events:none}
   .metrics-legend .lg-gt{color:#4bd08d}.metrics-legend .lg-pr{color:#ff5ec4}.metrics-legend .lg-tpr{color:#ffcc66}
   #metricsCanvas{width:100%;height:100%;display:block}
+  .eval-tag{color:#e8edff;font-size:11px;line-height:1.35;font-family:ui-monospace,monospace;pointer-events:none;white-space:nowrap;text-shadow:0 1px 3px #000}
+  .eval-tag .t-lbl{font-weight:600}
+  .eval-tag .t-uuid{opacity:.88;font-size:10px;color:#cfe0ff}
 </style>
 </head><body><div id="app">
   <div class="top">
@@ -94,6 +97,8 @@
         <label><input id="showGtLayer" type="checkbox" checked> show GT</label>
         <label><input id="showPredLayer" type="checkbox" checked> show Pred</label>
         <label><input id="showMatchedLayer" type="checkbox" checked> show Matched</label>
+        <label><input id="showEvalLabel" type="checkbox" checked> eval label</label>
+        <label><input id="showEvalUuid" type="checkbox"> eval uuid</label>
         <label><input id="showMetricsPlot" type="checkbox" checked> metrics plot (GT / Pred / TPR)</label>
       </div>
     </div>
@@ -104,6 +109,7 @@
 import * as THREE from "three";
 import { OrbitControls } from "three/addons/controls/OrbitControls.js";
 import { ColladaLoader } from "three/addons/loaders/ColladaLoader.js";
+import { CSS2DObject, CSS2DRenderer } from "three/addons/renderers/CSS2DRenderer.js";
 
 const params = new URLSearchParams("__QS__");
 const dataset = params.get("t4dataset_id");
@@ -152,6 +158,8 @@ const boxesGroup = new THREE.Group(); scene.add(boxesGroup);
 const gtLayerGroup = new THREE.Group(); scene.add(gtLayerGroup);
 const predLayerGroup = new THREE.Group(); scene.add(predLayerGroup);
 const matchedLayerGroup = new THREE.Group(); scene.add(matchedLayerGroup);
+const evalTagsGroup = new THREE.Group();
+scene.add(evalTagsGroup);
 const laneletGroup = new THREE.Group(); scene.add(laneletGroup);
 const egoAxes = new THREE.AxesHelper(2.8); scene.add(egoAxes);
 /** Ego vehicle root (base_link); mesh from sample_vehicle_description or wireframe fallback. */
@@ -272,6 +280,16 @@ const statusEl = document.getElementById("status");
 const metaEl = document.getElementById("meta");
 const evalHudEl = document.getElementById("evalHud");
 const canvasWrapEl = document.getElementById("canvasWrap");
+let css2dRenderer = null;
+function ensureCss2dRenderer(){
+  if (css2dRenderer || !canvasWrapEl) return;
+  css2dRenderer = new CSS2DRenderer();
+  css2dRenderer.domElement.style.position = "absolute";
+  css2dRenderer.domElement.style.top = "0";
+  css2dRenderer.domElement.style.left = "0";
+  css2dRenderer.domElement.style.pointerEvents = "none";
+  canvasWrapEl.appendChild(css2dRenderer.domElement);
+}
 function setStatus(t){ statusEl.textContent = t; }
 function setFrameText(){ frameTxt.textContent = `frame ${frame}/${Math.max(0,totalFrames-1)}`; slider.value = String(frame); }
 
@@ -309,10 +327,12 @@ function syncFullscreenButton(){
 }
 
 function resizeMainRenderer(){
+  ensureCss2dRenderer();
   const wrap = document.getElementById("canvasWrap");
   const w = Math.max(1, (wrap && wrap.clientWidth) || canvas.clientWidth || window.innerWidth);
   const h = Math.max(1, (wrap && wrap.clientHeight) || canvas.clientHeight || (window.innerHeight - 64));
   renderer.setSize(w, h, false);
+  if (css2dRenderer) css2dRenderer.setSize(w, h, false);
   if (camera.isPerspectiveCamera) {
     camera.aspect = w / h;
   } else {
@@ -630,14 +650,129 @@ function boxEdgesFromCorners(box){
   return out;
 }
 
-function drawLayerBoxes(group, boxes, color, width=1.4, opacity=0.95){
+/** Aligns with common evaluator color_map: (GT|EST) × (TP|FN|FP). */
+const EVAL_STATUS_COLOR_HEX = {
+  "GT:TP": 0x00cc66,
+  "GT:FN": 0xff9933,
+  "EST:TP": 0x66b3ff,
+  "EST:FP": 0xff6666,
+};
+
+function normalizeEvalKind(box, layerId){
+  const raw = box.kind ?? box.eval_kind ?? box.role ?? box.source_kind;
+  if (raw != null && String(raw).trim() !== "") {
+    const u = String(raw).toUpperCase();
+    if (u === "EST" || u === "PRED" || u === "PREDICTION" || u === "ESTIMATE" || u === "DET") return "EST";
+    if (u === "GT" || u === "GROUNDTRUTH" || u === "GTRUTH") return "GT";
+  }
+  if (layerId === "pred") return "EST";
+  if (layerId === "gt") return "GT";
+  if (layerId === "matched") return "GT";
+  return "GT";
+}
+
+function normalizeEvalStatus(box){
+  const s = String(box.status ?? "TP").toUpperCase();
+  if (s === "TP" || s === "FN" || s === "FP") return s;
+  return "TP";
+}
+
+function evalLineColor(box, layerId){
+  const kind = normalizeEvalKind(box, layerId);
+  const st = normalizeEvalStatus(box);
+  const key = `${kind}:${st}`;
+  if (Object.prototype.hasOwnProperty.call(EVAL_STATUS_COLOR_HEX, key)) {
+    return EVAL_STATUS_COLOR_HEX[key];
+  }
+  return layerId === "pred" ? 0xff5ec4 : layerId === "matched" ? 0x58d8ff : 0x4bd08d;
+}
+
+function boxAnchorForLabel(box){
+  const arr = Array.isArray(box.corners) ? box.corners : null;
+  if (arr && arr.length >= 24) {
+    let maxz = -Infinity;
+    let sx = 0;
+    let sy = 0;
+    for (let i = 0; i < 8; i++) {
+      const x = arr[i * 3];
+      const y = arr[i * 3 + 1];
+      const z = arr[i * 3 + 2];
+      sx += x;
+      sy += y;
+      maxz = Math.max(maxz, z);
+    }
+    sx /= 8;
+    sy /= 8;
+    return new THREE.Vector3(sx, sy, maxz + 0.25);
+  }
+  const cx = Number(box.x ?? box.cx ?? 0);
+  const cy = Number(box.y ?? box.cy ?? 0);
+  const cz = Number(box.z ?? box.cz ?? 0);
+  const h = Math.max(0.01, Number(box.height ?? box.h ?? 1.0));
+  const hh = h / 2;
+  return new THREE.Vector3(cx, cy, cz + hh + 0.25);
+}
+
+function escHtml(s){
+  const d = document.createElement("div");
+  d.textContent = s == null ? "" : String(s);
+  return d.innerHTML;
+}
+
+function shortUuid(u){
+  const t = String(u || "");
+  if (t.length <= 14) return t;
+  return `${t.slice(0, 6)}…${t.slice(-4)}`;
+}
+
+function clearEvalTags(){
+  while (evalTagsGroup.children.length) evalTagsGroup.remove(evalTagsGroup.children[0]);
+}
+
+function renderEvalTags(){
+  clearEvalTags();
+  const showL = document.getElementById("showEvalLabel") && document.getElementById("showEvalLabel").checked;
+  const showU = document.getElementById("showEvalUuid") && document.getElementById("showEvalUuid").checked;
+  if (!showL && !showU) return;
+  const layers = [
+    { id: "gt", key: "gt", arr: externalLayers.gt, vis: () => !!document.getElementById("showGtLayer").checked },
+    { id: "pred", key: "pred", arr: externalLayers.pred, vis: () => !!document.getElementById("showPredLayer").checked },
+    { id: "matched", key: "matched", arr: externalLayers.matched, vis: () => !!document.getElementById("showMatchedLayer").checked },
+  ];
+  for (const L of layers) {
+    if (!L.vis()) continue;
+    const list = Array.isArray(L.arr) ? L.arr : [];
+    for (const b of list) {
+      if (!b || typeof b !== "object") continue;
+      const label = b.label != null && String(b.label).trim() !== "" ? String(b.label) : "";
+      const uuid = b.uuid != null && String(b.uuid).trim() !== "" ? String(b.uuid) : "";
+      const hasLabel = showL && label;
+      const hasUuid = showU && uuid;
+      if (!hasLabel && !hasUuid) continue;
+      const div = document.createElement("div");
+      div.className = "eval-tag";
+      const bits = [];
+      if (hasLabel) bits.push(`<span class="t-lbl">${escHtml(label)}</span>`);
+      if (hasUuid) bits.push(`<span class="t-uuid">${escHtml(shortUuid(uuid))}</span>`);
+      if (!bits.length) continue;
+      div.innerHTML = bits.join("<br/>");
+      const obj = new CSS2DObject(div);
+      obj.position.copy(boxAnchorForLabel(b));
+      evalTagsGroup.add(obj);
+    }
+  }
+}
+
+function drawLayerBoxes(group, boxes, layerId, width=1.4){
   clearGroup(group);
   if (!Array.isArray(boxes)) return;
+  const opacity = Number(document.getElementById("boxOpacity").value || "0.9");
   for (const b of boxes){
     const edges = boxEdgesFromCorners(b) || boxEdgesFromCenterExternal(b);
     const g = new THREE.BufferGeometry();
     g.setAttribute("position", new THREE.Float32BufferAttribute(edges, 3));
-    const m = new THREE.LineBasicMaterial({ color, transparent:true, opacity });
+    const col = evalLineColor(b, layerId);
+    const m = new THREE.LineBasicMaterial({ color: col, transparent: true, opacity });
     const seg = new THREE.LineSegments(g, m);
     seg.userData.lineWidth = width;
     group.add(seg);
@@ -645,12 +780,13 @@ function drawLayerBoxes(group, boxes, color, width=1.4, opacity=0.95){
 }
 
 function renderExternalLayers(){
-  drawLayerBoxes(gtLayerGroup, externalLayers.gt, 0x4bd08d, 1.2, 0.9);
-  drawLayerBoxes(predLayerGroup, externalLayers.pred, 0xff5ec4, 1.2, 0.9);
-  drawLayerBoxes(matchedLayerGroup, externalLayers.matched, 0x58d8ff, 1.8, 1.0);
+  drawLayerBoxes(gtLayerGroup, externalLayers.gt, "gt", 1.2);
+  drawLayerBoxes(predLayerGroup, externalLayers.pred, "pred", 1.2);
+  drawLayerBoxes(matchedLayerGroup, externalLayers.matched, "matched", 1.8);
   gtLayerGroup.visible = !!document.getElementById("showGtLayer").checked;
   predLayerGroup.visible = !!document.getElementById("showPredLayer").checked;
   matchedLayerGroup.visible = !!document.getElementById("showMatchedLayer").checked;
+  renderEvalTags();
 }
 
 function setExternalLayerPayload(payload, opts){
@@ -1108,16 +1244,35 @@ document.getElementById("intensityGain").addEventListener("input", async (e) => 
   const data = cache.get(frame);
   if (data) setFrameData(data);
 });
+function applyOpacityToLineGroup(grp, v){
+  for (const child of grp.children) {
+    if (child.material) child.material.opacity = v;
+  }
+}
 document.getElementById("boxOpacity").addEventListener("input", () => {
   const v = Number(document.getElementById("boxOpacity").value || "0.9");
   for (const child of boxesGroup.children) {
     if (child.material) child.material.opacity = v;
   }
+  applyOpacityToLineGroup(gtLayerGroup, v);
+  applyOpacityToLineGroup(predLayerGroup, v);
+  applyOpacityToLineGroup(matchedLayerGroup, v);
   applyEgoOpacity(v);
 });
-document.getElementById("showGtLayer").addEventListener("change", () => { gtLayerGroup.visible = !!document.getElementById("showGtLayer").checked; });
-document.getElementById("showPredLayer").addEventListener("change", () => { predLayerGroup.visible = !!document.getElementById("showPredLayer").checked; });
-document.getElementById("showMatchedLayer").addEventListener("change", () => { matchedLayerGroup.visible = !!document.getElementById("showMatchedLayer").checked; });
+document.getElementById("showGtLayer").addEventListener("change", () => {
+  gtLayerGroup.visible = !!document.getElementById("showGtLayer").checked;
+  renderEvalTags();
+});
+document.getElementById("showPredLayer").addEventListener("change", () => {
+  predLayerGroup.visible = !!document.getElementById("showPredLayer").checked;
+  renderEvalTags();
+});
+document.getElementById("showMatchedLayer").addEventListener("change", () => {
+  matchedLayerGroup.visible = !!document.getElementById("showMatchedLayer").checked;
+  renderEvalTags();
+});
+document.getElementById("showEvalLabel").addEventListener("change", () => { renderEvalTags(); });
+document.getElementById("showEvalUuid").addEventListener("change", () => { renderEvalTags(); });
 document.getElementById("projMode").addEventListener("click", () => {
   const wasPersp = camera === perspCamera;
   const next = wasPersp ? orthoCamera : perspCamera;
@@ -1225,6 +1380,7 @@ function animate(ts){
   }
   controls.update();
   renderer.render(scene, camera);
+  if (css2dRenderer) css2dRenderer.render(scene, camera);
   if (overlayEnabled && overlayData) overlayRenderer.render(overlayScene, overlayCamera3d);
   const mchk = document.getElementById("showMetricsPlot");
   if (mchk && mchk.checked && metricsWrapEl && !metricsWrapEl.hidden && metricsChartGroup.children.length) {
