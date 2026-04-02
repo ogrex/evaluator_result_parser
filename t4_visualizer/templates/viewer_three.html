@@ -1,6 +1,6 @@
 <!DOCTYPE html>
 <html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
-<title>T4 Three.js Viewer</title>
+<title>T4 3D Viewer</title>
 <style>
   :root{--bg:#060812;--panel:#0f1324cc;--text:#e8edff;--muted:#9aa6d4;--accent:#6ea8ff;--ok:#4bd08d;}
   html,body{margin:0;height:100%;background:radial-gradient(1200px 600px at 20% 0%,#1a2552 0%,#060812 65%);color:var(--text);font-family:ui-sans-serif,system-ui,sans-serif;}
@@ -39,7 +39,7 @@
 </head><body><div id="app">
   <div class="top">
     <div class="topRowMain">
-      <strong>Three.js Viewer</strong>
+      <strong>T4 3D Viewer</strong>
       <span class="pill">dataset=<code>__DATASET_ID__</code></span>
       <span class="pill">scenario=<code>__SCENARIO_NAME__</code></span>
       <div class="controls">
@@ -112,6 +112,18 @@ const startFrame = Number(params.get("frame_index") || "0");
 const version = params.get("version");
 const qv = version ? `&version=${encodeURIComponent(version)}` : "";
 const metaUrl = `/viewer/three/meta?t4dataset_id=${encodeURIComponent(dataset)}&scenario_name=${encodeURIComponent(scenario)}${qv}`;
+
+/** GT/Pred from postMessage use center+size+yaw; dataset boxes use API corners. Extra yaw (rad) aligns typical eval exports with T4 ego (+x forward, +y left). Omit query param for +π/2; use `external_bbox_yaw_offset=0` if your JSON already matches T4. */
+function getExternalBboxYawOffset(){
+  if (!params.has("external_bbox_yaw_offset")) return Math.PI / 2;
+  const n = Number(params.get("external_bbox_yaw_offset"));
+  return Number.isFinite(n) ? n : Math.PI / 2;
+}
+/** Swap length↔width for center-based boxes (`external_bbox_swap_lw=1`) when exporter names dimensions opposite to T4. */
+function getExternalBboxSwapLW(){
+  const v = (params.get("external_bbox_swap_lw") || "").toLowerCase();
+  return v === "1" || v === "true" || v === "yes";
+}
 
 const canvas = document.getElementById("canvas");
 const renderer = new THREE.WebGLRenderer({canvas, antialias:true});
@@ -561,27 +573,49 @@ function clearGroup(g){
   while (g.children.length) g.remove(g.children[0]);
 }
 
-function boxEdgesFromCenter(box){
+/**
+ * Rotated box in ego frame (x forward, y left, z up), same as `visualize.py` TargetObject / `_project_bbox_to_roi`:
+ * body-x = length (forward), body-y = width (lateral).
+ */
+function boxEdgesFromCenterWithOpts(box, opts){
+  const yawOff = opts && Number.isFinite(opts.yawOffset) ? opts.yawOffset : 0;
+  const swapLW = opts && opts.swapLW;
   const cx = Number(box.x ?? box.cx ?? 0);
   const cy = Number(box.y ?? box.cy ?? 0);
   const cz = Number(box.z ?? box.cz ?? 0);
-  const w = Math.max(0.01, Number(box.width ?? box.w ?? 1.0));
-  const l = Math.max(0.01, Number(box.length ?? box.l ?? 1.0));
+  let l = Math.max(0.01, Number(box.length ?? box.l ?? 1.0));
+  let w = Math.max(0.01, Number(box.width ?? box.w ?? 1.0));
   const h = Math.max(0.01, Number(box.height ?? box.h ?? 1.0));
-  const yaw = Number(box.yaw ?? box.heading ?? 0.0);
-  const hw = w / 2, hl = l / 2, hh = h / 2;
-  const c = Math.cos(yaw), s = Math.sin(yaw);
+  if (swapLW || box.swap_lw === true) {
+    const t = l;
+    l = w;
+    w = t;
+  }
+  const yaw = Number(box.yaw ?? box.heading ?? 0.0) + yawOff;
+  const hw = w / 2;
+  const hl = l / 2;
+  const hh = h / 2;
+  const c = Math.cos(yaw);
+  const s = Math.sin(yaw);
   const body = [
     [ hl,  hw,  hh], [ hl, -hw,  hh], [ hl, -hw, -hh], [ hl,  hw, -hh],
     [-hl,  hw,  hh], [-hl, -hw,  hh], [-hl, -hw, -hh], [-hl,  hw, -hh],
   ];
   const corners = body.map(([bx, by, bz]) => [cx + bx * c - by * s, cy + bx * s + by * c, cz + bz]);
-  const edges = [[0,1],[1,2],[2,3],[3,0],[4,5],[5,6],[6,7],[7,4],[0,4],[1,5],[2,6],[3,7]];
+  const edgePairs = [[0,1],[1,2],[2,3],[3,0],[4,5],[5,6],[6,7],[7,4],[0,4],[1,5],[2,6],[3,7]];
   const out = [];
-  for (const [a,b] of edges){
+  for (const [a, b] of edgePairs){
     out.push(...corners[a], ...corners[b]);
   }
   return out;
+}
+
+/** PostMessage GT/Pred/Matched: apply T4 alignment offset and optional length/width swap (see URL params). */
+function boxEdgesFromCenterExternal(box){
+  return boxEdgesFromCenterWithOpts(box, {
+    yawOffset: getExternalBboxYawOffset(),
+    swapLW: getExternalBboxSwapLW(),
+  });
 }
 
 function boxEdgesFromCorners(box){
@@ -600,7 +634,7 @@ function drawLayerBoxes(group, boxes, color, width=1.4, opacity=0.95){
   clearGroup(group);
   if (!Array.isArray(boxes)) return;
   for (const b of boxes){
-    const edges = boxEdgesFromCorners(b) || boxEdgesFromCenter(b);
+    const edges = boxEdgesFromCorners(b) || boxEdgesFromCenterExternal(b);
     const g = new THREE.BufferGeometry();
     g.setAttribute("position", new THREE.Float32BufferAttribute(edges, 3));
     const m = new THREE.LineBasicMaterial({ color, transparent:true, opacity });
