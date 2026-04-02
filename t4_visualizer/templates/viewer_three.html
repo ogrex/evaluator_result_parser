@@ -1,30 +1,53 @@
 <!DOCTYPE html>
 <html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
 <title>T4 3D Viewer</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,400;0,9..40,500;0,9..40,600;0,9..40,700&family=JetBrains+Mono:wght@420;520&display=swap" rel="stylesheet">
 <style>
-  :root{--bg:#060812;--panel:#0f1324cc;--text:#e8edff;--muted:#9aa6d4;--accent:#6ea8ff;--ok:#4bd08d;}
-  html,body{margin:0;height:100%;background:radial-gradient(1200px 600px at 20% 0%,#1a2552 0%,#060812 65%);color:var(--text);font-family:ui-sans-serif,system-ui,sans-serif;}
+  :root{
+    --bg:#060812;--panel:rgba(12,16,36,.78);--text:#eef2ff;--muted:#94a3c8;--accent:#7cb3ff;--ok:#4bd08d;
+    --font-ui:"DM Sans",system-ui,sans-serif;--font-mono:"JetBrains Mono",ui-monospace,monospace;
+    --hud-edge:rgba(120,140,200,.22);--hud-inner:linear-gradient(165deg,rgba(22,28,52,.95) 0%,rgba(8,10,22,.92) 50%,rgba(14,18,38,.94) 100%);
+  }
+  html,body{margin:0;height:100%;background:radial-gradient(ellipse 1400px 700px at 15% -10%,#1e2a64 0%,#0a0e1e 48%,#060812 100%);color:var(--text);font-family:var(--font-ui);font-feature-settings:"ss01" on;-webkit-font-smoothing:antialiased;}
   #app{display:grid;grid-template-rows:auto 1fr;height:100%;}
-  .top{display:flex;flex-direction:column;gap:.45rem;padding:.55rem .9rem .65rem;background:var(--panel);backdrop-filter:blur(8px);border-bottom:1px solid #24315f;}
-  .topRowMain{display:flex;gap:.7rem;align-items:center;flex-wrap:wrap}
-  .topRowScrubber{display:flex;gap:.55rem;align-items:center;width:100%;min-height:2rem}
-  .scrubberLabel{font-size:.78rem;color:var(--muted);white-space:nowrap}
-  #slider{flex:1;min-width:120px;height:1.35rem;cursor:pointer}
+  .top{display:flex;flex-direction:column;gap:.5rem;padding:.6rem 1rem .7rem;background:linear-gradient(180deg,rgba(14,18,40,.88) 0%,rgba(8,10,22,.82) 100%);backdrop-filter:blur(14px) saturate(1.2);border-bottom:1px solid var(--hud-edge);box-shadow:0 4px 24px rgba(0,0,0,.35)}
+  .topRowMain{display:flex;gap:.75rem;align-items:center;flex-wrap:wrap}
+  .topRowMain>strong{font-size:.95rem;font-weight:700;letter-spacing:-.03em;background:linear-gradient(110deg,#e8eeff 0%,#a8b8e8 100%);-webkit-background-clip:text;background-clip:text;color:transparent}
+  .topRowScrubber{display:flex;gap:.6rem;align-items:center;width:100%;min-height:2.1rem;padding:.15rem 0}
+  .scrubberLabel{font-size:.75rem;font-weight:600;letter-spacing:.06em;text-transform:uppercase;color:var(--muted)}
+  #slider{flex:1;min-width:120px;height:1.35rem;cursor:pointer;accent-color:var(--accent)}
   .frameNav{display:flex;gap:.35rem;align-items:center;flex-shrink:0}
-  .frameNav button{min-width:2rem;padding:.25rem .4rem}
-  .pill{font-size:.82rem;color:var(--muted)}
+  .frameNav button{min-width:2rem;padding:.28rem .45rem;border-radius:9px}
+  .pill{font-size:.8rem;color:var(--muted)}
+  .pill code{font-family:var(--font-mono);font-size:.78em;color:#b8c8e8}
   .controls{display:flex;gap:.45rem;align-items:center;flex-wrap:wrap}
-  button,input[type=range],select{background:#111a35;color:var(--text);border:1px solid #2a3d78;border-radius:8px;padding:.3rem .5rem}
+  button,input[type=range],select{background:rgba(18,24,48,.9);color:var(--text);border:1px solid rgba(90,110,180,.35);border-radius:9px;padding:.32rem .55rem;box-shadow:0 1px 0 rgba(255,255,255,.04) inset;transition:border-color .15s,background .15s}
+  button:hover,input[type=range]:hover,select:hover{border-color:rgba(120,160,255,.45)}
   #canvasWrap{position:relative;min-height:0}
   #canvas{width:100%;height:100%;display:block}
-  #hud{position:absolute;right:12px;top:12px;background:var(--panel);border:1px solid #2b3f7d;border-radius:10px;padding:.6rem;min-width:260px}
-  #evalHud{margin-top:.35rem;padding-top:.45rem;border-top:1px solid #24315f;font-size:.78rem;line-height:1.45}
-  #evalHud .row{display:flex;justify-content:space-between;gap:.5rem}
-  #evalHud .nGt{color:#4bd08d}
-  #evalHud .nPr{color:#ff7ec8}
-  #evalHud .nMt{color:#58d8ff}
-  #status{font-size:.82rem;color:var(--muted)}
-  a{color:var(--accent)}
+  .hud-panel{
+    position:absolute;right:14px;top:14px;min-width:272px;max-width:min(92vw,320px);
+    background:var(--hud-inner);backdrop-filter:blur(16px) saturate(1.15);
+    border:1px solid var(--hud-edge);border-radius:14px;
+    padding:.85rem .95rem 1rem;
+    box-shadow:0 8px 40px rgba(0,0,0,.45),0 0 0 1px rgba(255,255,255,.04) inset,0 1px 0 rgba(255,255,255,.06) inset;
+  }
+  .hud-panel .hud-rule{border:none;height:1px;background:linear-gradient(90deg,transparent,rgba(100,120,200,.35),transparent);margin:.65rem 0;opacity:.9}
+  .hud-panel__section-title{font-size:.62rem;font-weight:700;letter-spacing:.12em;text-transform:uppercase;color:#7d8db8;margin-bottom:.45rem}
+  .hud-panel .hud-grid{display:grid;gap:.38rem;font-size:.8rem}
+  #evalHud{margin-top:.5rem;padding-top:.55rem;border-top:1px solid rgba(60,80,140,.25);font-size:.78rem;line-height:1.5}
+  #evalHud .eval-hud-head{font-weight:700;font-size:.62rem;letter-spacing:.1em;text-transform:uppercase;color:#8b9cc4;margin-bottom:.35rem}
+  #evalHud .row{display:flex;justify-content:space-between;align-items:center;gap:.6rem}
+  #evalHud .row span:first-child{color:#9aa6c8;font-size:.76rem}
+  #evalHud .nGt{color:#5ee4a8;font-weight:600;text-shadow:0 0 20px rgba(94,228,168,.35)}
+  #evalHud .nPr{color:#8ec8ff;font-weight:600;text-shadow:0 0 20px rgba(142,200,255,.3)}
+  #evalHud .nMt{color:#7ee0ff;font-weight:600;text-shadow:0 0 20px rgba(126,224,255,.28)}
+  #status{font-size:.8rem;color:var(--muted);line-height:1.4}
+  #meta{font-size:.75rem;color:#a8b4d4;margin-top:.35rem;font-family:var(--font-mono);line-height:1.45;word-break:break-all}
+  a{color:var(--accent);text-decoration:none;border-bottom:1px solid rgba(124,179,255,.35);transition:color .15s,border-color .15s}
+  a:hover{color:#c8ddff;border-bottom-color:rgba(200,221,255,.55)}
   .overlay-wrap{position:absolute;left:8px;bottom:8px;width:min(32vw,440px);max-height:min(24vh,200px);display:none;flex-direction:column;border:1px solid #2b3f7d;border-radius:10px;overflow:hidden;background:linear-gradient(180deg,#0c1022 0%,#080c18 100%);box-shadow:0 8px 32px rgba(0,0,0,.45)}
   .overlay-cam-labels{display:flex;justify-content:space-around;align-items:center;gap:2px;font-size:9px;letter-spacing:.02em;color:var(--muted);padding:3px 4px;background:#070a14;border-bottom:1px solid #1e2848}
   .overlay-cam-labels.bot{border-bottom:none;border-top:1px solid #1e2848}
@@ -35,9 +58,9 @@
   .metrics-legend{position:absolute;right:8px;top:6px;z-index:1;font-size:9px;letter-spacing:.06em;color:#8a9bc4;pointer-events:none}
   .metrics-legend .lg-gt{color:#4bd08d}.metrics-legend .lg-pr{color:#ff5ec4}.metrics-legend .lg-tpr{color:#ffcc66}
   #metricsCanvas{width:100%;height:100%;display:block}
-  .eval-tag{color:#e8edff;font-size:11px;line-height:1.35;font-family:ui-monospace,monospace;pointer-events:none;white-space:nowrap;text-shadow:0 1px 3px #000}
-  .eval-tag .t-lbl{font-weight:600}
-  .eval-tag .t-uuid{opacity:.88;font-size:10px;color:#cfe0ff}
+  .hud-grid label{display:flex;align-items:center;gap:.45rem;cursor:pointer;user-select:none}
+  .hud-grid label input[type=checkbox]{accent-color:#8ab4ff;width:14px;height:14px}
+  .hud-grid strong#projMode{cursor:pointer;color:#c8d8ff}
 </style>
 </head><body><div id="app">
   <div class="top">
@@ -83,12 +106,13 @@
       <div class="metrics-legend" aria-hidden="true"><span class="lg-gt">●</span>GT <span class="lg-pr">●</span>Pred <span class="lg-tpr">●</span>TPR</div>
       <canvas id="metricsCanvas"></canvas>
     </div>
-    <div id="hud">
+    <div id="hud" class="hud-panel">
       <div id="status">loading...</div>
       <div id="meta"></div>
       <div id="evalHud" hidden></div>
-      <hr style="border-color:#24315f;opacity:.6">
-      <div style="display:grid;gap:.4rem;font-size:.82rem">
+      <hr class="hud-rule">
+      <div class="hud-panel__section-title">Scene</div>
+      <div class="hud-grid">
         <div>projection: <strong id="projMode">perspective</strong></div>
         <label>point size <input id="pointSize" type="range" min="0.02" max="0.25" step="0.01" value="0.08"></label>
         <label>point opacity <input id="pointOpacity" type="range" min="0.2" max="1.0" step="0.05" value="0.95"></label>
@@ -97,8 +121,6 @@
         <label><input id="showGtLayer" type="checkbox" checked> show GT</label>
         <label><input id="showPredLayer" type="checkbox" checked> show Pred</label>
         <label><input id="showMatchedLayer" type="checkbox" checked> show Matched</label>
-        <label><input id="showEvalLabel" type="checkbox" checked> eval label</label>
-        <label><input id="showEvalUuid" type="checkbox"> eval uuid</label>
         <label><input id="showMetricsPlot" type="checkbox" checked> metrics plot (GT / Pred / TPR)</label>
       </div>
     </div>
@@ -109,8 +131,6 @@
 import * as THREE from "three";
 import { OrbitControls } from "three/addons/controls/OrbitControls.js";
 import { ColladaLoader } from "three/addons/loaders/ColladaLoader.js";
-import { CSS2DObject, CSS2DRenderer } from "three/addons/renderers/CSS2DRenderer.js";
-
 const params = new URLSearchParams("__QS__");
 const dataset = params.get("t4dataset_id");
 const scenario = params.get("scenario_name");
@@ -158,8 +178,6 @@ const boxesGroup = new THREE.Group(); scene.add(boxesGroup);
 const gtLayerGroup = new THREE.Group(); scene.add(gtLayerGroup);
 const predLayerGroup = new THREE.Group(); scene.add(predLayerGroup);
 const matchedLayerGroup = new THREE.Group(); scene.add(matchedLayerGroup);
-const evalTagsGroup = new THREE.Group();
-scene.add(evalTagsGroup);
 const laneletGroup = new THREE.Group(); scene.add(laneletGroup);
 const egoAxes = new THREE.AxesHelper(2.8); scene.add(egoAxes);
 /** Ego vehicle root (base_link); mesh from sample_vehicle_description or wireframe fallback. */
@@ -280,16 +298,6 @@ const statusEl = document.getElementById("status");
 const metaEl = document.getElementById("meta");
 const evalHudEl = document.getElementById("evalHud");
 const canvasWrapEl = document.getElementById("canvasWrap");
-let css2dRenderer = null;
-function ensureCss2dRenderer(){
-  if (css2dRenderer || !canvasWrapEl) return;
-  css2dRenderer = new CSS2DRenderer();
-  css2dRenderer.domElement.style.position = "absolute";
-  css2dRenderer.domElement.style.top = "0";
-  css2dRenderer.domElement.style.left = "0";
-  css2dRenderer.domElement.style.pointerEvents = "none";
-  canvasWrapEl.appendChild(css2dRenderer.domElement);
-}
 function setStatus(t){ statusEl.textContent = t; }
 function setFrameText(){ frameTxt.textContent = `frame ${frame}/${Math.max(0,totalFrames-1)}`; slider.value = String(frame); }
 
@@ -314,7 +322,7 @@ function updateEvalHud(){
     ? `<div class="row" style="margin-top:.35rem;opacity:.92"><span>per-frame keys</span><span>${mapKeys}</span></div>`
     : "";
   evalHudEl.innerHTML =
-    `<div style="font-weight:600;font-size:.7rem;color:var(--muted);text-transform:uppercase;letter-spacing:.04em;margin-bottom:.25rem">Eval layers (this frame)</div>` +
+    `<div class="eval-hud-head">Eval · this frame</div>` +
     `<div class="row"><span>GT</span><span class="nGt">${gt}</span></div>` +
     `<div class="row"><span>Pred</span><span class="nPr">${pred}</span></div>` +
     `<div class="row"><span>Matched</span><span class="nMt">${matched}</span></div>` +
@@ -327,12 +335,10 @@ function syncFullscreenButton(){
 }
 
 function resizeMainRenderer(){
-  ensureCss2dRenderer();
   const wrap = document.getElementById("canvasWrap");
   const w = Math.max(1, (wrap && wrap.clientWidth) || canvas.clientWidth || window.innerWidth);
   const h = Math.max(1, (wrap && wrap.clientHeight) || canvas.clientHeight || (window.innerHeight - 64));
   renderer.setSize(w, h, false);
-  if (css2dRenderer) css2dRenderer.setSize(w, h, false);
   if (camera.isPerspectiveCamera) {
     camera.aspect = w / h;
   } else {
@@ -687,82 +693,6 @@ function evalLineColor(box, layerId){
   return layerId === "pred" ? 0xff5ec4 : layerId === "matched" ? 0x58d8ff : 0x4bd08d;
 }
 
-function boxAnchorForLabel(box){
-  const arr = Array.isArray(box.corners) ? box.corners : null;
-  if (arr && arr.length >= 24) {
-    let maxz = -Infinity;
-    let sx = 0;
-    let sy = 0;
-    for (let i = 0; i < 8; i++) {
-      const x = arr[i * 3];
-      const y = arr[i * 3 + 1];
-      const z = arr[i * 3 + 2];
-      sx += x;
-      sy += y;
-      maxz = Math.max(maxz, z);
-    }
-    sx /= 8;
-    sy /= 8;
-    return new THREE.Vector3(sx, sy, maxz + 0.25);
-  }
-  const cx = Number(box.x ?? box.cx ?? 0);
-  const cy = Number(box.y ?? box.cy ?? 0);
-  const cz = Number(box.z ?? box.cz ?? 0);
-  const h = Math.max(0.01, Number(box.height ?? box.h ?? 1.0));
-  const hh = h / 2;
-  return new THREE.Vector3(cx, cy, cz + hh + 0.25);
-}
-
-function escHtml(s){
-  const d = document.createElement("div");
-  d.textContent = s == null ? "" : String(s);
-  return d.innerHTML;
-}
-
-function shortUuid(u){
-  const t = String(u || "");
-  if (t.length <= 14) return t;
-  return `${t.slice(0, 6)}…${t.slice(-4)}`;
-}
-
-function clearEvalTags(){
-  while (evalTagsGroup.children.length) evalTagsGroup.remove(evalTagsGroup.children[0]);
-}
-
-function renderEvalTags(){
-  clearEvalTags();
-  const showL = document.getElementById("showEvalLabel") && document.getElementById("showEvalLabel").checked;
-  const showU = document.getElementById("showEvalUuid") && document.getElementById("showEvalUuid").checked;
-  if (!showL && !showU) return;
-  const layers = [
-    { id: "gt", key: "gt", arr: externalLayers.gt, vis: () => !!document.getElementById("showGtLayer").checked },
-    { id: "pred", key: "pred", arr: externalLayers.pred, vis: () => !!document.getElementById("showPredLayer").checked },
-    { id: "matched", key: "matched", arr: externalLayers.matched, vis: () => !!document.getElementById("showMatchedLayer").checked },
-  ];
-  for (const L of layers) {
-    if (!L.vis()) continue;
-    const list = Array.isArray(L.arr) ? L.arr : [];
-    for (const b of list) {
-      if (!b || typeof b !== "object") continue;
-      const label = b.label != null && String(b.label).trim() !== "" ? String(b.label) : "";
-      const uuid = b.uuid != null && String(b.uuid).trim() !== "" ? String(b.uuid) : "";
-      const hasLabel = showL && label;
-      const hasUuid = showU && uuid;
-      if (!hasLabel && !hasUuid) continue;
-      const div = document.createElement("div");
-      div.className = "eval-tag";
-      const bits = [];
-      if (hasLabel) bits.push(`<span class="t-lbl">${escHtml(label)}</span>`);
-      if (hasUuid) bits.push(`<span class="t-uuid">${escHtml(shortUuid(uuid))}</span>`);
-      if (!bits.length) continue;
-      div.innerHTML = bits.join("<br/>");
-      const obj = new CSS2DObject(div);
-      obj.position.copy(boxAnchorForLabel(b));
-      evalTagsGroup.add(obj);
-    }
-  }
-}
-
 function drawLayerBoxes(group, boxes, layerId, width=1.4){
   clearGroup(group);
   if (!Array.isArray(boxes)) return;
@@ -786,7 +716,6 @@ function renderExternalLayers(){
   gtLayerGroup.visible = !!document.getElementById("showGtLayer").checked;
   predLayerGroup.visible = !!document.getElementById("showPredLayer").checked;
   matchedLayerGroup.visible = !!document.getElementById("showMatchedLayer").checked;
-  renderEvalTags();
 }
 
 function setExternalLayerPayload(payload, opts){
@@ -1261,18 +1190,13 @@ document.getElementById("boxOpacity").addEventListener("input", () => {
 });
 document.getElementById("showGtLayer").addEventListener("change", () => {
   gtLayerGroup.visible = !!document.getElementById("showGtLayer").checked;
-  renderEvalTags();
 });
 document.getElementById("showPredLayer").addEventListener("change", () => {
   predLayerGroup.visible = !!document.getElementById("showPredLayer").checked;
-  renderEvalTags();
 });
 document.getElementById("showMatchedLayer").addEventListener("change", () => {
   matchedLayerGroup.visible = !!document.getElementById("showMatchedLayer").checked;
-  renderEvalTags();
 });
-document.getElementById("showEvalLabel").addEventListener("change", () => { renderEvalTags(); });
-document.getElementById("showEvalUuid").addEventListener("change", () => { renderEvalTags(); });
 document.getElementById("projMode").addEventListener("click", () => {
   const wasPersp = camera === perspCamera;
   const next = wasPersp ? orthoCamera : perspCamera;
@@ -1380,7 +1304,6 @@ function animate(ts){
   }
   controls.update();
   renderer.render(scene, camera);
-  if (css2dRenderer) css2dRenderer.render(scene, camera);
   if (overlayEnabled && overlayData) overlayRenderer.render(overlayScene, overlayCamera3d);
   const mchk = document.getElementById("showMetricsPlot");
   if (mchk && mchk.checked && metricsWrapEl && !metricsWrapEl.hidden && metricsChartGroup.children.length) {
