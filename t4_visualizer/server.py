@@ -671,6 +671,38 @@ def _build_app(
                 exc=exc,
             )
 
+    def _resolve_viewer_scenario_name(t4, scenario_name: Optional[str]) -> str:
+        """Resolve scenario for viewer endpoints.
+
+        Rules:
+        - exact match when provided and found
+        - if dataset has exactly one scenario, use it even when missing/wrong
+        - otherwise require explicit valid scenario name
+        """
+        from t4_visualizer.visualize import list_scene_summaries
+
+        raw = list_scene_summaries(t4)
+        names = [str(r.get("name") or "") for r in raw if str(r.get("name") or "")]
+        if not names:
+            _public_error(404, "scenario_not_found", "No scenarios found in dataset.")
+        wanted = (scenario_name or "").strip()
+        if wanted and wanted in names:
+            return wanted
+        if len(names) == 1:
+            return names[0]
+        if not wanted:
+            _public_error(
+                400,
+                "scenario_required",
+                "scenario_name is required when dataset contains multiple scenarios.",
+            )
+        _public_error(
+            404,
+            "scenario_not_found",
+            f"Scenario '{wanted}' was not found.",
+            hint="Call GET /datasets/{id}/scenarios to inspect valid scenario names.",
+        )
+
     def _pointcloud_and_boxes_for_sample(t4, sample):
         import numpy as np
         from t4_visualizer.visualize import _load_pointcloud, list_lidar_channels
@@ -1490,7 +1522,7 @@ def _build_app(
     )
     def viewer_three_meta(
         t4dataset_id: str,
-        scenario_name: str,
+        scenario_name: Optional[str] = None,
         version: Optional[str] = None,
     ):
         dataset_path = _resolve_dataset(t4dataset_id)
@@ -1498,13 +1530,14 @@ def _build_app(
 
         try:
             t4 = _cache.load(dataset_path, version=version)
+            resolved_scenario = _resolve_viewer_scenario_name(t4, scenario_name)
             scenes = list_scene_summaries(t4)
-            scene_meta = next((s for s in scenes if s.get("name") == scenario_name), None)
+            scene_meta = next((s for s in scenes if s.get("name") == resolved_scenario), None)
             if scene_meta is None:
                 _public_error(
                     status_code=404,
                     code="scenario_not_found",
-                    message=f"Scenario '{scenario_name}' was not found.",
+                    message=f"Scenario '{resolved_scenario}' was not found.",
                 )
         except HTTPException:
             raise
@@ -1518,13 +1551,13 @@ def _build_app(
 
         return {
             "t4dataset_id": t4dataset_id,
-            "scenario_name": scenario_name,
+            "scenario_name": resolved_scenario,
             "version": version,
             "total_frames": int(scene_meta.get("nbr_samples") or 0),
             "format_version": "T4V3D002",
             "binary_endpoint_template": (
                 f"/viewer/three/frame.bin?t4dataset_id={t4dataset_id}"
-                f"&scenario_name={scenario_name}&frame_index={{frame_index}}"
+                f"&scenario_name={resolved_scenario}&frame_index={{frame_index}}"
                 f"{f'&version={version}' if version else ''}"
             ),
         }
@@ -1536,7 +1569,7 @@ def _build_app(
     )
     def viewer_three_frame_binary(
         t4dataset_id: str,
-        scenario_name: str,
+        scenario_name: Optional[str] = None,
         frame_index: int = Query(..., ge=0),
         version: Optional[str] = None,
         response_format: str = Query("binary", alias="format"),
@@ -1544,7 +1577,8 @@ def _build_app(
         dataset_path = _resolve_dataset(t4dataset_id)
         try:
             t4 = _cache.load(dataset_path, version=version)
-            sample = _get_scenario_sample(t4, scenario_name, frame_index)
+            resolved_scenario = _resolve_viewer_scenario_name(t4, scenario_name)
+            sample = _get_scenario_sample(t4, resolved_scenario, frame_index)
             points, boxes_3d = _pointcloud_and_boxes_for_sample(t4, sample)
             if response_format == "json":
                 if not _debug_visibility:
@@ -1601,7 +1635,7 @@ def _build_app(
     )
     def viewer_three_frames_window(
         t4dataset_id: str,
-        scenario_name: str,
+        scenario_name: Optional[str] = None,
         center: int = Query(..., ge=0),
         radius: int = Query(2, ge=0, le=20),
         version: Optional[str] = None,
@@ -1611,10 +1645,11 @@ def _build_app(
 
         try:
             t4 = _cache.load(dataset_path, version=version)
+            resolved_scenario = _resolve_viewer_scenario_name(t4, scenario_name)
             scenes = list_scene_summaries(t4)
-            scene_meta = next((s for s in scenes if s.get("name") == scenario_name), None)
+            scene_meta = next((s for s in scenes if s.get("name") == resolved_scenario), None)
             if scene_meta is None:
-                _public_error(404, "scenario_not_found", f"Scenario '{scenario_name}' was not found.")
+                _public_error(404, "scenario_not_found", f"Scenario '{resolved_scenario}' was not found.")
             total = int(scene_meta.get("nbr_samples") or 0)
             lo = max(0, center - radius)
             hi = min(total - 1, center + radius) if total > 0 else -1
@@ -1630,14 +1665,14 @@ def _build_app(
                     "frame_index": i,
                     "binary_url": (
                         f"/viewer/three/frame.bin?t4dataset_id={t4dataset_id}"
-                        f"&scenario_name={scenario_name}&frame_index={i}"
+                        f"&scenario_name={resolved_scenario}&frame_index={i}"
                         f"{f'&version={version}' if version else ''}"
                     ),
                 }
             )
         return {
             "t4dataset_id": t4dataset_id,
-            "scenario_name": scenario_name,
+            "scenario_name": resolved_scenario,
             "version": version,
             "total_frames": total,
             "center": center,
@@ -1652,7 +1687,7 @@ def _build_app(
     )
     def viewer_three_camera_overlay(
         t4dataset_id: str,
-        scenario_name: str,
+        scenario_name: Optional[str] = None,
         frame_index: int = Query(..., ge=0),
         camera: Optional[str] = None,
         version: Optional[str] = None,
@@ -1662,7 +1697,8 @@ def _build_app(
         dataset_path = _resolve_dataset(t4dataset_id)
         try:
             t4 = _cache.load(dataset_path, version=version)
-            sample = _get_scenario_sample(t4, scenario_name, frame_index)
+            resolved_scenario = _resolve_viewer_scenario_name(t4, scenario_name)
+            sample = _get_scenario_sample(t4, resolved_scenario, frame_index)
             payload = _camera_overlay_payload_for_sample(
                 t4, sample, camera=camera, show_annotations=show_annotations
             )
@@ -1678,7 +1714,7 @@ def _build_app(
             payload.update(
                 {
                     "t4dataset_id": t4dataset_id,
-                    "scenario_name": scenario_name,
+                    "scenario_name": resolved_scenario,
                     "frame_index": frame_index,
                     "sample_token": str(sample.token),
                     "timestamp_us": int(sample.timestamp),
@@ -1702,7 +1738,7 @@ def _build_app(
     )
     def viewer_three_lanelet_lines(
         t4dataset_id: str,
-        scenario_name: str,
+        scenario_name: Optional[str] = None,
         frame_index: int = Query(0, ge=0),
         version: Optional[str] = None,
         max_segments: int = Query(120000, ge=1000, le=500000),
@@ -1711,10 +1747,11 @@ def _build_app(
         dataset_path = _resolve_dataset(t4dataset_id)
         try:
             t4 = _cache.load(dataset_path, version=version)
+            resolved_scenario = _resolve_viewer_scenario_name(t4, scenario_name)
             return _lanelet_lines_payload(
                 dataset_path,
                 t4=t4,
-                scenario_name=scenario_name,
+                scenario_name=resolved_scenario,
                 frame_index=frame_index,
                 max_segments=max_segments,
                 clip_radius_m=clip_radius_m,
@@ -1732,24 +1769,26 @@ def _build_app(
     @app.get("/viewer/three")
     def viewer_three_page(
         t4dataset_id: str = Query(...),
-        scenario_name: str = Query(...),
+        scenario_name: Optional[str] = Query(None),
         frame_index: int = Query(0, ge=0),
         version: Optional[str] = Query(None),
     ):
         esc = html.escape
         qs_params = {
             "t4dataset_id": t4dataset_id,
-            "scenario_name": scenario_name,
             "frame_index": frame_index,
         }
+        if scenario_name:
+            qs_params["scenario_name"] = scenario_name
         if version:
             qs_params["version"] = version
         qs = urlencode(qs_params)
+        scenario_label = scenario_name or "(auto)"
         tmpl = _load_template("viewer_three.html")
         page = (
             tmpl
             .replace("__DATASET_ID__", esc(t4dataset_id))
-            .replace("__SCENARIO_NAME__", esc(scenario_name))
+            .replace("__SCENARIO_NAME__", esc(scenario_label))
             .replace("__FRAME_INDEX__", str(frame_index))
             .replace("__QS__", qs)
         )

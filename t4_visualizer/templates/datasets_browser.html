@@ -45,6 +45,9 @@
     .status.ok{color:var(--ok)} .status.warn{color:var(--warn)}
     table{width:100%;border-collapse:collapse;font-size:.9rem}
     th,td{padding:.5rem;border-bottom:1px solid var(--border);text-align:left;vertical-align:top}
+    #scenarioRows tr{cursor:pointer}
+    #scenarioRows tr:hover{background:color-mix(in srgb, var(--accent) 10%, transparent)}
+    .token-cell{max-width:220px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
     th{font-size:.8rem;color:var(--muted);text-transform:uppercase;letter-spacing:.03em}
     .toolbar{display:flex;gap:.5rem;margin:.55rem 0}
     .toolbar input{max-width:340px}
@@ -90,7 +93,7 @@
       <section class="card">
         <div class="title">Scenarios</div>
         <div class="toolbar">
-          <input id="scenarioSearch" type="search" placeholder="Filter by name/description/token" disabled>
+          <input id="scenarioSearch" type="search" placeholder="Filter by name/token" disabled>
           <select id="scenarioSort" disabled>
             <option value="name">Sort: name</option>
             <option value="nbr_samples">Sort: frame count</option>
@@ -100,7 +103,7 @@
         <div id="scenarioPanel" style="display:none;max-height:65vh;overflow:auto">
           <div id="scenarioMeta" class="tiny" style="margin-bottom:.5rem"></div>
           <table>
-            <thead><tr><th>name</th><th>token</th><th>description</th><th>frames</th><th>actions</th></tr></thead>
+            <thead><tr><th>name</th><th>token</th><th>frames</th></tr></thead>
             <tbody id="scenarioRows"></tbody>
           </table>
         </div>
@@ -186,7 +189,8 @@
       el("dLinks").innerHTML =
         `<a href="/datasets/${encodeURIComponent(id)}/availability" target="_blank" rel="noopener">availability</a> · ` +
         `<a href="/datasets/${encodeURIComponent(id)}/scenarios" target="_blank" rel="noopener">scenarios</a> · ` +
-        `<a href="/render/html${qs}&scenario_name=...&frame_index=0" target="_blank" rel="noopener">render/html template</a>`;
+        `<a href="/render/html${qs}&scenario_name=...&frame_index=0" target="_blank" rel="noopener">render/html template</a> · ` +
+        `<a href="/viewer/three${qs}&scenario_name=...&frame_index=0" target="_blank" rel="noopener">3d template</a>`;
     }
 
     function showDetailsError(err, id){
@@ -207,7 +211,6 @@
       if (q){
         rows = rows.filter((s) =>
           (s.name || "").toLowerCase().includes(q) ||
-          (s.description || "").toLowerCase().includes(q) ||
           (s.token || "").toLowerCase().includes(q)
         );
       }
@@ -217,19 +220,13 @@
       );
       const tbody = el("scenarioRows");
       if (!rows.length){
-        tbody.innerHTML = `<tr><td colspan="5" class="muted">No scenarios match current filter.</td></tr>`;
+        tbody.innerHTML = `<tr><td colspan="3" class="muted">No scenarios match current filter.</td></tr>`;
       } else {
         tbody.innerHTML = rows.map((s) =>
           `<tr>
             <td><code>${s.name || ""}</code></td>
-            <td class="mono">${s.token || ""}</td>
-            <td>${s.description || ""}</td>
+            <td class="mono token-cell" title="${(s.token || "").replace(/"/g, "&quot;")}">${s.token || ""}</td>
             <td>${s.nbr_samples ?? 0}</td>
-            <td>
-              <a href="#" data-scenario="${encodeURIComponent(s.name || "")}" class="load-frames">frames</a> ·
-              <a href="/render/html?t4dataset_id=${encodeURIComponent(state.selectedId)}&scenario_name=${encodeURIComponent(s.name || "")}&frame_index=0" target="_blank" rel="noopener">render</a> ·
-              <a href="/viewer/three?t4dataset_id=${encodeURIComponent(state.selectedId)}&scenario_name=${encodeURIComponent(s.name || "")}&frame_index=0" target="_blank" rel="noopener">3d</a>
-            </td>
           </tr>`
         ).join("");
       }
@@ -241,11 +238,10 @@
         `total_scenarios=${totalScenarios} total_frames=${totalFrames} min_frames=${minFrames} max_frames=${maxFrames}`;
       el("scenarioState").style.display = "none";
       el("scenarioPanel").style.display = "block";
-      tbody.querySelectorAll(".load-frames").forEach((n) => {
-        n.addEventListener("click", async (ev) => {
-          ev.preventDefault();
-          const scenario = decodeURIComponent(n.dataset.scenario || "");
-          state.selectedScenario = scenario;
+      tbody.querySelectorAll("tr").forEach((row, idx) => {
+        row.addEventListener("click", async () => {
+          const s = rows[idx];
+          state.selectedScenario = (s && s.name) ? s.name : null;
           await loadFrameSummary();
         });
       });
@@ -342,6 +338,12 @@
         el("frameLimit").disabled = false;
         el("loadFramesBtn").disabled = false;
         renderScenarios(state.scenarios, state.scenarioMeta);
+        if (state.scenarios.length > 0) {
+          state.selectedScenario = state.scenarios[0].name || null;
+          if (state.selectedScenario) {
+            await loadFrameSummary();
+          }
+        }
       } catch (err) {
         el("scenarioPanel").style.display = "none";
         el("scenarioState").className = "error";

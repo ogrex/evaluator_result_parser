@@ -68,7 +68,6 @@ const metaUrl = `/viewer/three/meta?t4dataset_id=${encodeURIComponent(dataset)}&
 const canvas = document.getElementById("canvas");
 const renderer = new THREE.WebGLRenderer({canvas, antialias:true});
 renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
-renderer.setSize(canvas.clientWidth || window.innerWidth, canvas.clientHeight || (window.innerHeight-64), false);
 renderer.outputColorSpace = THREE.SRGBColorSpace;
 const scene = new THREE.Scene();
 scene.fog = new THREE.Fog(0x070b16, 90, 230);
@@ -133,6 +132,23 @@ const statusEl = document.getElementById("status");
 const metaEl = document.getElementById("meta");
 function setStatus(t){ statusEl.textContent = t; }
 function setFrameText(){ frameTxt.textContent = `frame ${frame}/${Math.max(0,totalFrames-1)}`; slider.value = String(frame); }
+
+function resizeMainRenderer(){
+  const wrap = document.getElementById("canvasWrap");
+  const w = Math.max(1, (wrap && wrap.clientWidth) || canvas.clientWidth || window.innerWidth);
+  const h = Math.max(1, (wrap && wrap.clientHeight) || canvas.clientHeight || (window.innerHeight - 64));
+  renderer.setSize(w, h, false);
+  if (camera.isPerspectiveCamera) {
+    camera.aspect = w / h;
+  } else {
+    const fr = 22;
+    camera.left = -fr * (w / h);
+    camera.right = fr * (w / h);
+    camera.top = fr;
+    camera.bottom = -fr;
+  }
+  camera.updateProjectionMatrix();
+}
 
 function readFloat32Copied(buf, off, count){
   const bytes = new Uint8Array(buf, off, count * 4);
@@ -486,19 +502,7 @@ document.getElementById("projMode").addEventListener("click", () => {
   controls.update();
 });
 window.addEventListener("resize", () => {
-  const w = canvas.clientWidth || window.innerWidth;
-  const h = canvas.clientHeight || (window.innerHeight-64);
-  renderer.setSize(w, h, false);
-  if (camera.isPerspectiveCamera) {
-    camera.aspect = w / h;
-  } else {
-    const fr = 22;
-    camera.left = -fr * (w / h);
-    camera.right = fr * (w / h);
-    camera.top = fr;
-    camera.bottom = -fr;
-  }
-  camera.updateProjectionMatrix();
+  resizeMainRenderer();
 });
 
 function animate(ts){
@@ -525,6 +529,9 @@ function animate(ts){
   camera.position.set(-10, -2, 3.8);
   controls.target.set(0,0,0);
   controls.update();
+  // Defer first size sync to next frame so layout is stable.
+  requestAnimationFrame(() => resizeMainRenderer());
+  setTimeout(() => resizeMainRenderer(), 0);
   await showFrame(Math.min(startFrame, Math.max(0, totalFrames - 1)));
   animate(0);
 })().catch((err) => {
