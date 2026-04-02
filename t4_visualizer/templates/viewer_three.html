@@ -25,6 +25,16 @@
   #evalHud .nMt{color:#58d8ff}
   #status{font-size:.82rem;color:var(--muted)}
   a{color:var(--accent)}
+  .overlay-wrap{position:absolute;left:8px;bottom:8px;width:min(32vw,440px);max-height:min(24vh,200px);display:none;flex-direction:column;border:1px solid #2b3f7d;border-radius:10px;overflow:hidden;background:linear-gradient(180deg,#0c1022 0%,#080c18 100%);box-shadow:0 8px 32px rgba(0,0,0,.45)}
+  .overlay-cam-labels{display:flex;justify-content:space-around;align-items:center;gap:2px;font-size:9px;letter-spacing:.02em;color:var(--muted);padding:3px 4px;background:#070a14;border-bottom:1px solid #1e2848}
+  .overlay-cam-labels.bot{border-bottom:none;border-top:1px solid #1e2848}
+  .overlay-cam-labels span{flex:1;text-align:center;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:33%}
+  .overlay-canvas-inner{flex:1;min-height:72px;position:relative}
+  .metrics-wrap{position:absolute;right:12px;bottom:12px;width:min(36vw,340px);height:min(22vh,150px);border-radius:12px;overflow:hidden;border:1px solid #33467a;background:linear-gradient(145deg,#0a0e22f0 0%,#060812fa 55%,#0d1228 100%);box-shadow:0 0 0 1px rgba(110,168,255,.12),0 12px 40px rgba(0,0,0,.5),inset 0 1px 0 rgba(255,255,255,.06);backdrop-filter:blur(10px)}
+  .metrics-title{position:absolute;left:8px;top:5px;z-index:1;font-size:9px;font-weight:700;letter-spacing:.14em;text-transform:uppercase;color:#7a8bbf;pointer-events:none;text-shadow:0 0 12px rgba(110,168,255,.35)}
+  .metrics-legend{position:absolute;right:8px;top:6px;z-index:1;font-size:9px;letter-spacing:.06em;color:#8a9bc4;pointer-events:none}
+  .metrics-legend .lg-gt{color:#4bd08d}.metrics-legend .lg-pr{color:#ff5ec4}.metrics-legend .lg-tpr{color:#ffcc66}
+  #metricsCanvas{width:100%;height:100%;display:block}
 </style>
 </head><body><div id="app">
   <div class="top">
@@ -41,6 +51,8 @@
         <button id="toggleLanelet">Lanelet OFF</button>
         <button id="toggleOverlay2d">Cam Viewport</button>
         <select id="overlayCamera" style="min-width:150px"></select>
+        <label title="Yellow 3D boxes from the frame binary (dataset / lidar annotations)"><input id="show3dAnnotations" type="checkbox" checked> annotations</label>
+        <label title="2D boxes drawn on the camera viewport images"><input id="showOverlayAnnotations" type="checkbox" checked> cam overlay</label>
         <button id="toggleFullscreen" type="button" title="Fullscreen 3D view">Fullscreen</button>
       </div>
       <a href="/datasets/browser">Back</a>
@@ -56,8 +68,17 @@
     </div>
   </div>
   <div id="canvasWrap"><canvas id="canvas"></canvas>
-    <div id="overlayWrap" style="position:absolute;left:12px;bottom:12px;width:min(46vw,820px);height:min(40vh,360px);display:none;border:1px solid #2b3f7d;border-radius:10px;overflow:hidden;background:#090d1a">
-      <canvas id="overlayCanvas" style="width:100%;height:100%;display:block"></canvas>
+    <div id="overlayWrap" class="overlay-wrap">
+      <div id="overlayLabelRowTop" class="overlay-cam-labels" style="display:none"></div>
+      <div class="overlay-canvas-inner">
+        <canvas id="overlayCanvas" style="width:100%;height:100%;display:block"></canvas>
+      </div>
+      <div id="overlayLabelRowBottom" class="overlay-cam-labels bot" style="display:none"></div>
+    </div>
+    <div id="metricsWrap" class="metrics-wrap" hidden>
+      <div class="metrics-title">Frame metrics · WebGL</div>
+      <div class="metrics-legend" aria-hidden="true"><span class="lg-gt">●</span>GT <span class="lg-pr">●</span>Pred <span class="lg-tpr">●</span>TPR</div>
+      <canvas id="metricsCanvas"></canvas>
     </div>
     <div id="hud">
       <div id="status">loading...</div>
@@ -73,6 +94,7 @@
         <label><input id="showGtLayer" type="checkbox" checked> show GT</label>
         <label><input id="showPredLayer" type="checkbox" checked> show Pred</label>
         <label><input id="showMatchedLayer" type="checkbox" checked> show Matched</label>
+        <label><input id="showMetricsPlot" type="checkbox" checked> metrics plot (GT / Pred / TPR)</label>
       </div>
     </div>
   </div>
@@ -206,6 +228,8 @@ let laneletFrame = -1;
 let externalLayers = { gt: [], pred: [], matched: [], gtPairs: [], predPairs: [] };
 /** When set, eval GT/pred/matched layers are keyed by frame index (from parent postMessage). */
 let bboxLayersByFrame = null;
+/** Optional per-frame series from parent: `{ gt: number[], pred: number[], tpr: number[] }` (lengths ≥ totalFrames). */
+let metricsSeriesOverride = null;
 
 const overlayCanvas = document.getElementById("overlayCanvas");
 const overlayRenderer = new THREE.WebGLRenderer({canvas: overlayCanvas, antialias:true, alpha:true});
@@ -215,12 +239,20 @@ overlayRenderer.toneMapping = THREE.NoToneMapping;
 const overlayScene = new THREE.Scene();
 const overlayCamera3d = new THREE.OrthographicCamera(-1, 1, 1, -1, 0.1, 10);
 overlayCamera3d.position.set(0,0,2);
-const overlayImgMesh = new THREE.Mesh(
-  new THREE.PlaneGeometry(2,2),
-  new THREE.MeshBasicMaterial({color:0xffffff, toneMapped:false})
-);
-overlayScene.add(overlayImgMesh);
-const overlayBoxes = new THREE.Group(); overlayScene.add(overlayBoxes);
+const metricsCanvas = document.getElementById("metricsCanvas");
+const metricsWrapEl = document.getElementById("metricsWrap");
+const metricsScene = new THREE.Scene();
+metricsScene.background = null;
+const metricsCamera = new THREE.OrthographicCamera(-1, 1, 1, -1, 0.1, 20);
+metricsCamera.position.set(0, 0, 3);
+const metricsRenderer = new THREE.WebGLRenderer({ canvas: metricsCanvas, antialias: true, alpha: true });
+metricsRenderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
+metricsRenderer.setClearColor(0x000000, 0);
+metricsRenderer.outputColorSpace = THREE.SRGBColorSpace;
+metricsRenderer.toneMapping = THREE.NoToneMapping;
+let metricsChartGroup = new THREE.Group();
+metricsScene.add(metricsChartGroup);
+let metricsPlayhead = null;
 
 const slider = document.getElementById("slider");
 const frameTxt = document.getElementById("frameTxt");
@@ -279,6 +311,224 @@ function resizeMainRenderer(){
     camera.bottom = -fr;
   }
   camera.updateProjectionMatrix();
+  resizeMetricsRenderer();
+}
+
+function resizeMetricsRenderer(){
+  if (!metricsWrapEl || !metricsCanvas || metricsWrapEl.hidden) return;
+  const w = Math.max(120, metricsWrapEl.clientWidth || 280);
+  const h = Math.max(80, metricsWrapEl.clientHeight || 120);
+  metricsRenderer.setSize(w, h, false);
+}
+
+/** Derive GT / Pred / TPR series from override or per-frame bbox map. TPR ≈ matched_pairs / max(GT,1). */
+function computeMetricsSeries(){
+  const mo = metricsSeriesOverride;
+  if (mo && typeof mo === "object" && (Array.isArray(mo.gt) || Array.isArray(mo.pred) || Array.isArray(mo.tpr))) {
+    const gIn = Array.isArray(mo.gt) ? mo.gt : [];
+    const pIn = Array.isArray(mo.pred) ? mo.pred : [];
+    const tIn = mo.tpr;
+    const gt = [];
+    const pred = [];
+    const tpr = [];
+    for (let i = 0; i < totalFrames; i++) {
+      gt.push(Number(gIn[i] || 0));
+      pred.push(Number(pIn[i] || 0));
+      if (Array.isArray(tIn) && i < tIn.length) tpr.push(Math.min(1, Number(tIn[i] || 0)));
+      else {
+        const g = gt[i];
+        const p = pred[i];
+        const tp = Math.min(g, p);
+        tpr.push(g > 0 ? Math.min(1, tp / g) : 0);
+      }
+    }
+    return { gt, pred, tpr, n: totalFrames };
+  }
+  if (!bboxLayersByFrame || totalFrames <= 0) return null;
+  const gt = [];
+  const pred = [];
+  const tpr = [];
+  for (let fi = 0; fi < totalFrames; fi++) {
+    const sk = String(fi);
+    const entry = Object.prototype.hasOwnProperty.call(bboxLayersByFrame, sk)
+      ? bboxLayersByFrame[sk]
+      : bboxLayersByFrame[fi];
+    let g = 0;
+    let p = 0;
+    let pairs = 0;
+    if (entry && typeof entry === "object") {
+      g = Array.isArray(entry.gt) ? entry.gt.length : 0;
+      p = Array.isArray(entry.pred) ? entry.pred.length : 0;
+      pairs = Array.isArray(entry.matched_pairs) ? entry.matched_pairs.length : 0;
+      if (!pairs && Array.isArray(entry.matched)) pairs = Math.max(0, Math.floor(entry.matched.length / 2));
+    }
+    gt.push(g);
+    pred.push(p);
+    tpr.push(Math.min(1, pairs / Math.max(g, 1)));
+  }
+  return { gt, pred, tpr, n: totalFrames };
+}
+
+function rebuildMetricsPlot(){
+  while (metricsChartGroup.children.length) metricsChartGroup.remove(metricsChartGroup.children[0]);
+  metricsPlayhead = null;
+  const want = document.getElementById("showMetricsPlot") && document.getElementById("showMetricsPlot").checked;
+  if (!metricsWrapEl || !want) {
+    if (metricsWrapEl) metricsWrapEl.hidden = true;
+    return;
+  }
+  const series = computeMetricsSeries();
+  if (!series || series.n <= 0) {
+    metricsWrapEl.hidden = true;
+    return;
+  }
+  const { gt, pred, tpr, n } = series;
+  let yMax = 1e-6;
+  for (let i = 0; i < n; i++) {
+    yMax = Math.max(yMax, gt[i], pred[i], 1);
+  }
+  const x0 = -0.9;
+  const x1 = 0.9;
+  const y0 = -0.78;
+  const y1 = 0.78;
+  const span = x1 - x0;
+
+  const bg = new THREE.Mesh(
+    new THREE.PlaneGeometry(2.05, 1.85),
+    new THREE.MeshBasicMaterial({ color: 0x06091c, transparent: true, opacity: 0.92 })
+  );
+  bg.position.z = -0.02;
+  metricsChartGroup.add(bg);
+
+  const starPos = [];
+  const starCol = [];
+  for (let s = 0; s < 64; s++) {
+    starPos.push((Math.random() - 0.5) * 2, (Math.random() - 0.5) * 1.6, -0.01);
+    const tw = 0.35 + Math.random() * 0.65;
+    starCol.push(0.45 * tw, 0.55 * tw, 0.95 * tw);
+  }
+  const starG = new THREE.BufferGeometry();
+  starG.setAttribute("position", new THREE.Float32BufferAttribute(starPos, 3));
+  starG.setAttribute("color", new THREE.Float32BufferAttribute(starCol, 3));
+  metricsChartGroup.add(new THREE.Points(starG, new THREE.PointsMaterial({ size: 0.012, vertexColors: true, transparent: true, opacity: 0.5 })));
+
+  for (let g = 0; g <= 4; g++) {
+    const t = g / 4;
+    const y = y0 + (y1 - y0) * t;
+    const gg = new THREE.BufferGeometry();
+    gg.setAttribute("position", new THREE.Float32BufferAttribute([x0, y, 0, x1, y, 0], 3));
+    metricsChartGroup.add(new THREE.Line(gg, new THREE.LineBasicMaterial({ color: 0x2a3f60, transparent: true, opacity: 0.55 })));
+  }
+
+  function lineStrip(vals, color, isTpr){
+    const pts = [];
+    const denom = isTpr ? 1 : yMax;
+    for (let i = 0; i < n; i++) {
+      const xf = n <= 1 ? 0.5 : i / (n - 1);
+      const x = x0 + span * xf;
+      const v = isTpr ? Math.max(0, Math.min(1, vals[i])) : vals[i] / denom;
+      const y = y0 + (y1 - y0) * Math.max(0, Math.min(1, v));
+      pts.push(x, y, 0.02);
+    }
+    if (pts.length === 3) {
+      pts.push(pts[0], pts[1], pts[2]);
+    }
+    const geom = new THREE.BufferGeometry();
+    geom.setAttribute("position", new THREE.Float32BufferAttribute(pts, 3));
+    return new THREE.Line(geom, new THREE.LineBasicMaterial({ color, transparent: true, opacity: 0.95 }));
+  }
+  metricsChartGroup.add(lineStrip(gt, 0x4bd08d, false));
+  metricsChartGroup.add(lineStrip(pred, 0xff5ec4, false));
+  metricsChartGroup.add(lineStrip(tpr, 0xffcc66, true));
+
+  const phGeom = new THREE.BufferGeometry();
+  const phPos = new Float32Array([-0.9, -0.78, 0.04, -0.9, 0.78, 0.04]);
+  phGeom.setAttribute("position", new THREE.BufferAttribute(phPos, 3));
+  metricsPlayhead = new THREE.Group();
+  metricsPlayhead.userData.geom = phGeom;
+  metricsPlayhead.add(new THREE.Line(phGeom, new THREE.LineBasicMaterial({ color: 0xffffff, transparent: true, opacity: 1 })));
+  const phGeom2 = new THREE.BufferGeometry();
+  const phPos2 = new Float32Array(phPos);
+  phGeom2.setAttribute("position", new THREE.BufferAttribute(phPos2, 3));
+  metricsPlayhead.userData.geomGlow = phGeom2;
+  metricsPlayhead.add(new THREE.Line(phGeom2, new THREE.LineBasicMaterial({ color: 0x6ea8ff, transparent: true, opacity: 0.4 })));
+  metricsChartGroup.add(metricsPlayhead);
+
+  metricsWrapEl.hidden = false;
+  resizeMetricsRenderer();
+  updateMetricsPlayhead();
+}
+
+function updateMetricsPlayhead(){
+  if (!metricsPlayhead || !metricsPlayhead.userData || metricsWrapEl.hidden) return;
+  const series = computeMetricsSeries();
+  if (!series || series.n <= 0) return;
+  const n = series.n;
+  const xf = n <= 1 ? 0.5 : frame / Math.max(n - 1, 1);
+  const x0 = -0.9;
+  const x1 = 0.9;
+  const x = x0 + (x1 - x0) * xf;
+  const y0 = -0.78;
+  const y1 = 0.78;
+  const g0 = metricsPlayhead.userData.geom;
+  const g1 = metricsPlayhead.userData.geomGlow;
+  if (g0 && g0.attributes.position) {
+    const a = g0.attributes.position.array;
+    a[0] = x; a[1] = y0; a[3] = x; a[4] = y1;
+    g0.attributes.position.needsUpdate = true;
+  }
+  if (g1 && g1.attributes.position) {
+    const b = g1.attributes.position.array;
+    b[0] = x; b[1] = y0; b[3] = x; b[4] = y1;
+    g1.attributes.position.needsUpdate = true;
+  }
+}
+
+function syncMetricsPlotVisibility(){
+  const chk = document.getElementById("showMetricsPlot");
+  if (!chk || !chk.checked) {
+    if (metricsWrapEl) metricsWrapEl.hidden = true;
+    return;
+  }
+  rebuildMetricsPlot();
+}
+
+function shortCamLabel(name){
+  const x = String(name || "").replace(/^CAM_?/i, "").replace(/_/g, " ").trim();
+  return x.length > 16 ? `${x.slice(0, 14)}…` : x;
+}
+
+/** Map camera name to ring slot 0–5: front L, front, front R, back L, back, back R. */
+function inferCameraSlot(camName){
+  const s = String(camName || "").toLowerCase().replace(/[^a-z0-9]+/g, "");
+  if (!s.length) return -1;
+  const hasFront = s.includes("front");
+  const hasBack = s.includes("back");
+  const hasLeft = s.includes("left");
+  const hasRight = s.includes("right");
+  if (hasFront && hasLeft) return 0;
+  if (hasFront && hasRight) return 2;
+  if (hasBack && hasLeft) return 3;
+  if (hasBack && hasRight) return 5;
+  if (hasBack && !hasLeft && !hasRight) return 4;
+  if (hasFront && !hasLeft && !hasRight) return 1;
+  return -1;
+}
+
+/** Order multi-camera payloads into 2×3 grid; returns slots[6] with null gaps. */
+function buildCameraSlots(rows){
+  const slots = Array(6).fill(null);
+  const extra = [];
+  for (const p of rows) {
+    const slot = inferCameraSlot(p.camera);
+    if (slot >= 0 && !slots[slot]) slots[slot] = p;
+    else extra.push(p);
+  }
+  for (const p of extra) {
+    const empty = slots.findIndex((x) => x == null);
+    if (empty >= 0) slots[empty] = p;
+  }
+  return slots;
 }
 
 function readFloat32Copied(buf, off, count){
@@ -441,7 +691,9 @@ async function fetchCameraOverlay(i){
   const allMode = selected === "__ALL__";
   const cam = selected && !allMode ? `&camera=${encodeURIComponent(selected)}` : "";
   const allFlag = allMode ? "&all_cameras=true" : "";
-  const url = `/viewer/three/camera-overlay?t4dataset_id=${encodeURIComponent(dataset)}&scenario_name=${encodeURIComponent(scenario)}&frame_index=${i}${qv}${cam}${allFlag}&show_annotations=true`;
+  const annEl = document.getElementById("showOverlayAnnotations");
+  const showAnn = annEl ? !!annEl.checked : true;
+  const url = `/viewer/three/camera-overlay?t4dataset_id=${encodeURIComponent(dataset)}&scenario_name=${encodeURIComponent(scenario)}&frame_index=${i}${qv}${cam}${allFlag}&show_annotations=${showAnn ? "true" : "false"}`;
   const res = await fetch(url);
   if (!res.ok) throw new Error(`camera overlay HTTP ${res.status}`);
   return await res.json();
@@ -499,70 +751,152 @@ function ensureOverlayCameraOptions(payload){
 
 function renderCameraOverlay(payload){
   overlayData = payload;
+  if (!overlayEnabled) return;
   const wrap = document.getElementById("overlayWrap");
-  if (!wrap || wrap.style.display === "none") return;
+  const inner = wrap && wrap.querySelector ? wrap.querySelector(".overlay-canvas-inner") : null;
+  const rowTop = document.getElementById("overlayLabelRowTop");
+  const rowBot = document.getElementById("overlayLabelRowBottom");
+  if (!wrap) return;
   const selected = (document.getElementById("overlayCamera") || {value:""}).value;
   const allMode = selected === "__ALL__";
+  if (rowTop && rowBot) {
+    if (allMode && Array.isArray(payload.cameras_payload) && payload.cameras_payload.length > 1) {
+      rowTop.style.display = "flex";
+      rowBot.style.display = "flex";
+    } else {
+      rowTop.style.display = "none";
+      rowBot.style.display = "none";
+      rowTop.innerHTML = "";
+      rowBot.innerHTML = "";
+    }
+  }
   overlayCanvas.style.display = "block";
-  const w = wrap.clientWidth || 640;
-  const h = wrap.clientHeight || 360;
+  const w = Math.max(80, (inner && inner.clientWidth) || wrap.clientWidth || 320);
+  const h = Math.max(72, (inner && inner.clientHeight) || Math.floor(w * 0.35));
   overlayRenderer.setSize(w, h, false);
   while (overlayScene.children.length) overlayScene.remove(overlayScene.children[0]);
-  const rows = allMode
+  let rows = allMode
     ? (Array.isArray(payload.cameras_payload) ? payload.cameras_payload : [payload])
     : [payload];
-  const n = Math.max(1, rows.length);
-  const cols = Math.ceil(Math.sqrt(n));
-  const tileW = 2 / cols;
-  const tileH = 2 / cols;
-  for (let i = 0; i < rows.length; i++) {
-    const p = rows[i];
-    const r = Math.floor(i / cols);
-    const c = i % cols;
-    const cx = -1 + tileW * c + tileW / 2;
-    const cy = 1 - tileH * r - tileH / 2;
-    const iw = Math.max(1, Number(p.width || 1));
-    const ih = Math.max(1, Number(p.height || 1));
-    const imgAspect = iw / ih;
-    const tileAspect = (w * tileW / 2) / (h * tileH / 2);
-    let sx = tileW, sy = tileH;
-    if (imgAspect > tileAspect) sy = tileW / imgAspect;
-    else sx = tileH * imgAspect;
-
-    const key = `${p.sample_token || payload.sample_token || ""}:${p.camera || ""}:${p.image_format || ""}:${(p.image_base64 || "").length}`;
-    let tex = overlayTextureCache.get(key);
-    if (!tex) {
-      const img = new Image();
-      img.src = `data:${p.image_format === "png" ? "image/png" : "image/jpeg"};base64,${p.image_base64 || ""}`;
-      tex = new THREE.Texture(img);
-      tex.colorSpace = THREE.SRGBColorSpace;
-      tex.needsUpdate = true;
-      overlayTextureCache.set(key, tex);
-      if (overlayTextureCache.size > 24) {
-        const first = overlayTextureCache.keys().next().value;
-        const old = overlayTextureCache.get(first);
-        if (old) old.dispose();
-        overlayTextureCache.delete(first);
+  if (allMode && Array.isArray(payload.cameras_payload) && payload.cameras_payload.length > 1) {
+    const slots = buildCameraSlots(rows);
+    rows = slots;
+    if (rowTop && rowBot) {
+      rowTop.innerHTML = [0, 1, 2].map((i) => `<span title="${slots[i] && slots[i].camera ? slots[i].camera : ""}">${slots[i] ? shortCamLabel(slots[i].camera) : "—"}</span>`).join("");
+      rowBot.innerHTML = [3, 4, 5].map((i) => `<span title="${slots[i] && slots[i].camera ? slots[i].camera : ""}">${slots[i] ? shortCamLabel(slots[i].camera) : "—"}</span>`).join("");
+    }
+    const cols = 3;
+    const nrows = 2;
+    const tileW = 2 / cols;
+    const tileH = 2 / nrows;
+    for (let slot = 0; slot < 6; slot++) {
+      const p = slots[slot];
+      if (!p) continue;
+      const r = slot < 3 ? 0 : 1;
+      const c = slot % 3;
+      const cx = -1 + tileW * c + tileW / 2;
+      const cy = 1 - tileH * r - tileH / 2;
+      const iw = Math.max(1, Number(p.width || 1));
+      const ih = Math.max(1, Number(p.height || 1));
+      const imgAspect = iw / ih;
+      const tileAspect = (w * tileW / 2) / (h * tileH / 2);
+      let sx = tileW;
+      let sy = tileH;
+      if (imgAspect > tileAspect) sy = tileW / imgAspect;
+      else sx = tileH * imgAspect;
+      const key = `${p.sample_token || payload.sample_token || ""}:${p.camera || ""}:${p.image_format || ""}:${(p.image_base64 || "").length}`;
+      let tex = overlayTextureCache.get(key);
+      if (!tex) {
+        const img = new Image();
+        img.src = `data:${p.image_format === "png" ? "image/png" : "image/jpeg"};base64,${p.image_base64 || ""}`;
+        tex = new THREE.Texture(img);
+        tex.colorSpace = THREE.SRGBColorSpace;
+        tex.needsUpdate = true;
+        overlayTextureCache.set(key, tex);
+        if (overlayTextureCache.size > 24) {
+          const first = overlayTextureCache.keys().next().value;
+          const old = overlayTextureCache.get(first);
+          if (old) old.dispose();
+          overlayTextureCache.delete(first);
+        }
+      }
+      const plane = new THREE.Mesh(
+        new THREE.PlaneGeometry(sx, sy),
+        new THREE.MeshBasicMaterial({ map: tex, color: 0xffffff, toneMapped: false })
+      );
+      plane.position.set(cx, cy, 0);
+      overlayScene.add(plane);
+      const annEl = document.getElementById("showOverlayAnnotations");
+      if (annEl && annEl.checked) {
+        const bxs = Array.isArray(p.boxes_2d) ? p.boxes_2d : [];
+        for (const b of bxs) {
+          const nx0 = ((b.x0 / iw) - 0.5) * sx + cx;
+          const nx1 = ((b.x1 / iw) - 0.5) * sx + cx;
+          const ny0 = (0.5 - (b.y0 / ih)) * sy + cy;
+          const ny1 = (0.5 - (b.y1 / ih)) * sy + cy;
+          const pts = [nx0, ny0, 0, nx1, ny0, 0, nx1, ny1, 0, nx0, ny1, 0, nx0, ny0, 0];
+          const g = new THREE.BufferGeometry();
+          g.setAttribute("position", new THREE.Float32BufferAttribute(pts, 3));
+          overlayScene.add(new THREE.Line(g, new THREE.LineBasicMaterial({ color: 0xff5ec4, transparent: true, opacity: 0.95 })));
+        }
       }
     }
-    const plane = new THREE.Mesh(
-      new THREE.PlaneGeometry(sx, sy),
-      new THREE.MeshBasicMaterial({map: tex, color:0xffffff, toneMapped:false})
-    );
-    plane.position.set(cx, cy, 0);
-    overlayScene.add(plane);
-
-    const bxs = Array.isArray(p.boxes_2d) ? p.boxes_2d : [];
-    for (const b of bxs) {
-      const nx0 = ((b.x0 / iw) - 0.5) * sx + cx;
-      const nx1 = ((b.x1 / iw) - 0.5) * sx + cx;
-      const ny0 = (0.5 - (b.y0 / ih)) * sy + cy;
-      const ny1 = (0.5 - (b.y1 / ih)) * sy + cy;
-      const pts = [nx0,ny0,0, nx1,ny0,0, nx1,ny1,0, nx0,ny1,0, nx0,ny0,0];
-      const g = new THREE.BufferGeometry();
-      g.setAttribute("position", new THREE.Float32BufferAttribute(pts, 3));
-      const m = new THREE.LineBasicMaterial({color:0xff5ec4, transparent:true, opacity:0.95});
-      overlayScene.add(new THREE.Line(g, m));
+  } else {
+    const n = Math.max(1, rows.length);
+    const cols = Math.ceil(Math.sqrt(n));
+    const tileW = 2 / cols;
+    const tileH = 2 / cols;
+    for (let i = 0; i < rows.length; i++) {
+      const p = rows[i];
+      if (!p) continue;
+      const r = Math.floor(i / cols);
+      const c = i % cols;
+      const cx = -1 + tileW * c + tileW / 2;
+      const cy = 1 - tileH * r - tileH / 2;
+      const iw = Math.max(1, Number(p.width || 1));
+      const ih = Math.max(1, Number(p.height || 1));
+      const imgAspect = iw / ih;
+      const tileAspect = (w * tileW / 2) / (h * tileH / 2);
+      let sx = tileW;
+      let sy = tileH;
+      if (imgAspect > tileAspect) sy = tileW / imgAspect;
+      else sx = tileH * imgAspect;
+      const key = `${p.sample_token || payload.sample_token || ""}:${p.camera || ""}:${p.image_format || ""}:${(p.image_base64 || "").length}`;
+      let tex = overlayTextureCache.get(key);
+      if (!tex) {
+        const img = new Image();
+        img.src = `data:${p.image_format === "png" ? "image/png" : "image/jpeg"};base64,${p.image_base64 || ""}`;
+        tex = new THREE.Texture(img);
+        tex.colorSpace = THREE.SRGBColorSpace;
+        tex.needsUpdate = true;
+        overlayTextureCache.set(key, tex);
+        if (overlayTextureCache.size > 24) {
+          const first = overlayTextureCache.keys().next().value;
+          const old = overlayTextureCache.get(first);
+          if (old) old.dispose();
+          overlayTextureCache.delete(first);
+        }
+      }
+      const plane = new THREE.Mesh(
+        new THREE.PlaneGeometry(sx, sy),
+        new THREE.MeshBasicMaterial({ map: tex, color: 0xffffff, toneMapped: false })
+      );
+      plane.position.set(cx, cy, 0);
+      overlayScene.add(plane);
+      const annEl = document.getElementById("showOverlayAnnotations");
+      if (annEl && annEl.checked) {
+        const bxs = Array.isArray(p.boxes_2d) ? p.boxes_2d : [];
+        for (const b of bxs) {
+          const nx0 = ((b.x0 / iw) - 0.5) * sx + cx;
+          const nx1 = ((b.x1 / iw) - 0.5) * sx + cx;
+          const ny0 = (0.5 - (b.y0 / ih)) * sy + cy;
+          const ny1 = (0.5 - (b.y1 / ih)) * sy + cy;
+          const pts = [nx0, ny0, 0, nx1, ny0, 0, nx1, ny1, 0, nx0, ny1, 0, nx0, ny0, 0];
+          const g = new THREE.BufferGeometry();
+          g.setAttribute("position", new THREE.Float32BufferAttribute(pts, 3));
+          overlayScene.add(new THREE.Line(g, new THREE.LineBasicMaterial({ color: 0xff5ec4, transparent: true, opacity: 0.95 })));
+        }
+      }
     }
   }
   overlayRenderer.render(overlayScene, overlayCamera3d);
@@ -629,6 +963,8 @@ function setFrameData(data){
       boxesGroup.add(box);
     }
   }
+  const ann3d = document.getElementById("show3dAnnotations");
+  boxesGroup.visible = !ann3d || !!ann3d.checked;
   metaEl.innerHTML = `<div>sample=<code>${data.sampleToken}</code></div><div>timestamp_us=${data.timestampUs}</div><div>points=${data.pointCount} boxes=${data.boxCount}</div>`;
 }
 
@@ -660,6 +996,7 @@ async function showFrame(i){
     updateEvalHud();
     setStatus(`ready · cached=${cache.size}`);
   }
+  updateMetricsPlayhead();
 }
 
 document.getElementById("playBtn").addEventListener("click", () => {
@@ -704,8 +1041,8 @@ document.getElementById("toggleLanelet").addEventListener("click", async () => {
 document.getElementById("toggleOverlay2d").addEventListener("click", () => {
   const wrap = document.getElementById("overlayWrap");
   const btn = document.getElementById("toggleOverlay2d");
-  const show = wrap.style.display === "none";
-  wrap.style.display = show ? "block" : "none";
+  const show = wrap.style.display === "none" || wrap.style.display === "";
+  wrap.style.display = show ? "flex" : "none";
   overlayEnabled = show;
   btn.textContent = show ? "Hide Cam" : "Cam Viewport";
   if (show) showFrame(frame).catch((err) => setStatus(`overlay error: ${err.message}`));
@@ -714,6 +1051,17 @@ document.getElementById("overlayCamera").addEventListener("change", () => {
   if (overlayEnabled) {
     showFrame(frame).catch((err) => setStatus(`overlay error: ${err.message}`));
   }
+});
+document.getElementById("show3dAnnotations").addEventListener("change", (e) => {
+  boxesGroup.visible = !!e.target.checked;
+});
+document.getElementById("showOverlayAnnotations").addEventListener("change", () => {
+  if (overlayEnabled) {
+    showFrame(frame).catch((err) => setStatus(`overlay error: ${err.message}`));
+  }
+});
+document.getElementById("showMetricsPlot").addEventListener("change", () => {
+  syncMetricsPlotVisibility();
 });
 document.getElementById("pointSize").addEventListener("input", (e) => {
   pointsMat.size = Number(e.target.value || "0.08");
@@ -773,17 +1121,37 @@ window.addEventListener("message", (ev) => {
         .then((body) => console.info("[viewer-debug] bbox_layers_by_frame ack ok", body))
         .catch((err) => console.warn("[viewer-debug] bbox_layers_by_frame ack failed", err));
       applyEvalLayersForFrame(frame);
+      rebuildMetricsPlot();
     }
+  } else if (d.type === "eval_metrics_series") {
+    metricsSeriesOverride = {
+      gt: Array.isArray(d.gt) ? d.gt : [],
+      pred: Array.isArray(d.pred) ? d.pred : [],
+      tpr: Array.isArray(d.tpr) ? d.tpr : null,
+    };
+    rebuildMetricsPlot();
   } else if (d.type === "bbox_layers_clear") {
     bboxLayersByFrame = null;
+    metricsSeriesOverride = null;
     externalLayers = { gt: [], pred: [], matched: [] };
     renderExternalLayers();
     updateEvalHud();
+    rebuildMetricsPlot();
   }
 });
 window.T4ViewerAPI = {
   setLayers(payload){ bboxLayersByFrame = null; setExternalLayerPayload(payload || {}); },
-  clearLayers(){ bboxLayersByFrame = null; externalLayers = { gt: [], pred: [], matched: [] }; renderExternalLayers(); updateEvalHud(); },
+  clearLayers(){ bboxLayersByFrame = null; externalLayers = { gt: [], pred: [], matched: [] }; renderExternalLayers(); updateEvalHud(); rebuildMetricsPlot(); },
+  setMetricsSeries(obj){
+    if (!obj || typeof obj !== "object") return;
+    metricsSeriesOverride = {
+      gt: Array.isArray(obj.gt) ? obj.gt : [],
+      pred: Array.isArray(obj.pred) ? obj.pred : [],
+      tpr: Array.isArray(obj.tpr) ? obj.tpr : null,
+    };
+    rebuildMetricsPlot();
+  },
+  clearMetricsSeries(){ metricsSeriesOverride = null; rebuildMetricsPlot(); },
   getFrameContext(){ return { dataset, scenario, frame, totalFrames }; },
 };
 document.getElementById("toggleFullscreen").addEventListener("click", async () => {
@@ -801,6 +1169,7 @@ document.getElementById("toggleFullscreen").addEventListener("click", async () =
 document.addEventListener("fullscreenchange", () => {
   syncFullscreenButton();
   resizeMainRenderer();
+  resizeMetricsRenderer();
 });
 document.getElementById("framePrev").addEventListener("click", () => {
   showFrame(frame - 1).catch((e) => setStatus(`error: ${e.message}`));
@@ -810,6 +1179,7 @@ document.getElementById("frameNext").addEventListener("click", () => {
 });
 window.addEventListener("resize", () => {
   resizeMainRenderer();
+  resizeMetricsRenderer();
 });
 
 function animate(ts){
@@ -822,6 +1192,10 @@ function animate(ts){
   controls.update();
   renderer.render(scene, camera);
   if (overlayEnabled && overlayData) overlayRenderer.render(overlayScene, overlayCamera3d);
+  const mchk = document.getElementById("showMetricsPlot");
+  if (mchk && mchk.checked && metricsWrapEl && !metricsWrapEl.hidden && metricsChartGroup.children.length) {
+    metricsRenderer.render(metricsScene, metricsCamera);
+  }
 }
 
 (async function boot(){
@@ -843,6 +1217,7 @@ function animate(ts){
   requestAnimationFrame(() => resizeMainRenderer());
   setTimeout(() => resizeMainRenderer(), 0);
   await showFrame(Math.min(startFrame, Math.max(0, totalFrames - 1)));
+  rebuildMetricsPlot();
   egoMeshPromise.catch(() => {});
   animate(0);
 })().catch((err) => {
