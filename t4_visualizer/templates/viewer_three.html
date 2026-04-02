@@ -59,6 +59,7 @@
 <script type="module">
 import * as THREE from "three";
 import { OrbitControls } from "three/addons/controls/OrbitControls.js";
+import { ColladaLoader } from "three/addons/loaders/ColladaLoader.js";
 
 const params = new URLSearchParams("__QS__");
 const dataset = params.get("t4dataset_id");
@@ -97,11 +98,75 @@ const predLayerGroup = new THREE.Group(); scene.add(predLayerGroup);
 const matchedLayerGroup = new THREE.Group(); scene.add(matchedLayerGroup);
 const laneletGroup = new THREE.Group(); scene.add(laneletGroup);
 const egoAxes = new THREE.AxesHelper(2.8); scene.add(egoAxes);
-const egoBody = new THREE.Mesh(
+/** Ego vehicle root (base_link); mesh from sample_vehicle_description or wireframe fallback. */
+const egoRoot = new THREE.Group();
+scene.add(egoRoot);
+const egoFallback = new THREE.Mesh(
   new THREE.BoxGeometry(4.6, 1.9, 1.6),
-  new THREE.MeshBasicMaterial({color:0x6ea8ff, wireframe:true, transparent:true, opacity:0.45})
+  new THREE.MeshBasicMaterial({
+    color: 0x6ea8ff,
+    wireframe: true,
+    transparent: true,
+    opacity: Number(document.getElementById("boxOpacity").value || "0.9"),
+  })
 );
-egoBody.position.set(0,0,0.8); scene.add(egoBody);
+egoFallback.position.set(0, 0, 0.8);
+egoRoot.add(egoFallback);
+const EGO_WHEEL_BASE = 2.79;
+function applyEgoOpacity(opacity){
+  const solid = opacity >= 0.9;
+  egoRoot.traverse((o) => {
+    if (!o.isMesh || !o.material) return;
+    const mats = Array.isArray(o.material) ? o.material : [o.material];
+    for (const m of mats) {
+      if (!m) continue;
+      m.transparent = !solid;
+      m.opacity = solid ? 1 : opacity;
+      if ("depthWrite" in m) m.depthWrite = true;
+    }
+  });
+}
+function loadEgoVehicleMesh(){
+  const loader = new ColladaLoader();
+  return new Promise((resolve, reject) => {
+    loader.load(
+      "/viewer/assets/vehicle-mesh/lexus.dae",
+      (collada) => {
+        const v0 = Number(document.getElementById("boxOpacity").value || "0.9");
+        egoRoot.remove(egoFallback);
+        egoFallback.geometry.dispose();
+        egoFallback.material.dispose();
+        const visual = new THREE.Group();
+        visual.position.set(EGO_WHEEL_BASE * 0.5, 0, 0);
+        const meshRoot = collada.scene;
+        meshRoot.rotation.x = -Math.PI / 2;
+        meshRoot.rotation.z = Math.PI;
+        const solid = v0 >= 0.9;
+        meshRoot.traverse((o) => {
+          if (!o.isMesh || !o.material) return;
+          const mats = Array.isArray(o.material) ? o.material : [o.material];
+          for (const m of mats) {
+            if (!m) continue;
+            if (m.map) {
+              m.map.colorSpace = THREE.SRGBColorSpace;
+              if ("color" in m) m.color.setRGB(1, 1, 1);
+            }
+            m.transparent = !solid;
+            m.opacity = solid ? 1 : v0;
+            if ("depthWrite" in m) m.depthWrite = true;
+            if ("envMapIntensity" in m) m.envMapIntensity = 1;
+          }
+        });
+        visual.add(meshRoot);
+        egoRoot.add(visual);
+        applyEgoOpacity(v0);
+        resolve();
+      },
+      undefined,
+      (err) => reject(err || new Error("Collada load failed"))
+    );
+  });
+}
 const cache = new Map(); const MAX_CACHE = 28;
 let totalFrames = 0; let playing = false; let frame = startFrame; let fps = 6;
 let lastFrameTs = 0;
@@ -578,9 +643,11 @@ document.getElementById("intensityGain").addEventListener("input", async (e) => 
   if (data) setFrameData(data);
 });
 document.getElementById("boxOpacity").addEventListener("input", () => {
+  const v = Number(document.getElementById("boxOpacity").value || "0.9");
   for (const child of boxesGroup.children) {
-    if (child.material) child.material.opacity = Number(document.getElementById("boxOpacity").value || "0.9");
+    if (child.material) child.material.opacity = v;
   }
+  applyEgoOpacity(v);
 });
 document.getElementById("showGtLayer").addEventListener("change", () => { gtLayerGroup.visible = !!document.getElementById("showGtLayer").checked; });
 document.getElementById("showPredLayer").addEventListener("change", () => { predLayerGroup.visible = !!document.getElementById("showPredLayer").checked; });
@@ -638,6 +705,9 @@ function animate(ts){
 
 (async function boot(){
   setStatus("bootstrapping...");
+  const egoMeshPromise = loadEgoVehicleMesh().catch((err) => {
+    console.warn("[viewer] ego vehicle mesh unavailable, using box fallback", err);
+  });
   const metaRes = await fetch(metaUrl);
   if (!metaRes.ok) throw new Error(`meta HTTP ${metaRes.status}`);
   const meta = await metaRes.json();
@@ -652,6 +722,7 @@ function animate(ts){
   requestAnimationFrame(() => resizeMainRenderer());
   setTimeout(() => resizeMainRenderer(), 0);
   await showFrame(Math.min(startFrame, Math.max(0, totalFrames - 1)));
+  egoMeshPromise.catch(() => {});
   animate(0);
 })().catch((err) => {
   setStatus(`boot error: ${err.message}`);

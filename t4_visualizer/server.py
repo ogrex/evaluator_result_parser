@@ -373,6 +373,15 @@ def _build_app(
     )
 
     app = FastAPI(title="T4 Visualizer", version="0.1.0")
+    _vehicle_mesh_dir = Path(__file__).resolve().parent.parent / "assets" / "sample_vehicle_description" / "mesh"
+    if _vehicle_mesh_dir.is_dir():
+        from starlette.staticfiles import StaticFiles
+
+        app.mount(
+            "/viewer/assets/vehicle-mesh",
+            StaticFiles(directory=str(_vehicle_mesh_dir)),
+            name="vehicle_mesh",
+        )
     _cache = _Tier4Cache(max_size=tier4_cache_size)
     _path_cache = _DatasetPathCache(ttl_s=dataset_path_cache_ttl_s)
     _debug_visibility = str(visibility_mode).strip().lower() == "debug"
