@@ -5,34 +5,55 @@
   :root{--bg:#060812;--panel:#0f1324cc;--text:#e8edff;--muted:#9aa6d4;--accent:#6ea8ff;--ok:#4bd08d;}
   html,body{margin:0;height:100%;background:radial-gradient(1200px 600px at 20% 0%,#1a2552 0%,#060812 65%);color:var(--text);font-family:ui-sans-serif,system-ui,sans-serif;}
   #app{display:grid;grid-template-rows:auto 1fr;height:100%;}
-  .top{display:flex;gap:.7rem;align-items:center;padding:.7rem .9rem;background:var(--panel);backdrop-filter:blur(8px);border-bottom:1px solid #24315f;}
+  .top{display:flex;flex-direction:column;gap:.45rem;padding:.55rem .9rem .65rem;background:var(--panel);backdrop-filter:blur(8px);border-bottom:1px solid #24315f;}
+  .topRowMain{display:flex;gap:.7rem;align-items:center;flex-wrap:wrap}
+  .topRowScrubber{display:flex;gap:.55rem;align-items:center;width:100%;min-height:2rem}
+  .scrubberLabel{font-size:.78rem;color:var(--muted);white-space:nowrap}
+  #slider{flex:1;min-width:120px;height:1.35rem;cursor:pointer}
+  .frameNav{display:flex;gap:.35rem;align-items:center;flex-shrink:0}
+  .frameNav button{min-width:2rem;padding:.25rem .4rem}
   .pill{font-size:.82rem;color:var(--muted)}
   .controls{display:flex;gap:.45rem;align-items:center;flex-wrap:wrap}
   button,input[type=range],select{background:#111a35;color:var(--text);border:1px solid #2a3d78;border-radius:8px;padding:.3rem .5rem}
   #canvasWrap{position:relative;min-height:0}
   #canvas{width:100%;height:100%;display:block}
   #hud{position:absolute;right:12px;top:12px;background:var(--panel);border:1px solid #2b3f7d;border-radius:10px;padding:.6rem;min-width:260px}
+  #evalHud{margin-top:.35rem;padding-top:.45rem;border-top:1px solid #24315f;font-size:.78rem;line-height:1.45}
+  #evalHud .row{display:flex;justify-content:space-between;gap:.5rem}
+  #evalHud .nGt{color:#4bd08d}
+  #evalHud .nPr{color:#ff7ec8}
+  #evalHud .nMt{color:#58d8ff}
   #status{font-size:.82rem;color:var(--muted)}
   a{color:var(--accent)}
 </style>
 </head><body><div id="app">
   <div class="top">
-    <strong>Three.js Viewer</strong>
-    <span class="pill">dataset=<code>__DATASET_ID__</code></span>
-    <span class="pill">scenario=<code>__SCENARIO_NAME__</code></span>
-    <div class="controls">
-      <button id="playBtn">Play</button>
-      <label>speed <select id="speed"><option>0.25</option><option>0.5</option><option selected>1</option><option>2</option><option>4</option></select>x</label>
-      <button id="camReset">Reset Cam</button>
-      <button id="camTop">Top</button>
-      <button id="camFollow">Follow</button>
-      <button id="toggleLanelet">Lanelet OFF</button>
-      <button id="toggleOverlay2d">Cam Viewport</button>
-      <select id="overlayCamera" style="min-width:150px"></select>
-      <input id="slider" type="range" min="0" max="0" value="0" />
-      <span id="frameTxt">frame 0/0</span>
+    <div class="topRowMain">
+      <strong>Three.js Viewer</strong>
+      <span class="pill">dataset=<code>__DATASET_ID__</code></span>
+      <span class="pill">scenario=<code>__SCENARIO_NAME__</code></span>
+      <div class="controls">
+        <button id="playBtn">Play</button>
+        <label>speed <select id="speed"><option>0.25</option><option>0.5</option><option selected>1</option><option>2</option><option>4</option></select>x</label>
+        <button id="camReset">Reset Cam</button>
+        <button id="camTop">Top</button>
+        <button id="camFollow">Follow</button>
+        <button id="toggleLanelet">Lanelet OFF</button>
+        <button id="toggleOverlay2d">Cam Viewport</button>
+        <select id="overlayCamera" style="min-width:150px"></select>
+        <button id="toggleFullscreen" type="button" title="Fullscreen 3D view">Fullscreen</button>
+      </div>
+      <a href="/datasets/browser">Back</a>
     </div>
-    <a href="/datasets/browser">Back</a>
+    <div class="topRowScrubber">
+      <span class="scrubberLabel">Frame</span>
+      <input id="slider" type="range" min="0" max="0" value="0" />
+      <span id="frameTxt" class="pill" style="min-width:7.5rem;text-align:right">frame 0/0</span>
+      <div class="frameNav">
+        <button id="framePrev" type="button" title="Previous frame">◀</button>
+        <button id="frameNext" type="button" title="Next frame">▶</button>
+      </div>
+    </div>
   </div>
   <div id="canvasWrap"><canvas id="canvas"></canvas>
     <div id="overlayWrap" style="position:absolute;left:12px;bottom:12px;width:min(46vw,820px);height:min(40vh,360px);display:none;border:1px solid #2b3f7d;border-radius:10px;overflow:hidden;background:#090d1a">
@@ -41,6 +62,7 @@
     <div id="hud">
       <div id="status">loading...</div>
       <div id="meta"></div>
+      <div id="evalHud" hidden></div>
       <hr style="border-color:#24315f;opacity:.6">
       <div style="display:grid;gap:.4rem;font-size:.82rem">
         <div>projection: <strong id="projMode">perspective</strong></div>
@@ -204,8 +226,43 @@ const slider = document.getElementById("slider");
 const frameTxt = document.getElementById("frameTxt");
 const statusEl = document.getElementById("status");
 const metaEl = document.getElementById("meta");
+const evalHudEl = document.getElementById("evalHud");
+const canvasWrapEl = document.getElementById("canvasWrap");
 function setStatus(t){ statusEl.textContent = t; }
 function setFrameText(){ frameTxt.textContent = `frame ${frame}/${Math.max(0,totalFrames-1)}`; slider.value = String(frame); }
+
+/** Update HUD block for GT/Pred/Matched when postMessage or per-frame eval data is present. */
+function updateEvalHud(){
+  if (!evalHudEl) return;
+  const gt = Array.isArray(externalLayers.gt) ? externalLayers.gt.length : 0;
+  const pred = Array.isArray(externalLayers.pred) ? externalLayers.pred.length : 0;
+  const matched = Array.isArray(externalLayers.matched) ? externalLayers.matched.length : 0;
+  const mapKeys = bboxLayersByFrame && typeof bboxLayersByFrame === "object"
+    ? Object.keys(bboxLayersByFrame).length
+    : 0;
+  const hasFrameMap = mapKeys > 0;
+  const hasAny = gt > 0 || pred > 0 || matched > 0 || hasFrameMap;
+  if (!hasAny) {
+    evalHudEl.hidden = true;
+    evalHudEl.innerHTML = "";
+    return;
+  }
+  evalHudEl.hidden = false;
+  const mapLine = hasFrameMap
+    ? `<div class="row" style="margin-top:.35rem;opacity:.92"><span>per-frame keys</span><span>${mapKeys}</span></div>`
+    : "";
+  evalHudEl.innerHTML =
+    `<div style="font-weight:600;font-size:.7rem;color:var(--muted);text-transform:uppercase;letter-spacing:.04em;margin-bottom:.25rem">Eval layers (this frame)</div>` +
+    `<div class="row"><span>GT</span><span class="nGt">${gt}</span></div>` +
+    `<div class="row"><span>Pred</span><span class="nPr">${pred}</span></div>` +
+    `<div class="row"><span>Matched</span><span class="nMt">${matched}</span></div>` +
+    mapLine;
+}
+function syncFullscreenButton(){
+  const btn = document.getElementById("toggleFullscreen");
+  if (!btn) return;
+  btn.textContent = document.fullscreenElement ? "Exit fullscreen" : "Fullscreen";
+}
 
 function resizeMainRenderer(){
   const wrap = document.getElementById("canvasWrap");
@@ -329,6 +386,7 @@ function setExternalLayerPayload(payload, opts){
   }
   externalLayers = { gt, pred, matched };
   renderExternalLayers();
+  updateEvalHud();
   setStatus(`ready · cached=${cache.size} · ext(gt=${gt.length},pred=${pred.length},match=${matched.length})`);
   if (!doAck) return;
   const ack = `/viewer/three/debug/message-received?t4dataset_id=${encodeURIComponent(dataset)}&scenario_name=${encodeURIComponent(scenario)}&frame_index=${frame}&gt_count=${gt.length}&pred_count=${pred.length}&matched_count=${matched.length}`;
@@ -357,6 +415,7 @@ function applyEvalLayersForFrame(i){
   } else {
     externalLayers = { gt: [], pred: [], matched: [] };
     renderExternalLayers();
+    updateEvalHud();
     setStatus(`ready · cached=${cache.size} · ext(gt=0,pred=0,match=0)`);
   }
 }
@@ -598,6 +657,7 @@ async function showFrame(i){
   if (bboxLayersByFrame) {
     applyEvalLayersForFrame(frame);
   } else {
+    updateEvalHud();
     setStatus(`ready · cached=${cache.size}`);
   }
 }
@@ -718,13 +778,36 @@ window.addEventListener("message", (ev) => {
     bboxLayersByFrame = null;
     externalLayers = { gt: [], pred: [], matched: [] };
     renderExternalLayers();
+    updateEvalHud();
   }
 });
 window.T4ViewerAPI = {
   setLayers(payload){ bboxLayersByFrame = null; setExternalLayerPayload(payload || {}); },
-  clearLayers(){ bboxLayersByFrame = null; externalLayers = { gt: [], pred: [], matched: [] }; renderExternalLayers(); },
+  clearLayers(){ bboxLayersByFrame = null; externalLayers = { gt: [], pred: [], matched: [] }; renderExternalLayers(); updateEvalHud(); },
   getFrameContext(){ return { dataset, scenario, frame, totalFrames }; },
 };
+document.getElementById("toggleFullscreen").addEventListener("click", async () => {
+  if (!canvasWrapEl) return;
+  try {
+    if (!document.fullscreenElement) {
+      await canvasWrapEl.requestFullscreen();
+    } else {
+      await document.exitFullscreen();
+    }
+  } catch (err) {
+    setStatus(`fullscreen: ${err && err.message ? err.message : String(err)}`);
+  }
+});
+document.addEventListener("fullscreenchange", () => {
+  syncFullscreenButton();
+  resizeMainRenderer();
+});
+document.getElementById("framePrev").addEventListener("click", () => {
+  showFrame(frame - 1).catch((e) => setStatus(`error: ${e.message}`));
+});
+document.getElementById("frameNext").addEventListener("click", () => {
+  showFrame(frame + 1).catch((e) => setStatus(`error: ${e.message}`));
+});
 window.addEventListener("resize", () => {
   resizeMainRenderer();
 });
