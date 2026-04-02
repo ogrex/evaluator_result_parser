@@ -182,6 +182,8 @@ let laneletLoaded = false;
 let laneletBounds = null;
 let laneletFrame = -1;
 let externalLayers = { gt: [], pred: [], matched: [], gtPairs: [], predPairs: [] };
+/** When set, eval GT/pred/matched layers are keyed by frame index (from parent postMessage). */
+let bboxLayersByFrame = null;
 
 const overlayCanvas = document.getElementById("overlayCanvas");
 const overlayRenderer = new THREE.WebGLRenderer({canvas: overlayCanvas, antialias:true, alpha:true});
@@ -310,7 +312,8 @@ function renderExternalLayers(){
   matchedLayerGroup.visible = !!document.getElementById("showMatchedLayer").checked;
 }
 
-function setExternalLayerPayload(payload){
+function setExternalLayerPayload(payload, opts){
+  const doAck = !opts || opts.ack !== false;
   const gt = Array.isArray(payload.gt) ? payload.gt : [];
   const pred = Array.isArray(payload.pred) ? payload.pred : [];
   let matched = Array.isArray(payload.matched) ? payload.matched : [];
@@ -327,6 +330,7 @@ function setExternalLayerPayload(payload){
   externalLayers = { gt, pred, matched };
   renderExternalLayers();
   setStatus(`ready · cached=${cache.size} · ext(gt=${gt.length},pred=${pred.length},match=${matched.length})`);
+  if (!doAck) return;
   const ack = `/viewer/three/debug/message-received?t4dataset_id=${encodeURIComponent(dataset)}&scenario_name=${encodeURIComponent(scenario)}&frame_index=${frame}&gt_count=${gt.length}&pred_count=${pred.length}&matched_count=${matched.length}`;
   fetch(ack)
     .then((r) => {
@@ -339,6 +343,22 @@ function setExternalLayerPayload(payload){
     .catch((err) => {
       console.warn("[viewer-debug] bbox_layers ack failed", err);
     });
+}
+
+/** Apply eval parquet layers for frame index *i* when bboxLayersByFrame is set (parent sent bbox_layers_by_frame). */
+function applyEvalLayersForFrame(i){
+  if (!bboxLayersByFrame) return;
+  const sk = String(i);
+  const entry = Object.prototype.hasOwnProperty.call(bboxLayersByFrame, sk)
+    ? bboxLayersByFrame[sk]
+    : bboxLayersByFrame[i];
+  if (entry && typeof entry === "object"){
+    setExternalLayerPayload(entry, { ack: false });
+  } else {
+    externalLayers = { gt: [], pred: [], matched: [] };
+    renderExternalLayers();
+    setStatus(`ready · cached=${cache.size} · ext(gt=0,pred=0,match=0)`);
+  }
 }
 
 async function fetchFrame(i){
@@ -574,8 +594,12 @@ async function showFrame(i){
     await loadLanelet();
     laneletGroup.visible = true;
   }
-  setStatus(`ready · cached=${cache.size}`);
   prefetchAround(frame);
+  if (bboxLayersByFrame) {
+    applyEvalLayersForFrame(frame);
+  } else {
+    setStatus(`ready · cached=${cache.size}`);
+  }
 }
 
 document.getElementById("playBtn").addEventListener("click", () => {
@@ -676,15 +700,29 @@ window.addEventListener("message", (ev) => {
   if (!d || typeof d !== "object") return;
   console.info("[viewer-debug] message received", { type: d.type, origin: ev.origin || "null" });
   if (d.type === "bbox_layers") {
+    bboxLayersByFrame = null;
     setExternalLayerPayload(d);
+  } else if (d.type === "bbox_layers_by_frame") {
+    const frames = d.frames;
+    if (frames && typeof frames === "object"){
+      bboxLayersByFrame = frames;
+      const n = Object.keys(frames).length;
+      const ack = `/viewer/three/debug/message-received?t4dataset_id=${encodeURIComponent(dataset)}&scenario_name=${encodeURIComponent(scenario)}&frame_index=${frame}&gt_count=0&pred_count=0&matched_count=0&message_type=bbox_layers_by_frame&frames_count=${n}`;
+      fetch(ack)
+        .then((r) => r.ok ? r.json() : Promise.reject(new Error(String(r.status))))
+        .then((body) => console.info("[viewer-debug] bbox_layers_by_frame ack ok", body))
+        .catch((err) => console.warn("[viewer-debug] bbox_layers_by_frame ack failed", err));
+      applyEvalLayersForFrame(frame);
+    }
   } else if (d.type === "bbox_layers_clear") {
+    bboxLayersByFrame = null;
     externalLayers = { gt: [], pred: [], matched: [] };
     renderExternalLayers();
   }
 });
 window.T4ViewerAPI = {
-  setLayers(payload){ setExternalLayerPayload(payload || {}); },
-  clearLayers(){ externalLayers = { gt: [], pred: [], matched: [] }; renderExternalLayers(); },
+  setLayers(payload){ bboxLayersByFrame = null; setExternalLayerPayload(payload || {}); },
+  clearLayers(){ bboxLayersByFrame = null; externalLayers = { gt: [], pred: [], matched: [] }; renderExternalLayers(); },
   getFrameContext(){ return { dataset, scenario, frame, totalFrames }; },
 };
 window.addEventListener("resize", () => {

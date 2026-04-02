@@ -1778,7 +1778,7 @@ def _build_app(
     @app.get(
         "/viewer/three/debug/message-received",
         tags=["viewer"],
-        summary="Debug ack: viewer received bbox_layers message",
+        summary="Debug ack: viewer received bbox_layers or bbox_layers_by_frame postMessage",
     )
     def viewer_three_debug_message_received(
         t4dataset_id: Optional[str] = None,
@@ -1787,13 +1787,24 @@ def _build_app(
         gt_count: int = Query(0, ge=0),
         pred_count: int = Query(0, ge=0),
         matched_count: int = Query(0, ge=0),
+        message_type: Optional[str] = Query(
+            None,
+            description="bbox_layers | bbox_layers_by_frame (optional, for logging).",
+        ),
+        frames_count: Optional[int] = Query(
+            None,
+            ge=0,
+            description="Number of frame keys when message_type=bbox_layers_by_frame.",
+        ),
     ):
         print(
             "[viewer:message] "
             f"dataset={t4dataset_id} "
             f"scenario={scenario_name} "
             f"frame={frame_index} "
-            f"gt={gt_count} pred={pred_count} matched={matched_count}"
+            f"gt={gt_count} pred={pred_count} matched={matched_count} "
+            f"type={message_type or 'bbox_layers'} "
+            f"frames_count={frames_count}"
         )
         return {
             "ok": True,
@@ -1803,6 +1814,8 @@ def _build_app(
             "gt_count": gt_count,
             "pred_count": pred_count,
             "matched_count": matched_count,
+            "message_type": message_type,
+            "frames_count": frames_count,
         }
 
     @app.get("/viewer/three")
