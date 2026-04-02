@@ -26,6 +26,7 @@
       <button id="camReset">Reset Cam</button>
       <button id="camTop">Top</button>
       <button id="camFollow">Follow</button>
+      <button id="toggleLanelet">Lanelet OFF</button>
       <button id="toggleOverlay2d">Cam Viewport</button>
       <select id="overlayCamera" style="min-width:150px"></select>
       <input id="slider" type="range" min="0" max="0" value="0" />
@@ -89,6 +90,7 @@ const pointsMat = new THREE.PointsMaterial({size:0.08, vertexColors:true, transp
 const pointsObj = new THREE.Points(pointsGeom, pointsMat);
 scene.add(pointsObj);
 const boxesGroup = new THREE.Group(); scene.add(boxesGroup);
+const laneletGroup = new THREE.Group(); scene.add(laneletGroup);
 const egoAxes = new THREE.AxesHelper(2.8); scene.add(egoAxes);
 const egoBody = new THREE.Mesh(
   new THREE.BoxGeometry(4.6, 1.9, 1.6),
@@ -105,6 +107,10 @@ let overlayData = null;
 let overlayTexture = null;
 let overlayImageKey = "";
 const overlayTextureCache = new Map();
+let laneletEnabled = false;
+let laneletLoaded = false;
+let laneletBounds = null;
+let laneletFrame = -1;
 
 const overlayCanvas = document.getElementById("overlayCanvas");
 const overlayRenderer = new THREE.WebGLRenderer({canvas: overlayCanvas, antialias:true, alpha:true});
@@ -179,6 +185,44 @@ async function fetchCameraOverlay(i){
   const res = await fetch(url);
   if (!res.ok) throw new Error(`camera overlay HTTP ${res.status}`);
   return await res.json();
+}
+
+async function loadLanelet(){
+  if (laneletLoaded && laneletFrame === frame) return;
+  setStatus("loading lanelet...");
+  const url = `/viewer/three/lanelet-lines?t4dataset_id=${encodeURIComponent(dataset)}&scenario_name=${encodeURIComponent(scenario)}&frame_index=${frame}${qv}&max_segments=90000&clip_radius_m=170`;
+  const res = await fetch(url);
+  if (!res.ok) throw new Error(`lanelet HTTP ${res.status}`);
+  const data = await res.json();
+  if (!data.available) {
+    setStatus(`lanelet unavailable: ${data.reason || "not found"}`);
+    laneletLoaded = true;
+    return;
+  }
+  const segs = Array.isArray(data.segments) ? data.segments : [];
+  const roleColors = { left: 0x4bd08d, right: 0xff8f5a, centerline: 0x7aa7ff, unknown: 0xd0d7ff };
+  const byRole = { left: [], right: [], centerline: [], unknown: [] };
+  let xmin=Infinity, xmax=-Infinity, ymin=Infinity, ymax=-Infinity;
+  for (const s of segs){
+    const role = byRole[s.role] ? s.role : "unknown";
+    byRole[role].push(s.x0, s.y0, s.z0 || 0, s.x1, s.y1, s.z1 || 0);
+    xmin = Math.min(xmin, s.x0, s.x1); xmax = Math.max(xmax, s.x0, s.x1);
+    ymin = Math.min(ymin, s.y0, s.y1); ymax = Math.max(ymax, s.y0, s.y1);
+  }
+  laneletBounds = isFinite(xmin) ? { xmin, xmax, ymin, ymax } : null;
+  while (laneletGroup.children.length) laneletGroup.remove(laneletGroup.children[0]);
+  for (const role of Object.keys(byRole)){
+    const arr = byRole[role];
+    if (!arr.length) continue;
+    const g = new THREE.BufferGeometry();
+    g.setAttribute("position", new THREE.Float32BufferAttribute(arr, 3));
+    const m = new THREE.LineBasicMaterial({ color: roleColors[role], transparent: true, opacity: role === "centerline" ? 0.95 : 0.78 });
+    laneletGroup.add(new THREE.LineSegments(g, m));
+  }
+  laneletGroup.visible = laneletEnabled;
+  laneletLoaded = true;
+  laneletFrame = frame;
+  setStatus(`lanelet loaded: ${segs.length} segments`);
 }
 
 function ensureOverlayCameraOptions(payload){
@@ -345,6 +389,10 @@ async function showFrame(i){
       renderCameraOverlay(payload);
     }
   }
+  if (laneletEnabled) {
+    await loadLanelet();
+    laneletGroup.visible = true;
+  }
   setStatus(`ready · cached=${cache.size}`);
   prefetchAround(frame);
 }
@@ -369,6 +417,24 @@ document.getElementById("camFollow").addEventListener("click", () => {
   followEgo = true;
   camera.position.set(-10,-2,3.8); controls.target.set(0,0,0); controls.update();
   setStatus("follow ego: on");
+});
+document.getElementById("toggleLanelet").addEventListener("click", async () => {
+  laneletEnabled = !laneletEnabled;
+  const btn = document.getElementById("toggleLanelet");
+  btn.textContent = laneletEnabled ? "Lanelet ON" : "Lanelet OFF";
+  if (laneletEnabled && !laneletLoaded) {
+    try {
+      await loadLanelet();
+    } catch (err) {
+      setStatus(`lanelet error: ${err.message}`);
+      laneletEnabled = false;
+      btn.textContent = "Lanelet OFF";
+    }
+  }
+  if (laneletEnabled && laneletLoaded && laneletFrame !== frame) {
+    try { await loadLanelet(); } catch (_) {}
+  }
+  laneletGroup.visible = laneletEnabled;
 });
 document.getElementById("toggleOverlay2d").addEventListener("click", () => {
   const wrap = document.getElementById("overlayWrap");

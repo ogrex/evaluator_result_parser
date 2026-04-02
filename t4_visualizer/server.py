@@ -96,10 +96,12 @@ import base64
 import datetime
 import html
 import json
+import math
 import struct
 import sys
 import threading
 import time
+import xml.etree.ElementTree as ET
 from functools import lru_cache
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple
@@ -801,6 +803,203 @@ def _build_app(
             "height": height,
         }
 
+    @lru_cache(maxsize=8)
+    def _load_lanelet_graph(map_path_txt: str):
+        """Load lanelet2 OSM once and return nodes/ways/relation way roles."""
+        map_path = Path(map_path_txt)
+        root = ET.parse(str(map_path)).getroot()
+        nodes_latlon_ele: Dict[str, Tuple[float, float, float]] = {}
+        nodes_localxy_ele: Dict[str, Tuple[float, float, float]] = {}
+        for n in root.findall("node"):
+            nid = n.attrib.get("id")
+            if not nid:
+                continue
+            lat_txt = n.attrib.get("lat")
+            lon_txt = n.attrib.get("lon")
+            if lat_txt is None or lon_txt is None:
+                continue
+            lat = float(lat_txt)
+            lon = float(lon_txt)
+            ele = 0.0
+            lx = None
+            ly = None
+            for t in n.findall("tag"):
+                k = t.attrib.get("k")
+                if k in ("ele", "height", "z"):
+                    try:
+                        ele = float(t.attrib.get("v", "0"))
+                    except ValueError:
+                        ele = 0.0
+                elif k in ("local_x", "x"):
+                    try:
+                        lx = float(t.attrib.get("v", "0"))
+                    except ValueError:
+                        lx = None
+                elif k in ("local_y", "y"):
+                    try:
+                        ly = float(t.attrib.get("v", "0"))
+                    except ValueError:
+                        ly = None
+            nodes_latlon_ele[nid] = (lat, lon, ele)
+            if lx is not None and ly is not None:
+                nodes_localxy_ele[nid] = (lx, ly, ele)
+
+        ways: Dict[str, List[str]] = {}
+        for w in root.findall("way"):
+            wid = w.attrib.get("id")
+            if not wid:
+                continue
+            refs = []
+            for nd in w.findall("nd"):
+                ref = nd.attrib.get("ref")
+                if ref:
+                    refs.append(ref)
+            if refs:
+                ways[wid] = refs
+
+        lanelet_way_ids = set()
+        role_of_way: Dict[str, str] = {}
+        for rel in root.findall("relation"):
+            is_lanelet = False
+            for t in rel.findall("tag"):
+                if t.attrib.get("k") == "type" and t.attrib.get("v") == "lanelet":
+                    is_lanelet = True
+                    break
+            if not is_lanelet:
+                continue
+            for m in rel.findall("member"):
+                if m.attrib.get("type") != "way":
+                    continue
+                ref = m.attrib.get("ref")
+                if not ref:
+                    continue
+                lanelet_way_ids.add(ref)
+                role_of_way[ref] = m.attrib.get("role", "unknown")
+        return nodes_latlon_ele, nodes_localxy_ele, ways, lanelet_way_ids, role_of_way
+
+    def _lanelet_lines_payload(
+        dataset_path: Path,
+        t4,
+        scenario_name: str,
+        frame_index: int,
+        max_segments: int = 120000,
+        clip_radius_m: float = 160.0,
+    ) -> Dict[str, object]:
+        """Return lanelet segments transformed into current ego frame."""
+        map_path = dataset_path / "map" / "lanelet2_map.osm"
+        if not map_path.exists():
+            return {"available": False, "reason": f"map file not found: {map_path}", "segments": []}
+        try:
+            nodes_latlon_ele, nodes_localxy_ele, ways, lanelet_way_ids, role_of_way = _load_lanelet_graph(str(map_path))
+        except Exception as exc:
+            _safe_error(500, "lanelet_parse_failed", "Failed to parse lanelet2_map.osm.", exc=exc)
+
+        sample = _get_scenario_sample(t4, scenario_name, frame_index)
+        from t4_visualizer.visualize import list_lidar_channels
+
+        lidar_channels = list_lidar_channels(t4, sample)
+        if not lidar_channels:
+            return {"available": False, "reason": "no lidar channel in sample", "segments": []}
+        lidar_token = sample.data.get(lidar_channels[0])
+        if lidar_token is None:
+            return {"available": False, "reason": "no lidar sample_data token", "segments": []}
+        sample_data = t4.get("sample_data", lidar_token)
+        ego_pose = t4.get("ego_pose", sample_data.ego_pose_token)
+        geocoord = getattr(ego_pose, "geocoordinate", None)
+        ego_t = getattr(ego_pose, "translation", None) or [0.0, 0.0, 0.0]
+        ego_tx = float(ego_t[0]) if len(ego_t) >= 1 else 0.0
+        ego_ty = float(ego_t[1]) if len(ego_t) >= 2 else 0.0
+        ego_tz = float(ego_t[2]) if len(ego_t) >= 3 else 0.0
+        lat0 = None
+        lon0 = None
+        alt0 = ego_tz
+        align_mode = "translation_xy"
+        if geocoord and len(geocoord) >= 2:
+            lat0 = float(geocoord[0])
+            lon0 = float(geocoord[1])
+            alt0 = float(geocoord[2]) if len(geocoord) >= 3 and geocoord[2] is not None else ego_tz
+            align_mode = "geocoordinate"
+        rot = getattr(ego_pose, "rotation", None) or [1.0, 0.0, 0.0, 0.0]
+        try:
+            w, x, y, z = [float(v) for v in rot]
+            yaw = math.atan2(2.0 * (w * z + x * y), 1.0 - 2.0 * (y * y + z * z))
+        except Exception:
+            yaw = 0.0
+        c = math.cos(-yaw)
+        s = math.sin(-yaw)
+
+        segments = []
+        count = 0
+        for wid in lanelet_way_ids:
+            refs = ways.get(wid)
+            if not refs or len(refs) < 2:
+                continue
+            role = role_of_way.get(wid, "unknown")
+            for i in range(len(refs) - 1):
+                p0 = nodes_latlon_ele.get(refs[i])
+                p1 = nodes_latlon_ele.get(refs[i + 1])
+                if p0 is None or p1 is None:
+                    continue
+                lat_a, lon_a, ele_a = p0
+                lat_b, lon_b, ele_b = p1
+                # Compute metric XY in global-ish frame.
+                if align_mode == "geocoordinate":
+                    gx0 = (lon_a - lon0) * 111320.0 * math.cos(math.radians(lat0))
+                    gy0 = (lat_a - lat0) * 110540.0
+                    gx1 = (lon_b - lon0) * 111320.0 * math.cos(math.radians(lat0))
+                    gy1 = (lat_b - lat0) * 110540.0
+                elif refs[i] in nodes_localxy_ele and refs[i + 1] in nodes_localxy_ele:
+                    la = nodes_localxy_ele[refs[i]]
+                    lb = nodes_localxy_ele[refs[i + 1]]
+                    gx0, gy0 = float(la[0]) - ego_tx, float(la[1]) - ego_ty
+                    gx1, gy1 = float(lb[0]) - ego_tx, float(lb[1]) - ego_ty
+                else:
+                    # Last-resort fallback: local map XY around first node.
+                    # This keeps map visible (may be shifted when no geo info exists).
+                    lat_ref, lon_ref, _ = next(iter(nodes_latlon_ele.values()))
+                    gx0 = (lon_a - lon_ref) * 111320.0 * math.cos(math.radians(lat_ref))
+                    gy0 = (lat_a - lat_ref) * 110540.0
+                    gx1 = (lon_b - lon_ref) * 111320.0 * math.cos(math.radians(lat_ref))
+                    gy1 = (lat_b - lat_ref) * 110540.0
+                # map frame -> ego frame (x forward, y left)
+                ex0 = c * gx0 - s * gy0
+                ey0 = s * gx0 + c * gy0
+                ex1 = c * gx1 - s * gy1
+                ey1 = s * gx1 + c * gy1
+                if clip_radius_m > 0:
+                    if (ex0 * ex0 + ey0 * ey0 > clip_radius_m * clip_radius_m) and (
+                        ex1 * ex1 + ey1 * ey1 > clip_radius_m * clip_radius_m
+                    ):
+                        continue
+                segments.append(
+                    {
+                        "x0": ex0, "y0": ey0, "z0": float(ele_a - alt0),
+                        "x1": ex1, "y1": ey1, "z1": float(ele_b - alt0),
+                        "role": role,
+                    }
+                )
+                count += 1
+                if count >= max_segments:
+                    break
+            if count >= max_segments:
+                break
+
+        return {
+            "available": True,
+            "map_path": str(map_path) if _debug_visibility else "lanelet2_map.osm",
+            "segment_count": len(segments),
+            "segments": segments,
+            "projection": "ego_local_xy_m",
+            "origin_latlon": [lat0, lon0] if _debug_visibility else None,
+            "ego_yaw_rad": yaw if _debug_visibility else None,
+            "align_mode": align_mode,
+            "warning": (
+                "ego_pose.geocoordinate missing; using translation/local fallback alignment."
+                if align_mode != "geocoordinate"
+                else None
+            ),
+        }
+
     def _pack_viewer_frame_binary(
         *,
         frame_index: int,
@@ -1493,6 +1692,40 @@ def _build_app(
                 status_code=500,
                 code="viewer_camera_overlay_failed",
                 message="Failed to generate camera overlay payload.",
+                exc=exc,
+            )
+
+    @app.get(
+        "/viewer/three/lanelet-lines",
+        tags=["viewer"],
+        summary="Lanelet line segments for Three.js map overlay",
+    )
+    def viewer_three_lanelet_lines(
+        t4dataset_id: str,
+        scenario_name: str,
+        frame_index: int = Query(0, ge=0),
+        version: Optional[str] = None,
+        max_segments: int = Query(120000, ge=1000, le=500000),
+        clip_radius_m: float = Query(160.0, ge=20.0, le=500.0),
+    ):
+        dataset_path = _resolve_dataset(t4dataset_id)
+        try:
+            t4 = _cache.load(dataset_path, version=version)
+            return _lanelet_lines_payload(
+                dataset_path,
+                t4=t4,
+                scenario_name=scenario_name,
+                frame_index=frame_index,
+                max_segments=max_segments,
+                clip_radius_m=clip_radius_m,
+            )
+        except HTTPException:
+            raise
+        except Exception as exc:
+            _safe_error(
+                status_code=500,
+                code="viewer_lanelet_failed",
+                message="Failed to build lanelet line payload.",
                 exc=exc,
             )
 
