@@ -6,6 +6,6 @@ services:
       - "8000:8000"
     volumes:
       # Mount host T4 datasets here (read-only). Adjust the left side to your path.
-      - /home/leigu/.webauto/data/data:/data:ro
+      - ./t4datasets:/data:ro
     environment:
       - WEBAUTO_PROJECT_ID=${WEBAUTO_PROJECT_ID:-}
