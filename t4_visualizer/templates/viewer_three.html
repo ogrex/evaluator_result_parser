@@ -12,6 +12,7 @@
   }
   html,body{margin:0;height:100%;background:radial-gradient(ellipse 1400px 700px at 15% -10%,#1e2a64 0%,#0a0e1e 48%,#060812 100%);color:var(--text);font-family:var(--font-ui);font-feature-settings:"ss01" on;-webkit-font-smoothing:antialiased;}
   #app{display:grid;grid-template-rows:auto 1fr;height:100%;}
+  #app:fullscreen{height:100%;min-height:100%;display:grid;grid-template-rows:auto 1fr;}
   .top{display:flex;flex-direction:column;gap:.5rem;padding:.6rem 1rem .7rem;background:linear-gradient(180deg,rgba(14,18,40,.88) 0%,rgba(8,10,22,.82) 100%);backdrop-filter:blur(14px) saturate(1.2);border-bottom:1px solid var(--hud-edge);box-shadow:0 4px 24px rgba(0,0,0,.35)}
   .topRowMain{display:flex;gap:.75rem;align-items:center;flex-wrap:wrap}
   .topRowMain>strong{font-size:.95rem;font-weight:700;letter-spacing:-.03em;background:linear-gradient(110deg,#e8eeff 0%,#a8b8e8 100%);-webkit-background-clip:text;background-clip:text;color:transparent}
@@ -48,21 +49,18 @@
   #meta{font-size:.75rem;color:#a8b4d4;margin-top:.35rem;font-family:var(--font-mono);line-height:1.45;word-break:break-all}
   a{color:var(--accent);text-decoration:none;border-bottom:1px solid rgba(124,179,255,.35);transition:color .15s,border-color .15s}
   a:hover{color:#c8ddff;border-bottom-color:rgba(200,221,255,.55)}
-  .overlay-wrap{position:absolute;left:8px;bottom:8px;width:min(32vw,440px);max-height:min(24vh,200px);display:none;flex-direction:column;border:1px solid #2b3f7d;border-radius:10px;overflow:hidden;background:linear-gradient(180deg,#0c1022 0%,#080c18 100%);box-shadow:0 8px 32px rgba(0,0,0,.45)}
-  .overlay-cam-labels{display:flex;justify-content:space-around;align-items:center;gap:2px;font-size:9px;letter-spacing:.02em;color:var(--muted);padding:3px 4px;background:#070a14;border-bottom:1px solid #1e2848}
-  .overlay-cam-labels.bot{border-bottom:none;border-top:1px solid #1e2848}
-  .overlay-cam-labels span{flex:1;text-align:center;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:33%}
-  .overlay-canvas-inner{flex:1;min-height:72px;position:relative}
-  .metrics-wrap{position:absolute;right:12px;bottom:12px;width:min(36vw,340px);height:min(22vh,150px);border-radius:12px;overflow:hidden;border:1px solid #33467a;background:linear-gradient(145deg,#0a0e22f0 0%,#060812fa 55%,#0d1228 100%);box-shadow:0 0 0 1px rgba(110,168,255,.12),0 12px 40px rgba(0,0,0,.5),inset 0 1px 0 rgba(255,255,255,.06);backdrop-filter:blur(10px)}
+  .metrics-wrap{position:absolute;right:12px;bottom:12px;width:min(38vw,360px);height:min(26vh,168px);border-radius:12px;overflow:hidden;border:1px solid #33467a;background:linear-gradient(145deg,#0a0e22f0 0%,#060812fa 55%,#0d1228 100%);box-shadow:0 0 0 1px rgba(110,168,255,.12),0 12px 40px rgba(0,0,0,.5),inset 0 1px 0 rgba(255,255,255,.06);backdrop-filter:blur(10px)}
   .metrics-title{position:absolute;left:8px;top:5px;z-index:1;font-size:9px;font-weight:700;letter-spacing:.14em;text-transform:uppercase;color:#7a8bbf;pointer-events:none;text-shadow:0 0 12px rgba(110,168,255,.35)}
-  .metrics-legend{position:absolute;right:8px;top:6px;z-index:1;font-size:9px;letter-spacing:.06em;color:#8a9bc4;pointer-events:none}
-  .metrics-legend .lg-gt{color:#4bd08d}.metrics-legend .lg-pr{color:#ff5ec4}.metrics-legend .lg-tpr{color:#ffcc66}
+  .metrics-caption{position:absolute;left:8px;right:8px;top:22px;z-index:1;font-size:9px;line-height:1.35;color:#9aa6c8;pointer-events:none;font-family:var(--font-mono)}
+  .metrics-legend{position:absolute;left:8px;right:8px;bottom:5px;z-index:1;font-size:8px;letter-spacing:.03em;color:#8a9bc4;pointer-events:none;display:flex;flex-wrap:wrap;gap:6px 10px;justify-content:flex-end}
+  .metrics-legend span{white-space:nowrap}
+  .metrics-legend .c1{color:#00cc66}.metrics-legend .c2{color:#ff9933}.metrics-legend .c3{color:#66b3ff}.metrics-legend .c4{color:#ff6666}
   #metricsCanvas{width:100%;height:100%;display:block}
   .hud-grid label{display:flex;align-items:center;gap:.45rem;cursor:pointer;user-select:none}
   .hud-grid label input[type=checkbox]{accent-color:#8ab4ff;width:14px;height:14px}
   .hud-grid strong#projMode{cursor:pointer;color:#c8d8ff}
 </style>
-</head><body><div id="app">
+</head><body><div id="app" class="app-root">
   <div class="top">
     <div class="topRowMain">
       <strong>T4 3D Viewer</strong>
@@ -75,13 +73,8 @@
         <button id="camTop">Top</button>
         <button id="camFollow">Follow</button>
         <button id="toggleLanelet">Lanelet OFF</button>
-        <button id="toggleOverlay2d">Cam Viewport</button>
-        <select id="overlayCamera" style="min-width:150px"></select>
-        <label title="Yellow 3D boxes from the frame binary (dataset / lidar annotations)"><input id="show3dAnnotations" type="checkbox" checked> annotations</label>
-        <label title="2D boxes drawn on the camera viewport images"><input id="showOverlayAnnotations" type="checkbox" checked> cam overlay</label>
-        <button id="toggleFullscreen" type="button" title="Fullscreen 3D view">Fullscreen</button>
+        <button id="toggleFullscreen" type="button" title="Fullscreen viewer">Fullscreen</button>
       </div>
-      <a href="/datasets/browser">Back</a>
     </div>
     <div class="topRowScrubber">
       <span class="scrubberLabel">Frame</span>
@@ -94,17 +87,11 @@
     </div>
   </div>
   <div id="canvasWrap"><canvas id="canvas"></canvas>
-    <div id="overlayWrap" class="overlay-wrap">
-      <div id="overlayLabelRowTop" class="overlay-cam-labels" style="display:none"></div>
-      <div class="overlay-canvas-inner">
-        <canvas id="overlayCanvas" style="width:100%;height:100%;display:block"></canvas>
-      </div>
-      <div id="overlayLabelRowBottom" class="overlay-cam-labels bot" style="display:none"></div>
-    </div>
     <div id="metricsWrap" class="metrics-wrap" hidden>
       <div class="metrics-title">Frame metrics · WebGL</div>
-      <div class="metrics-legend" aria-hidden="true"><span class="lg-gt">●</span>GT <span class="lg-pr">●</span>Pred <span class="lg-tpr">●</span>TPR</div>
+      <div id="metricsCaption" class="metrics-caption"></div>
       <canvas id="metricsCanvas"></canvas>
+      <div class="metrics-legend" aria-hidden="true"><span class="c1">●</span>GT/TP <span class="c2">●</span>GT/FN <span class="c3">●</span>EST/TP <span class="c4">●</span>EST/FP</div>
     </div>
     <div id="hud" class="hud-panel">
       <div id="status">loading...</div>
@@ -118,10 +105,16 @@
         <label>point opacity <input id="pointOpacity" type="range" min="0.2" max="1.0" step="0.05" value="0.95"></label>
         <label>intensity gain <input id="intensityGain" type="range" min="0.4" max="2.5" step="0.1" value="1.0"></label>
         <label>box opacity <input id="boxOpacity" type="range" min="0.2" max="1.0" step="0.05" value="0.9"></label>
-        <label><input id="showGtLayer" type="checkbox" checked> show GT</label>
-        <label><input id="showPredLayer" type="checkbox" checked> show Pred</label>
-        <label><input id="showMatchedLayer" type="checkbox" checked> show Matched</label>
-        <label><input id="showMetricsPlot" type="checkbox" checked> metrics plot (GT / Pred / TPR)</label>
+      </div>
+      <hr class="hud-rule">
+      <div class="hud-panel__section-title">Layers</div>
+      <div class="hud-grid">
+        <label title="Dataset 3D boxes from lidar / T4 sample (yellow wireframes)"><input id="show3dAnnotations" type="checkbox" checked> Dataset annotations</label>
+        <label title="Green — GT matched to a detection"><input id="showGtTp" type="checkbox" checked> GT / TP</label>
+        <label title="Orange — GT missed by detector"><input id="showGtFn" type="checkbox" checked> GT / FN</label>
+        <label title="Blue — detection matched to GT"><input id="showEstTp" type="checkbox" checked> EST / TP</label>
+        <label title="Red — detection with no GT match"><input id="showEstFp" type="checkbox" checked> EST / FP</label>
+        <label><input id="showMetricsPlot" type="checkbox" checked> Frame metrics chart</label>
       </div>
     </div>
   </div>
@@ -177,7 +170,6 @@ scene.add(pointsObj);
 const boxesGroup = new THREE.Group(); scene.add(boxesGroup);
 const gtLayerGroup = new THREE.Group(); scene.add(gtLayerGroup);
 const predLayerGroup = new THREE.Group(); scene.add(predLayerGroup);
-const matchedLayerGroup = new THREE.Group(); scene.add(matchedLayerGroup);
 const laneletGroup = new THREE.Group(); scene.add(laneletGroup);
 const egoAxes = new THREE.AxesHelper(2.8); scene.add(egoAxes);
 /** Ego vehicle root (base_link); mesh from sample_vehicle_description or wireframe fallback. */
@@ -254,29 +246,16 @@ let totalFrames = 0; let playing = false; let frame = startFrame; let fps = 6;
 let lastFrameTs = 0;
 let followEgo = true;
 let intensityGain = 1.0;
-let overlayEnabled = false;
-let overlayData = null;
-let overlayTexture = null;
-let overlayImageKey = "";
-const overlayTextureCache = new Map();
 let laneletEnabled = false;
 let laneletLoaded = false;
 let laneletBounds = null;
 let laneletFrame = -1;
-let externalLayers = { gt: [], pred: [], matched: [], gtPairs: [], predPairs: [] };
-/** When set, eval GT/pred/matched layers are keyed by frame index (from parent postMessage). */
+let externalLayers = { gt: [], pred: [] };
+/** When set, eval GT/pred layers are keyed by frame index (from parent postMessage). */
 let bboxLayersByFrame = null;
-/** Optional per-frame series from parent: `{ gt: number[], pred: number[], tpr: number[] }` (lengths ≥ totalFrames). */
+/** Optional per-frame series from parent: `{ gt_tp, gt_fn, est_tp, est_fp }` or legacy `{ gt, pred, tpr }`. */
 let metricsSeriesOverride = null;
 
-const overlayCanvas = document.getElementById("overlayCanvas");
-const overlayRenderer = new THREE.WebGLRenderer({canvas: overlayCanvas, antialias:true, alpha:true});
-overlayRenderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
-overlayRenderer.outputColorSpace = THREE.SRGBColorSpace;
-overlayRenderer.toneMapping = THREE.NoToneMapping;
-const overlayScene = new THREE.Scene();
-const overlayCamera3d = new THREE.OrthographicCamera(-1, 1, 1, -1, 0.1, 10);
-overlayCamera3d.position.set(0,0,2);
 const metricsCanvas = document.getElementById("metricsCanvas");
 const metricsWrapEl = document.getElementById("metricsWrap");
 const metricsScene = new THREE.Scene();
@@ -297,21 +276,74 @@ const frameTxt = document.getElementById("frameTxt");
 const statusEl = document.getElementById("status");
 const metaEl = document.getElementById("meta");
 const evalHudEl = document.getElementById("evalHud");
-const canvasWrapEl = document.getElementById("canvasWrap");
+const appRootEl = document.getElementById("app");
 function setStatus(t){ statusEl.textContent = t; }
 function setFrameText(){ frameTxt.textContent = `frame ${frame}/${Math.max(0,totalFrames-1)}`; slider.value = String(frame); }
 
-/** Update HUD block for GT/Pred/Matched when postMessage or per-frame eval data is present. */
+/** Per-frame eval bucket counts for HUD and metrics (GT×TP|FN, EST×TP|FP). */
+function countEvalBucketsFromBoxes(gtBoxes, predBoxes){
+  const o = { gt_tp: 0, gt_fn: 0, est_tp: 0, est_fp: 0 };
+  for (const b of gtBoxes || []) {
+    const k = normalizeEvalKind(b, "gt");
+    const st = normalizeEvalStatus(b);
+    if (k === "GT" && st === "TP") o.gt_tp++;
+    else if (k === "GT" && st === "FN") o.gt_fn++;
+    else if (k === "GT") o.gt_fn++;
+  }
+  for (const b of predBoxes || []) {
+    const k = normalizeEvalKind(b, "pred");
+    const st = normalizeEvalStatus(b);
+    if (k === "EST" && st === "TP") o.est_tp++;
+    else if (k === "EST" && st === "FP") o.est_fp++;
+    else if (k === "EST") o.est_fp++;
+  }
+  return o;
+}
+
+/**
+ * When boxes lack status, infer buckets from legacy GT/pred lengths and optional matched_pairs
+ * (same semantics as the old TPR chart: pairs = TP count on both sides).
+ */
+function metricsFromEntryLegacy(entry){
+  let g = 0;
+  let p = 0;
+  let pairs = 0;
+  if (entry && typeof entry === "object") {
+    g = Array.isArray(entry.gt) ? entry.gt.length : 0;
+    p = Array.isArray(entry.pred) ? entry.pred.length : 0;
+    pairs = Array.isArray(entry.matched_pairs) ? entry.matched_pairs.length : 0;
+    if (!pairs && Array.isArray(entry.matched)) pairs = Math.max(0, Math.floor(entry.matched.length / 2));
+  }
+  pairs = Math.min(pairs, g, p);
+  return {
+    gt_tp: pairs,
+    gt_fn: Math.max(0, g - pairs),
+    est_tp: pairs,
+    est_fp: Math.max(0, p - pairs),
+  };
+}
+
+function metricsFromEntry(entry){
+  const fromBoxes = countEvalBucketsFromBoxes(
+    entry && Array.isArray(entry.gt) ? entry.gt : [],
+    entry && Array.isArray(entry.pred) ? entry.pred : []
+  );
+  const sum = fromBoxes.gt_tp + fromBoxes.gt_fn + fromBoxes.est_tp + fromBoxes.est_fp;
+  if (sum > 0) return fromBoxes;
+  return metricsFromEntryLegacy(entry);
+}
+
+/** Update HUD for eval buckets when postMessage or per-frame eval data is present. */
 function updateEvalHud(){
   if (!evalHudEl) return;
   const gt = Array.isArray(externalLayers.gt) ? externalLayers.gt.length : 0;
   const pred = Array.isArray(externalLayers.pred) ? externalLayers.pred.length : 0;
-  const matched = Array.isArray(externalLayers.matched) ? externalLayers.matched.length : 0;
+  const b = countEvalBucketsFromBoxes(externalLayers.gt, externalLayers.pred);
   const mapKeys = bboxLayersByFrame && typeof bboxLayersByFrame === "object"
     ? Object.keys(bboxLayersByFrame).length
     : 0;
   const hasFrameMap = mapKeys > 0;
-  const hasAny = gt > 0 || pred > 0 || matched > 0 || hasFrameMap;
+  const hasAny = gt > 0 || pred > 0 || hasFrameMap || b.gt_tp + b.gt_fn + b.est_tp + b.est_fp > 0;
   if (!hasAny) {
     evalHudEl.hidden = true;
     evalHudEl.innerHTML = "";
@@ -321,11 +353,20 @@ function updateEvalHud(){
   const mapLine = hasFrameMap
     ? `<div class="row" style="margin-top:.35rem;opacity:.92"><span>per-frame keys</span><span>${mapKeys}</span></div>`
     : "";
+  const gTot = b.gt_tp + b.gt_fn;
+  const pTot = b.est_tp + b.est_fp;
+  const recall = gTot > 0 ? (b.gt_tp / gTot) : null;
+  const precision = pTot > 0 ? (b.est_tp / pTot) : null;
+  const rStr = recall != null ? recall.toFixed(3) : "—";
+  const pStr = precision != null ? precision.toFixed(3) : "—";
   evalHudEl.innerHTML =
     `<div class="eval-hud-head">Eval · this frame</div>` +
-    `<div class="row"><span>GT</span><span class="nGt">${gt}</span></div>` +
-    `<div class="row"><span>Pred</span><span class="nPr">${pred}</span></div>` +
-    `<div class="row"><span>Matched</span><span class="nMt">${matched}</span></div>` +
+    `<div class="row"><span>GT / TP</span><span class="nGt">${b.gt_tp}</span></div>` +
+    `<div class="row"><span>GT / FN</span><span style="color:#ff9933">${b.gt_fn}</span></div>` +
+    `<div class="row"><span>EST / TP</span><span style="color:#66b3ff">${b.est_tp}</span></div>` +
+    `<div class="row"><span>EST / FP</span><span style="color:#ff6666">${b.est_fp}</span></div>` +
+    `<div class="row" style="opacity:.9"><span>R (recall)</span><span>${rStr}</span></div>` +
+    `<div class="row" style="opacity:.9"><span>P (precision)</span><span>${pStr}</span></div>` +
     mapLine;
 }
 function syncFullscreenButton(){
@@ -359,52 +400,69 @@ function resizeMetricsRenderer(){
   metricsRenderer.setSize(w, h, false);
 }
 
-/** Derive GT / Pred / TPR series from override or per-frame bbox map. TPR ≈ matched_pairs / max(GT,1). */
+/** Four count series per frame from override or per-frame bbox map (GT·TP / GT·FN / EST·TP / EST·FP). */
 function computeMetricsSeries(){
   const mo = metricsSeriesOverride;
-  if (mo && typeof mo === "object" && (Array.isArray(mo.gt) || Array.isArray(mo.pred) || Array.isArray(mo.tpr))) {
-    const gIn = Array.isArray(mo.gt) ? mo.gt : [];
-    const pIn = Array.isArray(mo.pred) ? mo.pred : [];
-    const tIn = mo.tpr;
-    const gt = [];
-    const pred = [];
-    const tpr = [];
-    for (let i = 0; i < totalFrames; i++) {
-      gt.push(Number(gIn[i] || 0));
-      pred.push(Number(pIn[i] || 0));
-      if (Array.isArray(tIn) && i < tIn.length) tpr.push(Math.min(1, Number(tIn[i] || 0)));
-      else {
-        const g = gt[i];
-        const p = pred[i];
-        const tp = Math.min(g, p);
-        tpr.push(g > 0 ? Math.min(1, tp / g) : 0);
+  if (mo && typeof mo === "object") {
+    const hasFour =
+      Array.isArray(mo.gt_tp) || Array.isArray(mo.gt_fn) ||
+      Array.isArray(mo.est_tp) || Array.isArray(mo.est_fp);
+    if (hasFour) {
+      const gt_tp = [];
+      const gt_fn = [];
+      const est_tp = [];
+      const est_fp = [];
+      for (let i = 0; i < totalFrames; i++) {
+        gt_tp.push(Number((mo.gt_tp && mo.gt_tp[i]) || 0));
+        gt_fn.push(Number((mo.gt_fn && mo.gt_fn[i]) || 0));
+        est_tp.push(Number((mo.est_tp && mo.est_tp[i]) || 0));
+        est_fp.push(Number((mo.est_fp && mo.est_fp[i]) || 0));
       }
+      return { gt_tp, gt_fn, est_tp, est_fp, n: totalFrames };
     }
-    return { gt, pred, tpr, n: totalFrames };
+    if (Array.isArray(mo.gt) || Array.isArray(mo.pred) || Array.isArray(mo.tpr)) {
+      const gIn = Array.isArray(mo.gt) ? mo.gt : [];
+      const pIn = Array.isArray(mo.pred) ? mo.pred : [];
+      const tIn = mo.tpr;
+      const gt_tp = [];
+      const gt_fn = [];
+      const est_tp = [];
+      const est_fp = [];
+      for (let i = 0; i < totalFrames; i++) {
+        const g = Number(gIn[i] || 0);
+        const p = Number(pIn[i] || 0);
+        const rec = Array.isArray(tIn) && i < tIn.length
+          ? Math.min(1, Math.max(0, Number(tIn[i] || 0)))
+          : (g > 0 ? Math.min(1, Math.min(g, p) / g) : 0);
+        const gtp = Math.round(g * rec);
+        const gfn = Math.max(0, g - gtp);
+        const etp = Math.min(p, gtp);
+        const efp = Math.max(0, p - etp);
+        gt_tp.push(gtp);
+        gt_fn.push(gfn);
+        est_tp.push(etp);
+        est_fp.push(efp);
+      }
+      return { gt_tp, gt_fn, est_tp, est_fp, n: totalFrames };
+    }
   }
   if (!bboxLayersByFrame || totalFrames <= 0) return null;
-  const gt = [];
-  const pred = [];
-  const tpr = [];
+  const gt_tp = [];
+  const gt_fn = [];
+  const est_tp = [];
+  const est_fp = [];
   for (let fi = 0; fi < totalFrames; fi++) {
     const sk = String(fi);
     const entry = Object.prototype.hasOwnProperty.call(bboxLayersByFrame, sk)
       ? bboxLayersByFrame[sk]
       : bboxLayersByFrame[fi];
-    let g = 0;
-    let p = 0;
-    let pairs = 0;
-    if (entry && typeof entry === "object") {
-      g = Array.isArray(entry.gt) ? entry.gt.length : 0;
-      p = Array.isArray(entry.pred) ? entry.pred.length : 0;
-      pairs = Array.isArray(entry.matched_pairs) ? entry.matched_pairs.length : 0;
-      if (!pairs && Array.isArray(entry.matched)) pairs = Math.max(0, Math.floor(entry.matched.length / 2));
-    }
-    gt.push(g);
-    pred.push(p);
-    tpr.push(Math.min(1, pairs / Math.max(g, 1)));
+    const m = metricsFromEntry(entry && typeof entry === "object" ? entry : null);
+    gt_tp.push(m.gt_tp);
+    gt_fn.push(m.gt_fn);
+    est_tp.push(m.est_tp);
+    est_fp.push(m.est_fp);
   }
-  return { gt, pred, tpr, n: totalFrames };
+  return { gt_tp, gt_fn, est_tp, est_fp, n: totalFrames };
 }
 
 function rebuildMetricsPlot(){
@@ -413,17 +471,21 @@ function rebuildMetricsPlot(){
   const want = document.getElementById("showMetricsPlot") && document.getElementById("showMetricsPlot").checked;
   if (!metricsWrapEl || !want) {
     if (metricsWrapEl) metricsWrapEl.hidden = true;
+    const cap0 = document.getElementById("metricsCaption");
+    if (cap0) cap0.textContent = "";
     return;
   }
   const series = computeMetricsSeries();
   if (!series || series.n <= 0) {
     metricsWrapEl.hidden = true;
+    const cap1 = document.getElementById("metricsCaption");
+    if (cap1) cap1.textContent = "";
     return;
   }
-  const { gt, pred, tpr, n } = series;
+  const { gt_tp, gt_fn, est_tp, est_fp, n } = series;
   let yMax = 1e-6;
   for (let i = 0; i < n; i++) {
-    yMax = Math.max(yMax, gt[i], pred[i], 1);
+    yMax = Math.max(yMax, gt_tp[i], gt_fn[i], est_tp[i], est_fp[i], 1);
   }
   const x0 = -0.9;
   const x1 = 0.9;
@@ -458,13 +520,13 @@ function rebuildMetricsPlot(){
     metricsChartGroup.add(new THREE.Line(gg, new THREE.LineBasicMaterial({ color: 0x2a3f60, transparent: true, opacity: 0.55 })));
   }
 
-  function lineStrip(vals, color, isTpr){
+  function lineStrip(vals, color){
     const pts = [];
-    const denom = isTpr ? 1 : yMax;
+    const denom = yMax;
     for (let i = 0; i < n; i++) {
       const xf = n <= 1 ? 0.5 : i / (n - 1);
       const x = x0 + span * xf;
-      const v = isTpr ? Math.max(0, Math.min(1, vals[i])) : vals[i] / denom;
+      const v = vals[i] / denom;
       const y = y0 + (y1 - y0) * Math.max(0, Math.min(1, v));
       pts.push(x, y, 0.02);
     }
@@ -475,9 +537,10 @@ function rebuildMetricsPlot(){
     geom.setAttribute("position", new THREE.Float32BufferAttribute(pts, 3));
     return new THREE.Line(geom, new THREE.LineBasicMaterial({ color, transparent: true, opacity: 0.95 }));
   }
-  metricsChartGroup.add(lineStrip(gt, 0x4bd08d, false));
-  metricsChartGroup.add(lineStrip(pred, 0xff5ec4, false));
-  metricsChartGroup.add(lineStrip(tpr, 0xffcc66, true));
+  metricsChartGroup.add(lineStrip(gt_tp, 0x00cc66));
+  metricsChartGroup.add(lineStrip(gt_fn, 0xff9933));
+  metricsChartGroup.add(lineStrip(est_tp, 0x66b3ff));
+  metricsChartGroup.add(lineStrip(est_fp, 0xff6666));
 
   const phGeom = new THREE.BufferGeometry();
   const phPos = new Float32Array([-0.9, -0.78, 0.04, -0.9, 0.78, 0.04]);
@@ -495,6 +558,29 @@ function rebuildMetricsPlot(){
   metricsWrapEl.hidden = false;
   resizeMetricsRenderer();
   updateMetricsPlayhead();
+  updateMetricsFrameCaption();
+}
+
+function updateMetricsFrameCaption(){
+  const cap = document.getElementById("metricsCaption");
+  if (!cap) return;
+  const series = computeMetricsSeries();
+  if (!series || series.n <= 0) {
+    cap.textContent = "";
+    return;
+  }
+  const i = Math.min(Math.max(0, frame), series.n - 1);
+  const a = series.gt_tp[i];
+  const b = series.gt_fn[i];
+  const c = series.est_tp[i];
+  const d = series.est_fp[i];
+  const gTot = a + b;
+  const pTot = c + d;
+  const r = gTot > 0 ? a / gTot : null;
+  const p = pTot > 0 ? c / pTot : null;
+  cap.textContent =
+    `f${i}: GT·TP=${a} GT·FN=${b} · EST·TP=${c} EST·FP=${d}` +
+    ` · R=${r != null ? r.toFixed(3) : "—"} P=${p != null ? p.toFixed(3) : "—"}`;
 }
 
 function updateMetricsPlayhead(){
@@ -520,53 +606,18 @@ function updateMetricsPlayhead(){
     b[0] = x; b[1] = y0; b[3] = x; b[4] = y1;
     g1.attributes.position.needsUpdate = true;
   }
+  updateMetricsFrameCaption();
 }
 
 function syncMetricsPlotVisibility(){
   const chk = document.getElementById("showMetricsPlot");
   if (!chk || !chk.checked) {
     if (metricsWrapEl) metricsWrapEl.hidden = true;
+    const cap = document.getElementById("metricsCaption");
+    if (cap) cap.textContent = "";
     return;
   }
   rebuildMetricsPlot();
-}
-
-function shortCamLabel(name){
-  const x = String(name || "").replace(/^CAM_?/i, "").replace(/_/g, " ").trim();
-  return x.length > 16 ? `${x.slice(0, 14)}…` : x;
-}
-
-/** Map camera name to ring slot 0–5: front L, front, front R, back L, back, back R. */
-function inferCameraSlot(camName){
-  const s = String(camName || "").toLowerCase().replace(/[^a-z0-9]+/g, "");
-  if (!s.length) return -1;
-  const hasFront = s.includes("front");
-  const hasBack = s.includes("back");
-  const hasLeft = s.includes("left");
-  const hasRight = s.includes("right");
-  if (hasFront && hasLeft) return 0;
-  if (hasFront && hasRight) return 2;
-  if (hasBack && hasLeft) return 3;
-  if (hasBack && hasRight) return 5;
-  if (hasBack && !hasLeft && !hasRight) return 4;
-  if (hasFront && !hasLeft && !hasRight) return 1;
-  return -1;
-}
-
-/** Order multi-camera payloads into 2×3 grid; returns slots[6] with null gaps. */
-function buildCameraSlots(rows){
-  const slots = Array(6).fill(null);
-  const extra = [];
-  for (const p of rows) {
-    const slot = inferCameraSlot(p.camera);
-    if (slot >= 0 && !slots[slot]) slots[slot] = p;
-    else extra.push(p);
-  }
-  for (const p of extra) {
-    const empty = slots.findIndex((x) => x == null);
-    if (empty >= 0) slots[empty] = p;
-  }
-  return slots;
 }
 
 function readFloat32Copied(buf, off, count){
@@ -636,7 +687,7 @@ function boxEdgesFromCenterWithOpts(box, opts){
   return out;
 }
 
-/** PostMessage GT/Pred/Matched: apply T4 alignment offset and optional length/width swap (see URL params). */
+/** PostMessage GT/Pred wireframes: apply T4 alignment offset and optional length/width swap (see URL params). */
 function boxEdgesFromCenterExternal(box){
   return boxEdgesFromCenterWithOpts(box, {
     yawOffset: getExternalBboxYawOffset(),
@@ -673,7 +724,6 @@ function normalizeEvalKind(box, layerId){
   }
   if (layerId === "pred") return "EST";
   if (layerId === "gt") return "GT";
-  if (layerId === "matched") return "GT";
   return "GT";
 }
 
@@ -690,7 +740,22 @@ function evalLineColor(box, layerId){
   if (Object.prototype.hasOwnProperty.call(EVAL_STATUS_COLOR_HEX, key)) {
     return EVAL_STATUS_COLOR_HEX[key];
   }
-  return layerId === "pred" ? 0xff5ec4 : layerId === "matched" ? 0x58d8ff : 0x4bd08d;
+  return layerId === "pred" ? 0x66b3ff : 0x4bd08d;
+}
+
+function isEvalTupleVisible(box, layerId){
+  const kind = normalizeEvalKind(box, layerId);
+  const st = normalizeEvalStatus(box);
+  const showGtTp = !!(document.getElementById("showGtTp") && document.getElementById("showGtTp").checked);
+  const showGtFn = !!(document.getElementById("showGtFn") && document.getElementById("showGtFn").checked);
+  const showEstTp = !!(document.getElementById("showEstTp") && document.getElementById("showEstTp").checked);
+  const showEstFp = !!(document.getElementById("showEstFp") && document.getElementById("showEstFp").checked);
+  if (kind === "GT" && st === "TP") return showGtTp;
+  if (kind === "GT" && st === "FN") return showGtFn;
+  if (kind === "EST" && st === "TP") return showEstTp;
+  if (kind === "EST" && st === "FP") return showEstFp;
+  if (layerId === "gt") return showGtTp || showGtFn;
+  return showEstTp || showEstFp;
 }
 
 function drawLayerBoxes(group, boxes, layerId, width=1.4){
@@ -698,6 +763,7 @@ function drawLayerBoxes(group, boxes, layerId, width=1.4){
   if (!Array.isArray(boxes)) return;
   const opacity = Number(document.getElementById("boxOpacity").value || "0.9");
   for (const b of boxes){
+    if (!isEvalTupleVisible(b, layerId)) continue;
     const edges = boxEdgesFromCorners(b) || boxEdgesFromCenterExternal(b);
     const g = new THREE.BufferGeometry();
     g.setAttribute("position", new THREE.Float32BufferAttribute(edges, 3));
@@ -712,33 +778,25 @@ function drawLayerBoxes(group, boxes, layerId, width=1.4){
 function renderExternalLayers(){
   drawLayerBoxes(gtLayerGroup, externalLayers.gt, "gt", 1.2);
   drawLayerBoxes(predLayerGroup, externalLayers.pred, "pred", 1.2);
-  drawLayerBoxes(matchedLayerGroup, externalLayers.matched, "matched", 1.8);
-  gtLayerGroup.visible = !!document.getElementById("showGtLayer").checked;
-  predLayerGroup.visible = !!document.getElementById("showPredLayer").checked;
-  matchedLayerGroup.visible = !!document.getElementById("showMatchedLayer").checked;
+  const gtOn = !!(document.getElementById("showGtTp") && document.getElementById("showGtTp").checked)
+    || !!(document.getElementById("showGtFn") && document.getElementById("showGtFn").checked);
+  const prOn = !!(document.getElementById("showEstTp") && document.getElementById("showEstTp").checked)
+    || !!(document.getElementById("showEstFp") && document.getElementById("showEstFp").checked);
+  gtLayerGroup.visible = gtOn;
+  predLayerGroup.visible = prOn;
 }
 
 function setExternalLayerPayload(payload, opts){
   const doAck = !opts || opts.ack !== false;
   const gt = Array.isArray(payload.gt) ? payload.gt : [];
   const pred = Array.isArray(payload.pred) ? payload.pred : [];
-  let matched = Array.isArray(payload.matched) ? payload.matched : [];
-  const pairs = Array.isArray(payload.matched_pairs) ? payload.matched_pairs : [];
-  if (!matched.length && pairs.length){
-    matched = [];
-    for (const p of pairs){
-      const gi = Number(p.gt_idx);
-      const pi = Number(p.pred_idx);
-      if (Number.isFinite(gi) && gt[gi]) matched.push(gt[gi]);
-      if (Number.isFinite(pi) && pred[pi]) matched.push(pred[pi]);
-    }
-  }
-  externalLayers = { gt, pred, matched };
+  externalLayers = { gt, pred };
   renderExternalLayers();
   updateEvalHud();
-  setStatus(`ready · cached=${cache.size} · ext(gt=${gt.length},pred=${pred.length},match=${matched.length})`);
+  const b = countEvalBucketsFromBoxes(gt, pred);
+  setStatus(`ready · cached=${cache.size} · ext(GT·TP=${b.gt_tp},GT·FN=${b.gt_fn},EST·TP=${b.est_tp},EST·FP=${b.est_fp})`);
   if (!doAck) return;
-  const ack = `/viewer/three/debug/message-received?t4dataset_id=${encodeURIComponent(dataset)}&scenario_name=${encodeURIComponent(scenario)}&frame_index=${frame}&gt_count=${gt.length}&pred_count=${pred.length}&matched_count=${matched.length}`;
+  const ack = `/viewer/three/debug/message-received?t4dataset_id=${encodeURIComponent(dataset)}&scenario_name=${encodeURIComponent(scenario)}&frame_index=${frame}&gt_count=${gt.length}&pred_count=${pred.length}&matched_count=0`;
   fetch(ack)
     .then((r) => {
       if (!r.ok) throw new Error(`HTTP ${r.status}`);
@@ -762,10 +820,10 @@ function applyEvalLayersForFrame(i){
   if (entry && typeof entry === "object"){
     setExternalLayerPayload(entry, { ack: false });
   } else {
-    externalLayers = { gt: [], pred: [], matched: [] };
+    externalLayers = { gt: [], pred: [] };
     renderExternalLayers();
     updateEvalHud();
-    setStatus(`ready · cached=${cache.size} · ext(gt=0,pred=0,match=0)`);
+    setStatus(`ready · cached=${cache.size} · ext(empty)`);
   }
 }
 
@@ -781,21 +839,6 @@ async function fetchFrame(i){
     cache.delete(k);
   }
   return parsed;
-}
-
-async function fetchCameraOverlay(i){
-  if (!overlayEnabled) return null;
-  const camSel = document.getElementById("overlayCamera");
-  const selected = camSel && camSel.value ? camSel.value : "";
-  const allMode = selected === "__ALL__";
-  const cam = selected && !allMode ? `&camera=${encodeURIComponent(selected)}` : "";
-  const allFlag = allMode ? "&all_cameras=true" : "";
-  const annEl = document.getElementById("showOverlayAnnotations");
-  const showAnn = annEl ? !!annEl.checked : true;
-  const url = `/viewer/three/camera-overlay?t4dataset_id=${encodeURIComponent(dataset)}&scenario_name=${encodeURIComponent(scenario)}&frame_index=${i}${qv}${cam}${allFlag}&show_annotations=${showAnn ? "true" : "false"}`;
-  const res = await fetch(url);
-  if (!res.ok) throw new Error(`camera overlay HTTP ${res.status}`);
-  return await res.json();
 }
 
 async function loadLanelet(){
@@ -834,171 +877,6 @@ async function loadLanelet(){
   laneletLoaded = true;
   laneletFrame = frame;
   setStatus(`lanelet loaded: ${segs.length} segments`);
-}
-
-function ensureOverlayCameraOptions(payload){
-  const sel = document.getElementById("overlayCamera");
-  const cams = Array.isArray(payload.available_cameras) ? payload.available_cameras : [];
-  if (!sel || !cams.length) return;
-  const prev = sel.value;
-  sel.innerHTML = ['<option value="__ALL__">ALL CAMERAS</option>']
-    .concat(cams.map((c) => `<option value="${c}">${c}</option>`))
-    .join("");
-  if (prev === "__ALL__") sel.value = "__ALL__";
-  else sel.value = cams.includes(prev) ? prev : (payload.camera || cams[0]);
-}
-
-function renderCameraOverlay(payload){
-  overlayData = payload;
-  if (!overlayEnabled) return;
-  const wrap = document.getElementById("overlayWrap");
-  const inner = wrap && wrap.querySelector ? wrap.querySelector(".overlay-canvas-inner") : null;
-  const rowTop = document.getElementById("overlayLabelRowTop");
-  const rowBot = document.getElementById("overlayLabelRowBottom");
-  if (!wrap) return;
-  const selected = (document.getElementById("overlayCamera") || {value:""}).value;
-  const allMode = selected === "__ALL__";
-  if (rowTop && rowBot) {
-    if (allMode && Array.isArray(payload.cameras_payload) && payload.cameras_payload.length > 1) {
-      rowTop.style.display = "flex";
-      rowBot.style.display = "flex";
-    } else {
-      rowTop.style.display = "none";
-      rowBot.style.display = "none";
-      rowTop.innerHTML = "";
-      rowBot.innerHTML = "";
-    }
-  }
-  overlayCanvas.style.display = "block";
-  const w = Math.max(80, (inner && inner.clientWidth) || wrap.clientWidth || 320);
-  const h = Math.max(72, (inner && inner.clientHeight) || Math.floor(w * 0.35));
-  overlayRenderer.setSize(w, h, false);
-  while (overlayScene.children.length) overlayScene.remove(overlayScene.children[0]);
-  let rows = allMode
-    ? (Array.isArray(payload.cameras_payload) ? payload.cameras_payload : [payload])
-    : [payload];
-  if (allMode && Array.isArray(payload.cameras_payload) && payload.cameras_payload.length > 1) {
-    const slots = buildCameraSlots(rows);
-    rows = slots;
-    if (rowTop && rowBot) {
-      rowTop.innerHTML = [0, 1, 2].map((i) => `<span title="${slots[i] && slots[i].camera ? slots[i].camera : ""}">${slots[i] ? shortCamLabel(slots[i].camera) : "—"}</span>`).join("");
-      rowBot.innerHTML = [3, 4, 5].map((i) => `<span title="${slots[i] && slots[i].camera ? slots[i].camera : ""}">${slots[i] ? shortCamLabel(slots[i].camera) : "—"}</span>`).join("");
-    }
-    const cols = 3;
-    const nrows = 2;
-    const tileW = 2 / cols;
-    const tileH = 2 / nrows;
-    for (let slot = 0; slot < 6; slot++) {
-      const p = slots[slot];
-      if (!p) continue;
-      const r = slot < 3 ? 0 : 1;
-      const c = slot % 3;
-      const cx = -1 + tileW * c + tileW / 2;
-      const cy = 1 - tileH * r - tileH / 2;
-      const iw = Math.max(1, Number(p.width || 1));
-      const ih = Math.max(1, Number(p.height || 1));
-      const imgAspect = iw / ih;
-      const tileAspect = (w * tileW / 2) / (h * tileH / 2);
-      let sx = tileW;
-      let sy = tileH;
-      if (imgAspect > tileAspect) sy = tileW / imgAspect;
-      else sx = tileH * imgAspect;
-      const key = `${p.sample_token || payload.sample_token || ""}:${p.camera || ""}:${p.image_format || ""}:${(p.image_base64 || "").length}`;
-      let tex = overlayTextureCache.get(key);
-      if (!tex) {
-        const img = new Image();
-        img.src = `data:${p.image_format === "png" ? "image/png" : "image/jpeg"};base64,${p.image_base64 || ""}`;
-        tex = new THREE.Texture(img);
-        tex.colorSpace = THREE.SRGBColorSpace;
-        tex.needsUpdate = true;
-        overlayTextureCache.set(key, tex);
-        if (overlayTextureCache.size > 24) {
-          const first = overlayTextureCache.keys().next().value;
-          const old = overlayTextureCache.get(first);
-          if (old) old.dispose();
-          overlayTextureCache.delete(first);
-        }
-      }
-      const plane = new THREE.Mesh(
-        new THREE.PlaneGeometry(sx, sy),
-        new THREE.MeshBasicMaterial({ map: tex, color: 0xffffff, toneMapped: false })
-      );
-      plane.position.set(cx, cy, 0);
-      overlayScene.add(plane);
-      const annEl = document.getElementById("showOverlayAnnotations");
-      if (annEl && annEl.checked) {
-        const bxs = Array.isArray(p.boxes_2d) ? p.boxes_2d : [];
-        for (const b of bxs) {
-          const nx0 = ((b.x0 / iw) - 0.5) * sx + cx;
-          const nx1 = ((b.x1 / iw) - 0.5) * sx + cx;
-          const ny0 = (0.5 - (b.y0 / ih)) * sy + cy;
-          const ny1 = (0.5 - (b.y1 / ih)) * sy + cy;
-          const pts = [nx0, ny0, 0, nx1, ny0, 0, nx1, ny1, 0, nx0, ny1, 0, nx0, ny0, 0];
-          const g = new THREE.BufferGeometry();
-          g.setAttribute("position", new THREE.Float32BufferAttribute(pts, 3));
-          overlayScene.add(new THREE.Line(g, new THREE.LineBasicMaterial({ color: 0xff5ec4, transparent: true, opacity: 0.95 })));
-        }
-      }
-    }
-  } else {
-    const n = Math.max(1, rows.length);
-    const cols = Math.ceil(Math.sqrt(n));
-    const tileW = 2 / cols;
-    const tileH = 2 / cols;
-    for (let i = 0; i < rows.length; i++) {
-      const p = rows[i];
-      if (!p) continue;
-      const r = Math.floor(i / cols);
-      const c = i % cols;
-      const cx = -1 + tileW * c + tileW / 2;
-      const cy = 1 - tileH * r - tileH / 2;
-      const iw = Math.max(1, Number(p.width || 1));
-      const ih = Math.max(1, Number(p.height || 1));
-      const imgAspect = iw / ih;
-      const tileAspect = (w * tileW / 2) / (h * tileH / 2);
-      let sx = tileW;
-      let sy = tileH;
-      if (imgAspect > tileAspect) sy = tileW / imgAspect;
-      else sx = tileH * imgAspect;
-      const key = `${p.sample_token || payload.sample_token || ""}:${p.camera || ""}:${p.image_format || ""}:${(p.image_base64 || "").length}`;
-      let tex = overlayTextureCache.get(key);
-      if (!tex) {
-        const img = new Image();
-        img.src = `data:${p.image_format === "png" ? "image/png" : "image/jpeg"};base64,${p.image_base64 || ""}`;
-        tex = new THREE.Texture(img);
-        tex.colorSpace = THREE.SRGBColorSpace;
-        tex.needsUpdate = true;
-        overlayTextureCache.set(key, tex);
-        if (overlayTextureCache.size > 24) {
-          const first = overlayTextureCache.keys().next().value;
-          const old = overlayTextureCache.get(first);
-          if (old) old.dispose();
-          overlayTextureCache.delete(first);
-        }
-      }
-      const plane = new THREE.Mesh(
-        new THREE.PlaneGeometry(sx, sy),
-        new THREE.MeshBasicMaterial({ map: tex, color: 0xffffff, toneMapped: false })
-      );
-      plane.position.set(cx, cy, 0);
-      overlayScene.add(plane);
-      const annEl = document.getElementById("showOverlayAnnotations");
-      if (annEl && annEl.checked) {
-        const bxs = Array.isArray(p.boxes_2d) ? p.boxes_2d : [];
-        for (const b of bxs) {
-          const nx0 = ((b.x0 / iw) - 0.5) * sx + cx;
-          const nx1 = ((b.x1 / iw) - 0.5) * sx + cx;
-          const ny0 = (0.5 - (b.y0 / ih)) * sy + cy;
-          const ny1 = (0.5 - (b.y1 / ih)) * sy + cy;
-          const pts = [nx0, ny0, 0, nx1, ny0, 0, nx1, ny1, 0, nx0, ny1, 0, nx0, ny0, 0];
-          const g = new THREE.BufferGeometry();
-          g.setAttribute("position", new THREE.Float32BufferAttribute(pts, 3));
-          overlayScene.add(new THREE.Line(g, new THREE.LineBasicMaterial({ color: 0xff5ec4, transparent: true, opacity: 0.95 })));
-        }
-      }
-    }
-  }
-  overlayRenderer.render(overlayScene, overlayCamera3d);
 }
 
 async function prefetchAround(i){
@@ -1077,13 +955,6 @@ async function showFrame(i){
     controls.target.set(0, 0, 0);
     controls.update();
   }
-  if (overlayEnabled) {
-    const payload = await fetchCameraOverlay(frame);
-    if (payload) {
-      ensureOverlayCameraOptions(payload);
-      renderCameraOverlay(payload);
-    }
-  }
   if (laneletEnabled) {
     await loadLanelet();
     laneletGroup.visible = true;
@@ -1137,27 +1008,8 @@ document.getElementById("toggleLanelet").addEventListener("click", async () => {
   }
   laneletGroup.visible = laneletEnabled;
 });
-document.getElementById("toggleOverlay2d").addEventListener("click", () => {
-  const wrap = document.getElementById("overlayWrap");
-  const btn = document.getElementById("toggleOverlay2d");
-  const show = wrap.style.display === "none" || wrap.style.display === "";
-  wrap.style.display = show ? "flex" : "none";
-  overlayEnabled = show;
-  btn.textContent = show ? "Hide Cam" : "Cam Viewport";
-  if (show) showFrame(frame).catch((err) => setStatus(`overlay error: ${err.message}`));
-});
-document.getElementById("overlayCamera").addEventListener("change", () => {
-  if (overlayEnabled) {
-    showFrame(frame).catch((err) => setStatus(`overlay error: ${err.message}`));
-  }
-});
 document.getElementById("show3dAnnotations").addEventListener("change", (e) => {
   boxesGroup.visible = !!e.target.checked;
-});
-document.getElementById("showOverlayAnnotations").addEventListener("change", () => {
-  if (overlayEnabled) {
-    showFrame(frame).catch((err) => setStatus(`overlay error: ${err.message}`));
-  }
 });
 document.getElementById("showMetricsPlot").addEventListener("change", () => {
   syncMetricsPlotVisibility();
@@ -1185,17 +1037,11 @@ document.getElementById("boxOpacity").addEventListener("input", () => {
   }
   applyOpacityToLineGroup(gtLayerGroup, v);
   applyOpacityToLineGroup(predLayerGroup, v);
-  applyOpacityToLineGroup(matchedLayerGroup, v);
   applyEgoOpacity(v);
 });
-document.getElementById("showGtLayer").addEventListener("change", () => {
-  gtLayerGroup.visible = !!document.getElementById("showGtLayer").checked;
-});
-document.getElementById("showPredLayer").addEventListener("change", () => {
-  predLayerGroup.visible = !!document.getElementById("showPredLayer").checked;
-});
-document.getElementById("showMatchedLayer").addEventListener("change", () => {
-  matchedLayerGroup.visible = !!document.getElementById("showMatchedLayer").checked;
+["showGtTp", "showGtFn", "showEstTp", "showEstFp"].forEach((id) => {
+  const el = document.getElementById(id);
+  if (el) el.addEventListener("change", () => renderExternalLayers());
 });
 document.getElementById("projMode").addEventListener("click", () => {
   const wasPersp = camera === perspCamera;
@@ -1238,6 +1084,10 @@ window.addEventListener("message", (ev) => {
     }
   } else if (d.type === "eval_metrics_series") {
     metricsSeriesOverride = {
+      gt_tp: Array.isArray(d.gt_tp) ? d.gt_tp : null,
+      gt_fn: Array.isArray(d.gt_fn) ? d.gt_fn : null,
+      est_tp: Array.isArray(d.est_tp) ? d.est_tp : null,
+      est_fp: Array.isArray(d.est_fp) ? d.est_fp : null,
       gt: Array.isArray(d.gt) ? d.gt : [],
       pred: Array.isArray(d.pred) ? d.pred : [],
       tpr: Array.isArray(d.tpr) ? d.tpr : null,
@@ -1246,7 +1096,7 @@ window.addEventListener("message", (ev) => {
   } else if (d.type === "bbox_layers_clear") {
     bboxLayersByFrame = null;
     metricsSeriesOverride = null;
-    externalLayers = { gt: [], pred: [], matched: [] };
+    externalLayers = { gt: [], pred: [] };
     renderExternalLayers();
     updateEvalHud();
     rebuildMetricsPlot();
@@ -1254,10 +1104,14 @@ window.addEventListener("message", (ev) => {
 });
 window.T4ViewerAPI = {
   setLayers(payload){ bboxLayersByFrame = null; setExternalLayerPayload(payload || {}); },
-  clearLayers(){ bboxLayersByFrame = null; externalLayers = { gt: [], pred: [], matched: [] }; renderExternalLayers(); updateEvalHud(); rebuildMetricsPlot(); },
+  clearLayers(){ bboxLayersByFrame = null; externalLayers = { gt: [], pred: [] }; renderExternalLayers(); updateEvalHud(); rebuildMetricsPlot(); },
   setMetricsSeries(obj){
     if (!obj || typeof obj !== "object") return;
     metricsSeriesOverride = {
+      gt_tp: Array.isArray(obj.gt_tp) ? obj.gt_tp : null,
+      gt_fn: Array.isArray(obj.gt_fn) ? obj.gt_fn : null,
+      est_tp: Array.isArray(obj.est_tp) ? obj.est_tp : null,
+      est_fp: Array.isArray(obj.est_fp) ? obj.est_fp : null,
       gt: Array.isArray(obj.gt) ? obj.gt : [],
       pred: Array.isArray(obj.pred) ? obj.pred : [],
       tpr: Array.isArray(obj.tpr) ? obj.tpr : null,
@@ -1268,10 +1122,10 @@ window.T4ViewerAPI = {
   getFrameContext(){ return { dataset, scenario, frame, totalFrames }; },
 };
 document.getElementById("toggleFullscreen").addEventListener("click", async () => {
-  if (!canvasWrapEl) return;
+  const fsEl = appRootEl || document.documentElement;
   try {
     if (!document.fullscreenElement) {
-      await canvasWrapEl.requestFullscreen();
+      await fsEl.requestFullscreen();
     } else {
       await document.exitFullscreen();
     }
@@ -1304,7 +1158,6 @@ function animate(ts){
   }
   controls.update();
   renderer.render(scene, camera);
-  if (overlayEnabled && overlayData) overlayRenderer.render(overlayScene, overlayCamera3d);
   const mchk = document.getElementById("showMetricsPlot");
   if (mchk && mchk.checked && metricsWrapEl && !metricsWrapEl.hidden && metricsChartGroup.children.length) {
     metricsRenderer.render(metricsScene, metricsCamera);
