@@ -10,6 +10,7 @@
 
 ```
 evaluator_result_parser/
+├── docs/                     # 設計・データフロー資料（例: Three.js viewer パイプライン）
 ├── result_parser/            # 評価結果（JSONL）の解析ツール
 │   ├── jsonl_parser.py       # JSONL読み込み → CSV変換
 │   ├── covariance_analysis.py# 共分散 vs 誤差の散布図
@@ -571,6 +572,14 @@ for img in resp.json()["images"]:
     data = base64.b64decode(img["png_base64"])
     Path(f"{img['label']}.png").write_bytes(data)
 ```
+
+#### Three.js 3D viewer（`/viewer/three`）— データパイプライン
+
+ブラウザ上の WebGL ビューアは、T4 点群・データセット由来の 3D ボックスに加え、親ページから渡す**評価 GT / 推論 EST** を 3D・カメラ投影の両方で重ねて表示できます。HTTP エンドポイント間の関係、`frame.bin` の役割、`postMessage` 連携、カメラオーバーレイ（GET/POST）までを **シーケンス図・フローチャート付き**でまとめた資料:
+
+- **[docs/viewer_3d_pipeline.md](docs/viewer_3d_pipeline.md)**
+
+例（ローカル）: `http://localhost:8000/viewer/three?t4dataset_id=<id>&scenario_name=<scene>&frame_index=0`
 
 ---
 
