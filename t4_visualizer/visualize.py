@@ -33,7 +33,7 @@ import os
 import sys
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Set
+from typing import Any, Dict, List, Optional, Set, Tuple
 
 import numpy as np
 
@@ -119,6 +119,65 @@ def _project_ego_to_cam(t4, sample_data_token: str, point_ego) -> Optional[tuple
         return None
 
 
+def _clip_projected_uv_bbox(
+    us: List[float], vs: List[float], img_w: int, img_h: int
+) -> Optional[Tuple[float, float, float, float, float]]:
+    """Turn projected pixel coordinates into a clipped axis-aligned ROI + visibility."""
+    if not us or not vs or len(us) != len(vs):
+        return None
+    u_min_raw, u_max_raw = min(us), max(us)
+    v_min_raw, v_max_raw = min(vs), max(vs)
+    u_min = max(0.0, min(u_min_raw, float(img_w - 1)))
+    u_max = max(0.0, min(u_max_raw, float(img_w - 1)))
+    v_min = max(0.0, min(v_min_raw, float(img_h - 1)))
+    v_max = max(0.0, min(v_max_raw, float(img_h - 1)))
+    if u_max - u_min < 2 or v_max - v_min < 2:
+        return None
+    raw_area = (u_max_raw - u_min_raw) * (v_max_raw - v_min_raw)
+    if raw_area > 0:
+        clipped_area = (u_max - u_min) * (v_max - v_min)
+        visibility = clipped_area / raw_area
+    else:
+        visibility = 1.0
+    return (u_min, v_min, u_max, v_max, visibility)
+
+
+def project_box3d_to_image_roi(
+    t4,
+    camera_sample_data_token: str,
+    box,
+    img_w: int,
+    img_h: int,
+) -> Optional[Tuple[float, float, float, float, float]]:
+    """Project a t4 Box3D (ego frame, ``box.corners()``) to a pixel ROI.
+
+    Uses the same camera model as :func:`_project_ego_to_cam`. Returns
+    ``(u_min, v_min, u_max, v_max, visibility)`` or ``None``.
+    """
+    try:
+        corners_m = box.corners()
+        arr = np.asarray(corners_m, dtype=float)
+        # t4_devkit returns (8, 3); tolerate (3, 8) if ever seen.
+        if arr.shape == (3, 8):
+            arr = arr.T
+        if arr.shape != (8, 3):
+            return None
+    except Exception:
+        return None
+    us: List[float] = []
+    vs: List[float] = []
+    for i in range(8):
+        uv = _project_ego_to_cam(
+            t4,
+            camera_sample_data_token,
+            (float(arr[i, 0]), float(arr[i, 1]), float(arr[i, 2])),
+        )
+        if uv is not None:
+            us.append(uv[0])
+            vs.append(uv[1])
+    return _clip_projected_uv_bbox(us, vs, img_w, img_h)
+
+
 def _project_bbox_to_roi(t4, sample_data_token: str, obj: "TargetObject",
                           img_w: int, img_h: int) -> Optional[tuple]:
     """Project the 8 corners of a detection BBOX onto a camera image.
@@ -164,31 +223,98 @@ def _project_bbox_to_roi(t4, sample_data_token: str, obj: "TargetObject",
             us.append(uv[0])
             vs.append(uv[1])
 
-    if not us:
+    out = _clip_projected_uv_bbox(us, vs, img_w, img_h)
+    return out
+
+
+def external_eval_dict_to_target_object(
+    box: Dict[str, Any],
+    yaw_offset: float,
+    swap_lw: bool,
+) -> Optional[TargetObject]:
+    """Build a :class:`TargetObject` from viewer ``bbox_layers`` / postMessage box dicts.
+
+    Matches ``boxEdgesFromCenterWithOpts`` / ``readEvalBoxPose`` in ``viewer_three.html``.
+    """
+    try:
+        cx = float(box.get("x", box.get("cx", 0.0)))
+        cy = float(box.get("y", box.get("cy", 0.0)))
+        cz = float(box.get("z", box.get("cz", 0.0)))
+        l = max(0.01, float(box.get("length", box.get("l", 1.0))))
+        w = max(0.01, float(box.get("width", box.get("w", 1.0))))
+        h = max(0.01, float(box.get("height", box.get("h", 1.0))))
+        if swap_lw or bool(box.get("swap_lw")):
+            l, w = w, l
+        yaw = float(box.get("yaw", box.get("heading", 0.0))) + float(yaw_offset)
+        label = str(box.get("label", box.get("class", "") or ""))
+        return TargetObject(
+            uuid=str(box.get("uuid", "") or ""),
+            x=cx,
+            y=cy,
+            z=cz,
+            label=label,
+            width=w,
+            length=l,
+            height=h,
+            yaw=yaw,
+        )
+    except Exception:
         return None
 
-    # Raw bounding rect of projected corners
-    u_min_raw, u_max_raw = min(us), max(us)
-    v_min_raw, v_max_raw = min(vs), max(vs)
 
-    # Clip to image bounds
-    u_min = max(0.0, min(u_min_raw, float(img_w - 1)))
-    u_max = max(0.0, min(u_max_raw, float(img_w - 1)))
-    v_min = max(0.0, min(v_min_raw, float(img_h - 1)))
-    v_max = max(0.0, min(v_max_raw, float(img_h - 1)))
-
-    # Reject degenerate / fully-outside rectangles
-    if u_max - u_min < 2 or v_max - v_min < 2:
+def project_flat_ego_corners_to_image_roi(
+    t4,
+    camera_sample_data_token: str,
+    corners_flat: List[float],
+    img_w: int,
+    img_h: int,
+) -> Optional[Tuple[float, float, float, float, float]]:
+    """Project 24 floats (8× xyz in ego) to a pixel ROI."""
+    if len(corners_flat) != 24:
         return None
+    try:
+        arr = np.asarray(corners_flat, dtype=float).reshape(8, 3)
+    except Exception:
+        return None
+    us: List[float] = []
+    vs: List[float] = []
+    for i in range(8):
+        uv = _project_ego_to_cam(
+            t4,
+            camera_sample_data_token,
+            (float(arr[i, 0]), float(arr[i, 1]), float(arr[i, 2])),
+        )
+        if uv is not None:
+            us.append(uv[0])
+            vs.append(uv[1])
+    return _clip_projected_uv_bbox(us, vs, img_w, img_h)
 
-    raw_area = (u_max_raw - u_min_raw) * (v_max_raw - v_min_raw)
-    if raw_area > 0:
-        clipped_area = (u_max - u_min) * (v_max - v_min)
-        visibility = clipped_area / raw_area
-    else:
-        visibility = 1.0
 
-    return (u_min, v_min, u_max, v_max, visibility)
+def project_external_eval_box_to_image_roi(
+    t4,
+    camera_sample_data_token: str,
+    box: Dict[str, Any],
+    img_w: int,
+    img_h: int,
+    *,
+    yaw_offset: float,
+    swap_lw: bool,
+) -> Optional[Tuple[float, float, float, float, float]]:
+    """Project one GT/EST box dict (ego frame) to image ROI — center+size+yaw or 24-float corners."""
+    corners = box.get("corners")
+    if isinstance(corners, (list, tuple)) and len(corners) == 24:
+        try:
+            flat = [float(corners[i]) for i in range(24)]
+        except (TypeError, ValueError):
+            flat = []
+        if len(flat) == 24:
+            return project_flat_ego_corners_to_image_roi(
+                t4, camera_sample_data_token, flat, img_w, img_h
+            )
+    obj = external_eval_dict_to_target_object(box, yaw_offset, swap_lw)
+    if obj is None:
+        return None
+    return _project_bbox_to_roi(t4, camera_sample_data_token, obj, img_w, img_h)
 
 
 def _get_target_ann_tokens(t4, sample, target_objects: List[TargetObject]) -> Set[str]:

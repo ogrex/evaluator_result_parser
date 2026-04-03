@@ -104,7 +104,7 @@ import time
 import xml.etree.ElementTree as ET
 from functools import lru_cache
 from pathlib import Path
-from typing import Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Optional, Tuple
 from urllib.parse import urlencode
 
 # ---------------------------------------------------------------------------
@@ -340,6 +340,12 @@ try:
         available: bool
         dataset_path: Optional[str] = None
 
+    class CameraOverlayExtrasBody(BaseModel):
+        """Optional GT/EST boxes (same schema as viewer ``bbox_layers`` postMessage) to project onto the image."""
+
+        pred: List[Dict[str, Any]] = _Field(default_factory=list)
+        gt: List[Dict[str, Any]] = _Field(default_factory=list)
+
 except ImportError:
     pass  # Proper error is raised inside _build_app when fastapi is missing
 
@@ -355,7 +361,7 @@ def _build_app(
 ):
     """Construct and return the FastAPI application."""
     try:
-        from fastapi import Depends, FastAPI, Header, HTTPException, Query
+        from fastapi import Body, Depends, FastAPI, Header, HTTPException, Query
         from fastapi.encoders import jsonable_encoder
         from fastapi.responses import HTMLResponse, JSONResponse, Response
     except ImportError as exc:
@@ -770,13 +776,133 @@ def _build_app(
             out = out[finite_mask]
         return out, boxes_3d or []
 
+    def _boxes_3d_ego_for_camera_projection(t4, sample) -> List:
+        """3D boxes in ``base_link`` (ego), for projecting onto calibrated cameras.
+
+        ``get_sample_data(..., as_sensor_coord=True)`` returns boxes in the *sensor* frame
+        (e.g. LiDAR), but :func:`t4_visualizer.visualize._project_ego_to_cam` expects
+        ego-frame points — use ``as_sensor_coord=False`` here only for overlay math.
+        """
+        from t4_visualizer.visualize import list_lidar_channels
+
+        lidar_channels = list_lidar_channels(t4, sample)
+        if not lidar_channels:
+            return []
+        token = sample.data.get(lidar_channels[0])
+        if token is None:
+            return []
+        _path, boxes_3d, _ = t4.get_sample_data(
+            token, as_3d=True, as_sensor_coord=False
+        )
+        return list(boxes_3d or [])
+
+    def _box_xy_bev_m(box) -> Optional[Tuple[float, float]]:
+        """Horizontal center for range filtering (t4 Box3D uses ``position``)."""
+        pos = getattr(box, "position", None)
+        if pos is not None:
+            try:
+                return float(pos[0]), float(pos[1])
+            except (TypeError, ValueError, IndexError):
+                pass
+        center = getattr(box, "center", None)
+        if center is not None:
+            try:
+                if hasattr(center, "__len__") and len(center) >= 2:
+                    return float(center[0]), float(center[1])
+            except (TypeError, ValueError, IndexError):
+                pass
+        return None
+
+    def _box_label_str(box) -> str:
+        sl = getattr(box, "semantic_label", None)
+        if sl is not None:
+            name = getattr(sl, "name", None)
+            if name:
+                return str(name)
+        return str(getattr(box, "label", "") or "")
+
+    def _box_xy_from_eval_dict(box: Dict[str, Any]) -> Optional[Tuple[float, float]]:
+        try:
+            x = float(box.get("x", box.get("cx", 0.0)))
+            y = float(box.get("y", box.get("cy", 0.0)))
+            return x, y
+        except (TypeError, ValueError):
+            return None
+
+    def _external_eval_boxes_to_2d_rows(
+        t4,
+        camera_token: str,
+        boxes: Optional[List[Dict[str, Any]]],
+        width: int,
+        height: int,
+        yaw_off: float,
+        swap_lw: bool,
+        max_range_m: float,
+        max_boxes: int,
+    ) -> List[Dict[str, object]]:
+        from t4_visualizer.visualize import project_external_eval_box_to_image_roi
+
+        if not boxes or width <= 0 or height <= 0:
+            return []
+        candidates: List[Tuple[float, Dict[str, Any]]] = []
+        for b in boxes:
+            if not isinstance(b, dict):
+                continue
+            xy = _box_xy_from_eval_dict(b)
+            if xy is None:
+                continue
+            d = math.hypot(xy[0], xy[1])
+            if d > float(max_range_m):
+                continue
+            candidates.append((d, b))
+        candidates.sort(key=lambda t: t[0])
+        candidates = candidates[: int(max_boxes)]
+        rows: List[Dict[str, object]] = []
+        for _d, b in candidates:
+            try:
+                roi = project_external_eval_box_to_image_roi(
+                    t4,
+                    str(camera_token),
+                    b,
+                    width,
+                    height,
+                    yaw_offset=yaw_off,
+                    swap_lw=swap_lw,
+                )
+                if roi is None:
+                    continue
+                u_min, v_min, u_max, v_max, _vis = roi
+                rows.append(
+                    {
+                        "x0": u_min,
+                        "y0": v_min,
+                        "x1": u_max,
+                        "y1": v_max,
+                        "label": str(b.get("label", b.get("class", "")) or ""),
+                        "status": str(b.get("status", "TP") or "TP").upper(),
+                    }
+                )
+            except Exception:
+                continue
+        return rows
+
     def _camera_overlay_payload_for_sample(
         t4,
         sample,
         camera: Optional[str] = None,
         show_annotations: bool = True,
+        *,
+        boxes_3d_scene: Optional[List] = None,
+        max_range_m: float = 120.0,
+        max_scene_boxes: int = 128,
+        extra_pred_boxes: Optional[List[Dict[str, Any]]] = None,
+        extra_gt_boxes: Optional[List[Dict[str, Any]]] = None,
+        external_yaw_offset: float = math.pi / 2,
+        external_swap_lw: bool = False,
     ) -> Dict[str, object]:
-        from t4_visualizer.visualize import list_camera_channels
+        import math
+
+        from t4_visualizer.visualize import list_camera_channels, project_box3d_to_image_roi
 
         channels = list_camera_channels(t4, sample)
         if not channels:
@@ -786,18 +912,18 @@ def _build_app(
                 "image_base64": "",
                 "image_format": "jpeg",
                 "boxes_2d": [],
+                "boxes_2d_pred": [],
+                "boxes_2d_eval_gt": [],
                 "width": 0,
                 "height": 0,
+                "boxes_2d_source": None,
+                "projection": None,
             }
         channel = camera if camera in channels else channels[0]
         token = sample.data.get(channel)
         if token is None:
             _public_error(404, "camera_token_not_found", f"Camera token not found for channel '{channel}'.")
-        if show_annotations:
-            data_path, boxes_2d, _ = t4.get_sample_data(token, as_3d=False, as_sensor_coord=True)
-        else:
-            data_path, _, _ = t4.get_sample_data(token, as_3d=False)
-            boxes_2d = []
+        data_path, _, _ = t4.get_sample_data(token, as_3d=False)
         sample_data = t4.get("sample_data", token)
         img_path = Path(str(data_path))
         try:
@@ -816,32 +942,102 @@ def _build_app(
                     width, height = int(im.width), int(im.height)
         except Exception:
             pass
-        box_rows = []
-        for b in boxes_2d or []:
-            try:
-                roi = getattr(b, "roi", None)
-                if roi is None or len(roi) < 4:
+        box_rows: List[Dict[str, object]] = []
+        boxes_2d_pred: List[Dict[str, object]] = []
+        boxes_2d_eval_gt: List[Dict[str, object]] = []
+        proj_meta: Optional[Dict[str, object]] = None
+        if show_annotations and width > 0 and height > 0:
+            scene_boxes = boxes_3d_scene
+            if scene_boxes is None:
+                scene_boxes = _boxes_3d_ego_for_camera_projection(t4, sample)
+            scene_boxes = scene_boxes or []
+            # Range filter in BEV (ego xy), then nearest-first so dense scenes stay readable.
+            candidates = []
+            for b in scene_boxes:
+                try:
+                    xy = _box_xy_bev_m(b)
+                    if xy is None:
+                        continue
+                    d = math.hypot(xy[0], xy[1])
+                    if d > float(max_range_m):
+                        continue
+                    candidates.append((d, b))
+                except Exception:
                     continue
-                x0, y0, x1, y1 = float(roi[0]), float(roi[1]), float(roi[2]), float(roi[3])
-                box_rows.append(
-                    {
-                        "x0": x0,
-                        "y0": y0,
-                        "x1": x1,
-                        "y1": y1,
-                        "label": str(getattr(b, "label", "") or ""),
-                    }
-                )
-            except Exception:
-                continue
+            candidates.sort(key=lambda t: t[0])
+            in_range = len(candidates)
+            candidates = candidates[: int(max_scene_boxes)]
+            for _d, b in candidates:
+                try:
+                    roi = project_box3d_to_image_roi(t4, str(token), b, width, height)
+                    if roi is None:
+                        continue
+                    u_min, v_min, u_max, v_max, _vis = roi
+                    box_rows.append(
+                        {
+                            "x0": u_min,
+                            "y0": v_min,
+                            "x1": u_max,
+                            "y1": v_max,
+                            "label": _box_label_str(b),
+                        }
+                    )
+                except Exception:
+                    continue
+            proj_meta = {
+                "source": "scene_3d",
+                "max_range_m": float(max_range_m),
+                "max_scene_boxes": int(max_scene_boxes),
+                "in_range": in_range,
+                "drawn": len(box_rows),
+            }
+        if width > 0 and height > 0:
+            boxes_2d_pred = _external_eval_boxes_to_2d_rows(
+                t4,
+                str(token),
+                extra_pred_boxes,
+                width,
+                height,
+                external_yaw_offset,
+                external_swap_lw,
+                max_range_m,
+                max_scene_boxes,
+            )
+            boxes_2d_eval_gt = _external_eval_boxes_to_2d_rows(
+                t4,
+                str(token),
+                extra_gt_boxes,
+                width,
+                height,
+                external_yaw_offset,
+                external_swap_lw,
+                max_range_m,
+                max_scene_boxes,
+            )
+            if proj_meta is not None:
+                proj_meta = {
+                    **proj_meta,
+                    "external_pred_drawn": len(boxes_2d_pred),
+                    "external_gt_drawn": len(boxes_2d_eval_gt),
+                }
+            elif boxes_2d_pred or boxes_2d_eval_gt:
+                proj_meta = {
+                    "source": "external_eval",
+                    "external_pred_drawn": len(boxes_2d_pred),
+                    "external_gt_drawn": len(boxes_2d_eval_gt),
+                }
         return {
             "camera": channel,
             "available_cameras": channels,
             "image_base64": base64.b64encode(img_bytes).decode("ascii"),
             "image_format": fmt,
             "boxes_2d": box_rows,
+            "boxes_2d_pred": boxes_2d_pred,
+            "boxes_2d_eval_gt": boxes_2d_eval_gt,
             "width": width,
             "height": height,
+            "boxes_2d_source": ("scene_3d" if show_annotations else None),
+            "projection": proj_meta,
         }
 
     @lru_cache(maxsize=8)
@@ -1689,6 +1885,71 @@ def _build_app(
             "frames": frames,
         }
 
+    def _viewer_three_camera_overlay_core(
+        t4dataset_id: str,
+        scenario_name: Optional[str],
+        frame_index: int,
+        camera: Optional[str],
+        version: Optional[str],
+        show_annotations: bool,
+        all_cameras: bool,
+        max_range_m: float,
+        max_scene_boxes: int,
+        extra_pred_boxes: Optional[List[Dict[str, Any]]],
+        extra_gt_boxes: Optional[List[Dict[str, Any]]],
+        external_yaw_offset: float,
+        external_swap_lw: bool,
+    ):
+        dataset_path = _resolve_dataset(t4dataset_id)
+        t4 = _cache.load(dataset_path, version=version)
+        resolved_scenario = _resolve_viewer_scenario_name(t4, scenario_name)
+        sample = _get_scenario_sample(t4, resolved_scenario, frame_index)
+        boxes_3d_scene = None
+        if show_annotations:
+            boxes_3d_scene = _boxes_3d_ego_for_camera_projection(t4, sample)
+        payload = _camera_overlay_payload_for_sample(
+            t4,
+            sample,
+            camera=camera,
+            show_annotations=show_annotations,
+            boxes_3d_scene=boxes_3d_scene,
+            max_range_m=max_range_m,
+            max_scene_boxes=max_scene_boxes,
+            extra_pred_boxes=extra_pred_boxes,
+            extra_gt_boxes=extra_gt_boxes,
+            external_yaw_offset=external_yaw_offset,
+            external_swap_lw=external_swap_lw,
+        )
+        if all_cameras:
+            cams = payload.get("available_cameras", []) or []
+            all_rows = []
+            for ch in cams:
+                row = _camera_overlay_payload_for_sample(
+                    t4,
+                    sample,
+                    camera=str(ch),
+                    show_annotations=show_annotations,
+                    boxes_3d_scene=boxes_3d_scene,
+                    max_range_m=max_range_m,
+                    max_scene_boxes=max_scene_boxes,
+                    extra_pred_boxes=extra_pred_boxes,
+                    extra_gt_boxes=extra_gt_boxes,
+                    external_yaw_offset=external_yaw_offset,
+                    external_swap_lw=external_swap_lw,
+                )
+                all_rows.append(row)
+            payload["cameras_payload"] = all_rows
+        payload.update(
+            {
+                "t4dataset_id": t4dataset_id,
+                "scenario_name": resolved_scenario,
+                "frame_index": frame_index,
+                "sample_token": str(sample.token),
+                "timestamp_us": int(sample.timestamp),
+            }
+        )
+        return payload
+
     @app.get(
         "/viewer/three/camera-overlay",
         tags=["viewer"],
@@ -1702,34 +1963,103 @@ def _build_app(
         version: Optional[str] = None,
         show_annotations: bool = Query(True),
         all_cameras: bool = Query(False),
+        max_range_m: float = Query(
+            120.0,
+            ge=5.0,
+            le=500.0,
+            description="Only project 3D boxes whose ego-frame center (xy) is within this radius [m].",
+        ),
+        max_scene_boxes: int = Query(
+            128,
+            ge=1,
+            le=500,
+            description="Max number of nearest boxes (after range filter) to project per camera.",
+        ),
+        external_bbox_yaw_offset: float = Query(
+            math.pi / 2,
+            description="Yaw offset [rad] for external eval boxes (match viewer external_bbox_yaw_offset).",
+        ),
+        external_bbox_swap_lw: bool = Query(
+            False,
+            description="Swap length/width for external eval boxes (match viewer external_bbox_swap_lw).",
+        ),
     ):
-        dataset_path = _resolve_dataset(t4dataset_id)
         try:
-            t4 = _cache.load(dataset_path, version=version)
-            resolved_scenario = _resolve_viewer_scenario_name(t4, scenario_name)
-            sample = _get_scenario_sample(t4, resolved_scenario, frame_index)
-            payload = _camera_overlay_payload_for_sample(
-                t4, sample, camera=camera, show_annotations=show_annotations
+            return _viewer_three_camera_overlay_core(
+                t4dataset_id,
+                scenario_name,
+                frame_index,
+                camera,
+                version,
+                show_annotations,
+                all_cameras,
+                max_range_m,
+                max_scene_boxes,
+                None,
+                None,
+                external_bbox_yaw_offset,
+                external_bbox_swap_lw,
             )
-            if all_cameras:
-                cams = payload.get("available_cameras", []) or []
-                all_rows = []
-                for ch in cams:
-                    row = _camera_overlay_payload_for_sample(
-                        t4, sample, camera=str(ch), show_annotations=show_annotations
-                    )
-                    all_rows.append(row)
-                payload["cameras_payload"] = all_rows
-            payload.update(
-                {
-                    "t4dataset_id": t4dataset_id,
-                    "scenario_name": resolved_scenario,
-                    "frame_index": frame_index,
-                    "sample_token": str(sample.token),
-                    "timestamp_us": int(sample.timestamp),
-                }
+        except HTTPException:
+            raise
+        except Exception as exc:
+            _safe_error(
+                status_code=500,
+                code="viewer_camera_overlay_failed",
+                message="Failed to generate camera overlay payload.",
+                exc=exc,
             )
-            return payload
+
+    @app.post(
+        "/viewer/three/camera-overlay",
+        tags=["viewer"],
+        summary="Camera overlay with GT/EST box arrays (same schema as bbox_layers postMessage)",
+    )
+    def viewer_three_camera_overlay_post(
+        body: CameraOverlayExtrasBody = Body(default_factory=CameraOverlayExtrasBody),
+        t4dataset_id: str = Query(..., description="Dataset id"),
+        scenario_name: Optional[str] = None,
+        frame_index: int = Query(..., ge=0),
+        camera: Optional[str] = None,
+        version: Optional[str] = None,
+        show_annotations: bool = Query(True),
+        all_cameras: bool = Query(False),
+        max_range_m: float = Query(
+            120.0,
+            ge=5.0,
+            le=500.0,
+            description="Only project boxes whose ego-frame center (xy) is within this radius [m].",
+        ),
+        max_scene_boxes: int = Query(
+            128,
+            ge=1,
+            le=500,
+            description="Max number of nearest boxes (after range filter) per layer.",
+        ),
+        external_bbox_yaw_offset: float = Query(
+            math.pi / 2,
+            description="Yaw offset [rad] for external eval boxes.",
+        ),
+        external_bbox_swap_lw: bool = Query(False, description="Swap length/width for external eval boxes."),
+    ):
+        try:
+            pred = list(body.pred) if body and body.pred else []
+            gt = list(body.gt) if body and body.gt else []
+            return _viewer_three_camera_overlay_core(
+                t4dataset_id,
+                scenario_name,
+                frame_index,
+                camera,
+                version,
+                show_annotations,
+                all_cameras,
+                max_range_m,
+                max_scene_boxes,
+                pred,
+                gt,
+                external_bbox_yaw_offset,
+                external_bbox_swap_lw,
+            )
         except HTTPException:
             raise
         except Exception as exc:
