@@ -126,6 +126,44 @@
   .hud-advanced .hud-grid label{display:flex;align-items:center;gap:.35rem;flex-wrap:wrap;width:100%}
   .hud-advanced .hud-grid label input[type=range]{flex:1;min-width:100px}
   .adv-out{font-size:.62rem;color:#8a9abf;font-family:var(--font-mono);min-width:2.5rem;text-align:right;flex-shrink:0}
+  .cam-viewport-wrap{
+    position:absolute;left:12px;bottom:12px;width:min(94vw,760px);max-height:min(58vh,480px);
+    display:flex;flex-direction:column;border:1px solid #2b3f7d;border-radius:12px;overflow:hidden;z-index:6;
+    background:linear-gradient(180deg,#0c1022 0%,#080c18 100%);box-shadow:0 8px 32px rgba(0,0,0,.5);
+    min-width:260px;min-height:120px;
+  }
+  .cam-viewport-wrap[hidden]{display:none !important}
+  /* `[hidden]` alone loses to `.cam-grid6{display:grid}` (same specificity); never show grid in single mode. */
+  .cam-viewport-wrap.cam-mode-single #cameraGridWrap,
+  .cam-viewport-wrap.cam-mode-single .cam-grid6{display:none !important}
+  .cam-viewport-wrap.cam-mode-grid #cameraSingleWrap{display:none !important}
+  .cam-viewport-resize{
+    position:absolute;right:0;bottom:0;width:18px;height:18px;z-index:8;cursor:nwse-resize;
+    background:linear-gradient(135deg,transparent 50%,rgba(100,130,200,.45) 50%);
+    border-radius:0 0 10px 0;
+  }
+  .cam-viewport-resize:hover{background:linear-gradient(135deg,transparent 45%,rgba(130,160,230,.65) 55%)}
+  .cam-viewport-head{
+    cursor:grab;padding:.4rem .65rem;font-size:.65rem;font-weight:700;letter-spacing:.1em;text-transform:uppercase;
+    color:#8b9cc4;border-bottom:1px solid #1e2848;background:linear-gradient(180deg,rgba(22,28,52,.9) 0%,rgba(10,14,28,.5) 100%);
+    user-select:none;touch-action:none;
+  }
+  .cam-viewport-head:active{cursor:grabbing}
+  .cam-viewport-toolbar{display:flex;flex-wrap:wrap;align-items:center;gap:.35rem .5rem;padding:.4rem .55rem;font-size:.72rem;border-bottom:1px solid #1e2848;background:#070a14}
+  .cam-viewport-toolbar select{min-width:120px;font-size:.72rem;padding:.22rem .4rem}
+  .cam-viewport-body{min-height:0}
+  .cam-viewport-wrap.cam-mode-single .cam-viewport-body{
+    flex:0 1 auto;overflow:hidden;max-height:none;min-height:0;
+  }
+  .cam-viewport-wrap.cam-mode-grid .cam-viewport-body{
+    flex:1;min-height:100px;overflow:auto;max-height:min(48vh,400px);
+  }
+  .cam-single-wrap{background:#050810;text-align:center;min-width:0}
+  .cam-single-wrap canvas{max-width:100%;height:auto;display:block}
+  .cam-grid6{display:grid;grid-template-columns:1fr 1fr 1fr;grid-template-rows:1fr 1fr;gap:2px;background:#050810;min-height:220px}
+  .cam-slot{position:relative;min-height:100px;background:#0a0e18;display:flex;align-items:center;justify-content:center}
+  .cam-slot canvas{width:100%;height:auto;display:block}
+  .cam-slot-label{position:absolute;left:3px;bottom:3px;font-size:9px;font-weight:600;color:#d0dcf0;text-shadow:0 0 6px #000;padding:2px 5px;background:rgba(0,0,0,.45);border-radius:4px;pointer-events:none;max-width:calc(100% - 8px);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 </style>
 </head><body><div id="app" class="app-root">
   <div class="top">
@@ -140,6 +178,7 @@
         <button id="camTop">Top</button>
         <button id="camFollow">Follow</button>
         <button id="toggleLanelet">Lanelet OFF</button>
+        <button type="button" id="toggleCameraViewport" aria-pressed="false" title="Camera images overlay (off)">Cameras: off</button>
         <button id="toggleFullscreen" type="button" title="Fullscreen viewer">Fullscreen</button>
         <details class="view-panels" id="viewPanels">
           <summary>Panels</summary>
@@ -147,6 +186,7 @@
             <label title="Scene, layers, and point controls"><input type="checkbox" id="uiShowHud" checked> Settings panel</label>
             <label title="GT/EST per-frame counts"><input type="checkbox" id="uiShowMetricsCounts" checked> Count chart</label>
             <label title="TPR, precision, F1, FDR (from counts)"><input type="checkbox" id="uiShowMetricsRates" checked> Rate chart</label>
+            <label title="Dataset camera images (bottom-left)"><input type="checkbox" id="uiShowCameraViewport"> Camera images</label>
           </div>
         </details>
       </div>
@@ -162,6 +202,25 @@
     </div>
   </div>
   <div id="canvasWrap"><canvas id="canvas"></canvas>
+    <div id="cameraViewportWrap" class="cam-viewport-wrap cam-mode-single" hidden>
+      <div class="cam-viewport-head" id="cameraViewportDragHandle" title="Drag to move">Camera images</div>
+      <div class="cam-viewport-toolbar">
+        <label>layout <select id="cameraLayoutMode" title="Single feed or 2×3 ring of all cameras">
+          <option value="single">Single</option>
+          <option value="grid6">All cameras (2×3)</option>
+        </select></label>
+        <label>camera <select id="overlayCamera"></select></label>
+        <label title="2D boxes from dataset sample_data"><input type="checkbox" id="showOverlayAnnotations" checked> 2D boxes</label>
+        <button type="button" id="cameraViewportHideBtn" title="Hide camera panel">✕</button>
+      </div>
+      <div class="cam-viewport-body" id="cameraViewportBody">
+        <div id="cameraSingleWrap" class="cam-single-wrap">
+          <canvas id="overlayCanvasSingle"></canvas>
+        </div>
+        <div id="cameraGridWrap" class="cam-grid6" hidden></div>
+      </div>
+      <div id="cameraViewportResize" class="cam-viewport-resize" title="Drag corner to resize · double-click to reset size"></div>
+    </div>
     <div id="metricsRatesWrap" class="metrics-wrap metrics-rates-wrap" hidden title="TPR=recall on GT, P=precision on detections, F1=harmonic mean, FDR=FP/(TP+FP)">
       <div class="panel-drag-handle metrics-drag-head" title="Drag to move · double-click to snap back to default"><span class="metrics-title">Rates · TPR / P / F1 / FDR</span></div>
       <div id="metricsRatesCaption" class="metrics-caption"></div>
@@ -393,6 +452,12 @@ let totalFrames = 0; let playing = false; let frame = startFrame; let fps = 6;
 let lastFrameTs = 0;
 let followEgo = true;
 let intensityGain = 1.0;
+let cameraViewportEnabled = false;
+/** Last `/viewer/three/camera-overlay` JSON; used to redraw on resize / 2D toggle. */
+let lastCameraPayload = null;
+let lastCameraPanelCheckbox = false;
+/** Bumped when the user turns the camera panel off or starts a new overlay fetch (drops stale async work). */
+let cameraOverlayGeneration = 0;
 
 function lerp(a, b, u){ return a + (b - a) * u; }
 
@@ -667,7 +732,7 @@ function clampPanelToParent(panelEl, parentEl){
 
 function clampAllMovablePanels(){
   const parent = document.getElementById("canvasWrap");
-  ["hud", "metricsWrap", "metricsRatesWrap"].forEach((id) => {
+  ["hud", "metricsWrap", "metricsRatesWrap", "cameraViewportWrap"].forEach((id) => {
     const el = document.getElementById(id);
     if (el) clampPanelToParent(el, parent);
   });
@@ -685,7 +750,7 @@ function resetPanelPosition(panelEl){
 
 /** Clear drag offsets on all overlay panels; one layoutMetricsStacks at end. */
 function resetAllPanelPositions(){
-  ["hud", "metricsWrap", "metricsRatesWrap"].forEach((id) => {
+  ["hud", "metricsWrap", "metricsRatesWrap", "cameraViewportWrap"].forEach((id) => {
     const el = document.getElementById(id);
     if (!el) return;
     delete el.dataset.userPos;
@@ -1172,6 +1237,27 @@ function applyPanelVisibility(){
   const fab = document.getElementById("hudRevealBtn");
   if (hudEl) hudEl.hidden = !hudOn;
   if (fab) fab.hidden = hudOn;
+  const camWrap = document.getElementById("cameraViewportWrap");
+  const camOn = document.getElementById("uiShowCameraViewport") && document.getElementById("uiShowCameraViewport").checked;
+  if (camWrap) camWrap.hidden = !camOn;
+  cameraViewportEnabled = !!camOn;
+  const camBtn = document.getElementById("toggleCameraViewport");
+  if (camBtn) {
+    camBtn.textContent = camOn ? "Cameras: on" : "Cameras: off";
+    camBtn.setAttribute("aria-pressed", camOn ? "true" : "false");
+    camBtn.title = camOn
+      ? "Camera images overlay (on) — click or uncheck Panels to hide"
+      : "Camera images overlay (off) — click or enable in Panels to show";
+  }
+  if (!camOn) {
+    cameraOverlayGeneration++;
+    lastCameraPayload = null;
+    clearCameraViewportCanvases();
+  }
+  if (camOn !== lastCameraPanelCheckbox) {
+    lastCameraPanelCheckbox = camOn;
+    if (camOn) refreshCameraOverlay().catch((e) => setStatus(`camera: ${e.message}`));
+  }
   syncMetricsPlotVisibility();
   syncMetricsRatesPlotVisibility();
 }
@@ -1571,6 +1657,374 @@ async function prefetchAround(i){
   await Promise.all(tasks);
 }
 
+const RING_CAMERA_ORDER = [
+  "CAM_FRONT", "CAM_FRONT_LEFT", "CAM_FRONT_RIGHT",
+  "CAM_BACK_LEFT", "CAM_BACK_RIGHT", "CAM_BACK",
+];
+
+function shortCamLabel(name){
+  const s = String(name || "");
+  const parts = s.split(/[/\\]/);
+  return parts[parts.length - 1] || s;
+}
+
+/** Order channel names for a stable 2×3 grid (front ring, then extras). */
+function orderedCamerasForGrid(list){
+  const L = Array.isArray(list) ? list.map(String) : [];
+  const out = [];
+  const norm = (x) => x.replace(/[^a-z0-9]+/gi, "").toUpperCase();
+  for (const pref of RING_CAMERA_ORDER) {
+    const hit = L.find((c) => norm(c) === norm(pref));
+    if (hit && !out.includes(hit)) out.push(hit);
+  }
+  const rest = L.filter((c) => !out.includes(c)).sort();
+  for (const c of rest) out.push(c);
+  return out.slice(0, 6);
+}
+
+/** Map `cameras_payload` rows into six slots (row-major 3×2). */
+function buildCameraSlots(rows){
+  const byCam = {};
+  for (const r of rows || []) {
+    if (!r || r.camera == null) continue;
+    byCam[String(r.camera)] = r;
+  }
+  const order = orderedCamerasForGrid(Object.keys(byCam));
+  const slots = new Array(6).fill(null);
+  for (let i = 0; i < Math.min(6, order.length); i++) slots[i] = byCam[order[i]] || null;
+  return slots;
+}
+
+function ensureCameraGridSlots(){
+  const grid = document.getElementById("cameraGridWrap");
+  if (!grid || grid.children.length >= 6) return;
+  grid.innerHTML = "";
+  for (let i = 0; i < 6; i++) {
+    const slot = document.createElement("div");
+    slot.className = "cam-slot";
+    const c = document.createElement("canvas");
+    const lbl = document.createElement("span");
+    lbl.className = "cam-slot-label";
+    slot.appendChild(c);
+    slot.appendChild(lbl);
+    grid.appendChild(slot);
+  }
+}
+
+/** Single vs 2×3: toggles classes so CSS hides the inactive branch (fixes `hidden` lost to `.cam-grid6{display:grid}`). */
+function applyCameraViewportModeFromUi(){
+  const sel = document.getElementById("cameraLayoutMode");
+  const layout = sel && sel.value ? sel.value : "single";
+  const wantGrid = layout === "grid6";
+  const wrap = document.getElementById("cameraViewportWrap");
+  const singleWrap = document.getElementById("cameraSingleWrap");
+  const gridWrap = document.getElementById("cameraGridWrap");
+  if (wrap) {
+    wrap.classList.toggle("cam-mode-grid", wantGrid);
+    wrap.classList.toggle("cam-mode-single", !wantGrid);
+  }
+  if (wantGrid) {
+    if (singleWrap) singleWrap.hidden = true;
+    if (gridWrap) {
+      gridWrap.hidden = false;
+      ensureCameraGridSlots();
+    }
+  } else {
+    if (singleWrap) singleWrap.hidden = false;
+    if (gridWrap) gridWrap.hidden = true;
+  }
+}
+
+function ensureOverlayCameraOptions(payload){
+  const sel = document.getElementById("overlayCamera");
+  if (!sel || !payload) return;
+  const cams = Array.isArray(payload.available_cameras) ? payload.available_cameras : [];
+  const prev = sel.value;
+  sel.innerHTML = "";
+  for (const c of cams) {
+    const o = document.createElement("option");
+    o.value = c;
+    o.textContent = shortCamLabel(c);
+    sel.appendChild(o);
+  }
+  if (cams.length && prev && cams.includes(prev)) sel.value = prev;
+  else if (payload.camera && cams.includes(payload.camera)) sel.value = payload.camera;
+  else if (cams.length) sel.value = cams[0];
+}
+
+function updateCameraToolbarMode(){
+  const layout = document.getElementById("cameraLayoutMode") && document.getElementById("cameraLayoutMode").value;
+  const sel = document.getElementById("overlayCamera");
+  const lab = sel && sel.closest("label");
+  const grid6 = layout === "grid6";
+  if (lab) lab.style.opacity = grid6 ? "0.5" : "";
+  if (sel) sel.disabled = !!grid6;
+  applyCameraViewportModeFromUi();
+}
+
+async function fetchCameraOverlay(i){
+  const layout = document.getElementById("cameraLayoutMode") && document.getElementById("cameraLayoutMode").value;
+  const allMode = layout === "grid6";
+  const camSel = document.getElementById("overlayCamera");
+  const selected = camSel && camSel.value ? camSel.value : "";
+  const camParam = !allMode && selected ? `&camera=${encodeURIComponent(selected)}` : "";
+  const allFlag = allMode ? "&all_cameras=true" : "";
+  const showAnn = document.getElementById("showOverlayAnnotations") && document.getElementById("showOverlayAnnotations").checked;
+  const url =
+    `/viewer/three/camera-overlay?t4dataset_id=${encodeURIComponent(dataset)}` +
+    `&scenario_name=${encodeURIComponent(scenario)}&frame_index=${i}${qv}` +
+    `${camParam}${allFlag}&show_annotations=${showAnn ? "true" : "false"}`;
+  const res = await fetch(url);
+  if (!res.ok) throw new Error(`camera overlay HTTP ${res.status}`);
+  return await res.json();
+}
+
+function clearCameraViewportCanvases(){
+  const c = document.getElementById("overlayCanvasSingle");
+  if (c) {
+    c.width = 1;
+    c.height = 1;
+    const ctx = c.getContext("2d");
+    if (ctx) ctx.clearRect(0, 0, 1, 1);
+  }
+  const grid = document.getElementById("cameraGridWrap");
+  if (grid) {
+    grid.querySelectorAll("canvas").forEach((cv) => {
+      cv.width = 1;
+      cv.height = 1;
+    });
+  }
+}
+
+/**
+ * Paint one camera payload. Does not resize/clear the canvas until the image has decoded,
+ * so the previous frame stays visible while scrubbing (avoids dark flash).
+ */
+function drawPayloadOnCanvas(canvas, payload, labelEl, gen){
+  return new Promise((resolve) => {
+    if (!canvas) {
+      resolve();
+      return;
+    }
+    if (gen != null && gen !== cameraOverlayGeneration) {
+      resolve();
+      return;
+    }
+    const iw = Math.max(1, Number(payload.width || 1));
+    const ih = Math.max(1, Number(payload.height || 1));
+    const wrap = canvas.parentElement;
+    const maxW = (wrap && wrap.clientWidth) ? wrap.clientWidth : 640;
+    const scale = Math.min(1, Math.max(0.05, maxW / iw));
+    const cw = Math.max(1, Math.floor(iw * scale));
+    const ch = Math.max(1, Math.floor(ih * scale));
+    const b64 = payload.image_base64;
+    if (!b64) {
+      canvas.width = cw;
+      canvas.height = ch;
+      const ctx = canvas.getContext("2d");
+      ctx.fillStyle = "#0a0e18";
+      ctx.fillRect(0, 0, cw, ch);
+      ctx.fillStyle = "#5a6a8a";
+      ctx.font = "12px sans-serif";
+      ctx.fillText("No image", 8, 22);
+      if (labelEl) labelEl.textContent = "";
+      resolve();
+      return;
+    }
+    const fmt = String(payload.image_format || "jpeg").toLowerCase();
+    const mime = fmt === "png" ? "image/png" : "image/jpeg";
+    const img = new Image();
+    img.onload = () => {
+      if (gen != null && gen !== cameraOverlayGeneration) {
+        resolve();
+        return;
+      }
+      canvas.width = cw;
+      canvas.height = ch;
+      const ctx = canvas.getContext("2d");
+      ctx.drawImage(img, 0, 0, cw, ch);
+      const ann = document.getElementById("showOverlayAnnotations");
+      if (ann && ann.checked) {
+        const bxs = Array.isArray(payload.boxes_2d) ? payload.boxes_2d : [];
+        ctx.strokeStyle = "rgba(255, 94, 200, 0.95)";
+        ctx.lineWidth = 2;
+        for (const b of bxs) {
+          const x0 = (Number(b.x0) / iw) * cw;
+          const y0 = (Number(b.y0) / ih) * ch;
+          const x1 = (Number(b.x1) / iw) * cw;
+          const y1 = (Number(b.y1) / ih) * ch;
+          ctx.strokeRect(x0, y0, x1 - x0, y1 - y0);
+        }
+      }
+      if (labelEl) labelEl.textContent = shortCamLabel(payload.camera || "");
+      resolve();
+    };
+    img.onerror = () => {
+      if (gen != null && gen !== cameraOverlayGeneration) {
+        resolve();
+        return;
+      }
+      canvas.width = cw;
+      canvas.height = ch;
+      const ctx = canvas.getContext("2d");
+      ctx.fillStyle = "#0a0e18";
+      ctx.fillRect(0, 0, cw, ch);
+      ctx.fillStyle = "#8a5a7a";
+      ctx.font = "12px sans-serif";
+      ctx.fillText("Load error", 8, 22);
+      resolve();
+    };
+    img.src = `data:${mime};base64,${b64}`;
+  });
+}
+
+async function renderCameraViewport(payload, gen){
+  if (!payload) return;
+  if (gen != null && gen !== cameraOverlayGeneration) return;
+  applyCameraViewportModeFromUi();
+  const mode = document.getElementById("cameraLayoutMode") && document.getElementById("cameraLayoutMode").value;
+  const canvasSingle = document.getElementById("overlayCanvasSingle");
+  const gridWrap = document.getElementById("cameraGridWrap");
+  const rows = Array.isArray(payload.cameras_payload) ? payload.cameras_payload : [];
+  if (mode === "grid6") {
+    ensureCameraGridSlots();
+    const slots = buildCameraSlots(rows);
+    const slotEls = gridWrap ? gridWrap.querySelectorAll(".cam-slot") : [];
+    for (let i = 0; i < 6; i++) {
+      if (gen != null && gen !== cameraOverlayGeneration) return;
+      const p = slots[i];
+      const slot = slotEls[i];
+      if (!slot) continue;
+      const c = slot.querySelector("canvas");
+      const lbl = slot.querySelector(".cam-slot-label");
+      if (!p || !p.image_base64) {
+        if (c) {
+          c.width = 160;
+          c.height = 90;
+          const ctx = c.getContext("2d");
+          ctx.fillStyle = "#121620";
+          ctx.fillRect(0, 0, c.width, c.height);
+          ctx.fillStyle = "#5a6a8a";
+          ctx.font = "11px sans-serif";
+          ctx.fillText("—", 72, 52);
+        }
+        if (lbl) lbl.textContent = "";
+        continue;
+      }
+      await drawPayloadOnCanvas(c, p, lbl, gen);
+    }
+  } else {
+    await drawPayloadOnCanvas(canvasSingle, payload, null, gen);
+  }
+}
+
+async function refreshCameraOverlay(){
+  if (!cameraViewportEnabled) return;
+  const gen = ++cameraOverlayGeneration;
+  try {
+    const payload = await fetchCameraOverlay(frame);
+    if (gen !== cameraOverlayGeneration) return;
+    lastCameraPayload = payload;
+    if (payload) {
+      ensureOverlayCameraOptions(payload);
+      await renderCameraViewport(payload, gen);
+    }
+  } catch (e) {
+    if (gen === cameraOverlayGeneration) setStatus(`camera: ${e.message}`);
+  }
+}
+
+function resizeCameraViewport(){
+  if (!cameraViewportEnabled || !lastCameraPayload) return;
+  const g = cameraOverlayGeneration;
+  renderCameraViewport(lastCameraPayload, g).catch(() => {});
+}
+
+const CAM_VP_SIZE_STORAGE_KEY = "t4viewer.cameraViewportSize";
+
+function wireCameraViewportResize(){
+  const wrap = document.getElementById("cameraViewportWrap");
+  const handle = document.getElementById("cameraViewportResize");
+  if (!wrap || !handle) return;
+  try {
+    const raw = localStorage.getItem(CAM_VP_SIZE_STORAGE_KEY);
+    if (raw) {
+      const o = JSON.parse(raw);
+      const w = Number(o.w);
+      const maxH = Number(o.maxH);
+      if (Number.isFinite(w) && Number.isFinite(maxH)) {
+        wrap.style.width = `${Math.round(w)}px`;
+        wrap.style.maxHeight = `${Math.round(maxH)}px`;
+        wrap.dataset.userSize = "1";
+      }
+    }
+  } catch (_) {}
+
+  let active = false;
+  let startX = 0;
+  let startY = 0;
+  let startW = 0;
+  let startH = 0;
+
+  handle.addEventListener("pointerdown", (ev) => {
+    if (ev.button !== 0) return;
+    ev.preventDefault();
+    ev.stopPropagation();
+    active = true;
+    startX = ev.clientX;
+    startY = ev.clientY;
+    const r = wrap.getBoundingClientRect();
+    startW = r.width;
+    startH = r.height;
+    try {
+      handle.setPointerCapture(ev.pointerId);
+    } catch (_) {}
+  });
+
+  handle.addEventListener("pointermove", (ev) => {
+    if (!active) return;
+    const dx = ev.clientX - startX;
+    const dy = ev.clientY - startY;
+    const vw = window.innerWidth;
+    const vh = window.innerHeight;
+    let nw = Math.round(startW + dx);
+    let nh = Math.round(startH + dy);
+    nw = Math.max(260, Math.min(nw, vw - 8));
+    nh = Math.max(140, Math.min(nh, vh - 48));
+    wrap.style.width = `${nw}px`;
+    wrap.style.maxHeight = `${nh}px`;
+    wrap.dataset.userSize = "1";
+    resizeCameraViewport();
+  });
+
+  function endResize(ev){
+    if (!active) return;
+    active = false;
+    try {
+      if (ev && ev.pointerId != null) handle.releasePointerCapture(ev.pointerId);
+    } catch (_) {}
+    const r = wrap.getBoundingClientRect();
+    try {
+      localStorage.setItem(CAM_VP_SIZE_STORAGE_KEY, JSON.stringify({ w: r.width, maxH: r.height }));
+    } catch (_) {}
+  }
+
+  handle.addEventListener("pointerup", endResize);
+  handle.addEventListener("pointercancel", endResize);
+
+  handle.addEventListener("dblclick", (ev) => {
+    ev.preventDefault();
+    ev.stopPropagation();
+    wrap.style.width = "";
+    wrap.style.maxHeight = "";
+    delete wrap.dataset.userSize;
+    try {
+      localStorage.removeItem(CAM_VP_SIZE_STORAGE_KEY);
+    } catch (_) {}
+    resizeCameraViewport();
+  });
+}
+
 function setFrameData(data){
   const n = data.pointCount;
   const pos = new Float32Array(n * 3);
@@ -1675,6 +2129,9 @@ async function showFrame(i){
     updateEvalHud();
     setStatus(`ready · cached=${cache.size}`);
   }
+  if (cameraViewportEnabled) {
+    await refreshCameraOverlay();
+  }
   updateMetricsPlayhead();
 }
 
@@ -1720,7 +2177,7 @@ document.getElementById("toggleLanelet").addEventListener("click", async () => {
 document.getElementById("show3dAnnotations").addEventListener("change", (e) => {
   boxesGroup.visible = !!e.target.checked;
 });
-["uiShowHud", "uiShowMetricsCounts", "uiShowMetricsRates"].forEach((id) => {
+["uiShowHud", "uiShowMetricsCounts", "uiShowMetricsRates", "uiShowCameraViewport"].forEach((id) => {
   const el = document.getElementById(id);
   if (el) el.addEventListener("change", () => applyPanelVisibility());
 });
@@ -1883,9 +2340,30 @@ document.getElementById("framePrev").addEventListener("click", () => {
 document.getElementById("frameNext").addEventListener("click", () => {
   showFrame(frame + 1).catch((e) => setStatus(`error: ${e.message}`));
 });
+document.getElementById("toggleCameraViewport")?.addEventListener("click", () => {
+  const c = document.getElementById("uiShowCameraViewport");
+  if (c) c.checked = !c.checked;
+  applyPanelVisibility();
+});
+document.getElementById("cameraViewportHideBtn")?.addEventListener("click", () => {
+  const c = document.getElementById("uiShowCameraViewport");
+  if (c) c.checked = false;
+  applyPanelVisibility();
+});
+document.getElementById("cameraLayoutMode")?.addEventListener("change", () => {
+  updateCameraToolbarMode();
+  refreshCameraOverlay().catch((e) => setStatus(`camera: ${e.message}`));
+});
+document.getElementById("overlayCamera")?.addEventListener("change", () => {
+  refreshCameraOverlay().catch((e) => setStatus(`camera: ${e.message}`));
+});
+document.getElementById("showOverlayAnnotations")?.addEventListener("change", () => {
+  refreshCameraOverlay().catch((e) => setStatus(`camera: ${e.message}`));
+});
 window.addEventListener("resize", () => {
   resizeMainRenderer();
   resizeMetricsRenderer();
+  resizeCameraViewport();
   clampAllMovablePanels();
 });
 
@@ -1910,6 +2388,7 @@ function animate(ts){
 
 (async function boot(){
   setStatus("bootstrapping...");
+  wireCameraViewportResize();
   const egoMeshPromise = loadEgoVehicleMesh().catch((err) => {
     console.warn("[viewer] ego vehicle mesh unavailable, using box fallback", err);
   });
@@ -1927,6 +2406,7 @@ function animate(ts){
   requestAnimationFrame(() => resizeMainRenderer());
   setTimeout(() => resizeMainRenderer(), 0);
   await showFrame(Math.min(startFrame, Math.max(0, totalFrames - 1)));
+  updateCameraToolbarMode();
   applyPanelVisibility();
   const hudEl = document.getElementById("hud");
   const hudHandle = document.getElementById("hudDragHandle");
@@ -1938,6 +2418,11 @@ function animate(ts){
   if (metricsRatesWrapEl) {
     const h = metricsRatesWrapEl.querySelector(".panel-drag-handle");
     if (h) makePanelDraggable(metricsRatesWrapEl, h);
+  }
+  const camVp = document.getElementById("cameraViewportWrap");
+  const camHandle = document.getElementById("cameraViewportDragHandle");
+  if (camVp && camHandle) {
+    makePanelDraggable(camVp, camHandle);
   }
   egoMeshPromise.catch(() => {});
   animate(0);
