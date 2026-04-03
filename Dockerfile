@@ -13,6 +13,8 @@ WORKDIR /app
 COPY pyproject.toml README.md ./
 COPY t4_visualizer/ ./t4_visualizer/
 COPY result_parser/ ./result_parser/
+# Repo-root assets (vehicle mesh for /viewer/assets/vehicle-mesh — see server._build_app)
+COPY assets/ ./assets/
 
 # Pin t4-devkit for reproducible builds (see upstream tags on GitHub).
 RUN pip install --upgrade pip && \

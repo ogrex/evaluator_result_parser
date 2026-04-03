@@ -30,3 +30,7 @@ t4-server = "t4_visualizer.server:main"
 [tool.setuptools.packages.find]
 where = ["."]
 include = ["t4_visualizer*", "result_parser*"]
+
+# HTML templates are loaded at runtime via Path(__file__).parent / "templates" (see server.py).
+[tool.setuptools.package-data]
+t4_visualizer = ["templates/*.html"]
