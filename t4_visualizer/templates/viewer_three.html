@@ -35,11 +35,30 @@
     padding:.85rem .95rem 1rem;
     box-shadow:0 8px 40px rgba(0,0,0,.45),0 0 0 1px rgba(255,255,255,.04) inset,0 1px 0 rgba(255,255,255,.06) inset;
   }
+  .hud-header-bar{display:flex;align-items:stretch;margin:-.85rem -.95rem .65rem -.95rem;border-radius:14px 14px 0 0;border-bottom:1px solid rgba(80,100,160,.22);overflow:hidden}
+  .hud-header-bar .hud-drag-handle.panel-drag-handle{
+    flex:1;margin:0;border-radius:0;border-bottom:none;min-height:32px;
+    position:relative;left:auto;right:auto;top:auto;
+    padding:.5rem .85rem;
+    font-size:.68rem;font-weight:700;letter-spacing:.12em;text-transform:uppercase;color:#8b9cc4;
+  }
+  .hud-panel-hide{
+    flex-shrink:0;width:34px;border:none;background:rgba(26,32,58,.9);color:#a8b8e0;cursor:pointer;font-size:1.05rem;line-height:1;padding:0;
+    border-left:1px solid rgba(80,100,160,.28);transition:background .15s,color .15s;
+  }
+  .hud-panel-hide:hover{background:rgba(55,65,110,.55);color:#fff}
   .hud-panel .hud-rule{border:none;height:1px;background:linear-gradient(90deg,transparent,rgba(100,120,200,.35),transparent);margin:.65rem 0;opacity:.9}
   .hud-panel__section-title{font-size:.62rem;font-weight:700;letter-spacing:.12em;text-transform:uppercase;color:#7d8db8;margin-bottom:.45rem}
+  .hud-panel__hint{font-size:.62rem;color:#7d8caf;line-height:1.35;margin:-.15rem 0 .4rem;opacity:.92}
   .hud-panel .hud-grid{display:grid;gap:.38rem;font-size:.8rem}
-  #evalHud{margin-top:.5rem;padding-top:.55rem;border-top:1px solid rgba(60,80,140,.25);font-size:.78rem;line-height:1.5}
-  #evalHud .eval-hud-head{font-weight:700;font-size:.62rem;letter-spacing:.1em;text-transform:uppercase;color:#8b9cc4;margin-bottom:.35rem}
+  #evalHud{margin-top:.4rem;padding-top:.4rem;border-top:1px solid rgba(60,80,140,.25);font-size:.68rem;line-height:1.2}
+  #evalHud .eval-hud-head{font-weight:700;font-size:.58rem;letter-spacing:.08em;text-transform:uppercase;color:#8b9cc4;margin-bottom:.2rem}
+  #evalHud .eval-grid4{display:grid;grid-template-columns:1fr 1fr;gap:.12rem .45rem;font-variant-numeric:tabular-nums;align-items:baseline}
+  #evalHud .eval-grid4>span{display:flex;align-items:center;gap:.28rem;min-width:0}
+  #evalHud .eval-swatch{width:8px;height:8px;border-radius:2px;flex-shrink:0;box-shadow:0 0 0 1px rgba(0,0,0,.35) inset}
+  #evalHud .eval-lbl{color:#8a96b0;font-size:.62rem}
+  #evalHud .eval-val{font-weight:600;font-size:.72rem}
+  #evalHud .eval-rp{margin-top:.28rem;font-family:var(--font-mono);font-size:.62rem;opacity:.92;color:#aab6d4}
   #evalHud .row{display:flex;justify-content:space-between;align-items:center;gap:.6rem}
   #evalHud .row span:first-child{color:#9aa6c8;font-size:.76rem}
   #evalHud .nGt{color:#5ee4a8;font-weight:600;text-shadow:0 0 20px rgba(94,228,168,.35)}
@@ -50,15 +69,63 @@
   a{color:var(--accent);text-decoration:none;border-bottom:1px solid rgba(124,179,255,.35);transition:color .15s,border-color .15s}
   a:hover{color:#c8ddff;border-bottom-color:rgba(200,221,255,.55)}
   .metrics-wrap{position:absolute;right:12px;bottom:12px;width:min(38vw,360px);height:min(26vh,168px);border-radius:12px;overflow:hidden;border:1px solid #33467a;background:linear-gradient(145deg,#0a0e22f0 0%,#060812fa 55%,#0d1228 100%);box-shadow:0 0 0 1px rgba(110,168,255,.12),0 12px 40px rgba(0,0,0,.5),inset 0 1px 0 rgba(255,255,255,.06);backdrop-filter:blur(10px)}
-  .metrics-title{position:absolute;left:8px;top:5px;z-index:1;font-size:9px;font-weight:700;letter-spacing:.14em;text-transform:uppercase;color:#7a8bbf;pointer-events:none;text-shadow:0 0 12px rgba(110,168,255,.35)}
-  .metrics-caption{position:absolute;left:8px;right:8px;top:22px;z-index:1;font-size:9px;line-height:1.35;color:#9aa6c8;pointer-events:none;font-family:var(--font-mono)}
+  .panel-drag-handle{
+    position:absolute;left:0;right:0;top:0;height:26px;z-index:4;
+    display:flex;align-items:center;padding:0 10px;
+    cursor:grab;user-select:none;-webkit-user-select:none;
+    background:linear-gradient(180deg,rgba(22,28,52,.92) 0%,rgba(10,14,28,.35) 100%);
+    border-radius:12px 12px 0 0;
+    border-bottom:1px solid rgba(80,100,160,.2);
+    touch-action:none;
+  }
+  .panel-drag-handle:active{cursor:grabbing}
+  .metrics-wrap .panel-drag-handle .metrics-title{
+    position:static;font-size:9px;font-weight:700;letter-spacing:.14em;text-transform:uppercase;
+    color:#7a8bbf;pointer-events:none;text-shadow:0 0 12px rgba(110,168,255,.35);
+  }
+  .metrics-caption{position:absolute;left:8px;right:8px;top:30px;z-index:1;font-size:9px;line-height:1.35;color:#9aa6c8;pointer-events:none;font-family:var(--font-mono)}
   .metrics-legend{position:absolute;left:8px;right:8px;bottom:5px;z-index:1;font-size:8px;letter-spacing:.03em;color:#8a9bc4;pointer-events:none;display:flex;flex-wrap:wrap;gap:6px 10px;justify-content:flex-end}
   .metrics-legend span{white-space:nowrap}
   .metrics-legend .c1{color:#00cc66}.metrics-legend .c2{color:#ff9933}.metrics-legend .c3{color:#66b3ff}.metrics-legend .c4{color:#ff6666}
-  #metricsCanvas{width:100%;height:100%;display:block}
+  .metrics-legend.rates-legend .r1{color:#5ee4a8}.metrics-legend.rates-legend .r2{color:#66b3ff}.metrics-legend.rates-legend .r3{color:#ffcc66}.metrics-legend.rates-legend .r4{color:#ff7799}
+  #metricsCanvas,#metricsRatesCanvas{position:relative;z-index:0;width:100%;height:100%;display:block}
+  .metrics-wrap .metrics-caption,.metrics-wrap .metrics-legend{z-index:2}
+  .view-panels{position:relative;z-index:4}
+  .view-panels>summary{cursor:pointer;list-style:none;font-size:.78rem;font-weight:600;letter-spacing:.06em;text-transform:uppercase;color:var(--muted);padding:.28rem .5rem;border-radius:8px;border:1px solid rgba(90,110,180,.35);background:rgba(18,24,48,.75)}
+  .view-panels>summary::-webkit-details-marker{display:none}
+  .view-panels[open]>summary{color:#c8d8ff;border-color:rgba(120,160,255,.45)}
+  .view-panels__body{margin-top:.35rem;padding:.55rem .65rem;border-radius:10px;border:1px solid rgba(90,110,180,.4);background:rgba(10,14,28,.95);display:grid;gap:.45rem;min-width:15rem;box-shadow:0 8px 28px rgba(0,0,0,.4)}
+  .view-panels__body label{display:flex;align-items:center;gap:.5rem;font-size:.78rem;cursor:pointer;user-select:none}
+  .view-panels__body input{accent-color:#8ab4ff}
+  #hudRevealBtn{
+    position:fixed;right:10px;top:50%;transform:translateY(-50%);z-index:20;
+    width:40px;height:40px;border-radius:12px;border:1px solid rgba(120,160,255,.4);
+    background:rgba(14,18,40,.92);color:#c8d8ff;font-size:1.1rem;cursor:pointer;
+    box-shadow:0 6px 24px rgba(0,0,0,.45);backdrop-filter:blur(8px);
+  }
+  #hudRevealBtn:hover{border-color:rgba(160,190,255,.55)}
   .hud-grid label{display:flex;align-items:center;gap:.45rem;cursor:pointer;user-select:none}
+  .hud-grid--layers{gap:.35rem}
+  .layer-eval-grid{
+    display:grid;
+    grid-template-columns:1fr 1fr;
+    gap:.22rem .35rem;
+    font-size:.74rem;line-height:1.2;
+  }
+  .layer-swatch{width:11px;height:11px;border-radius:3px;flex-shrink:0;background:var(--sw,#888);box-shadow:0 0 0 1px rgba(0,0,0,.4) inset}
+  .layer-eval-grid label{gap:.32rem;min-width:0}
+  .layer-eval-grid label input[type=checkbox]{width:12px;height:12px;flex-shrink:0}
+  #pointColormap{min-width:9.5rem}
   .hud-grid label input[type=checkbox]{accent-color:#8ab4ff;width:14px;height:14px}
   .hud-grid strong#projMode{cursor:pointer;color:#c8d8ff}
+  .hud-advanced{margin-top:.45rem;border-top:1px solid rgba(60,80,140,.2);padding-top:.45rem}
+  .hud-advanced>summary{cursor:pointer;font-size:.62rem;font-weight:700;letter-spacing:.1em;text-transform:uppercase;color:#7d8db8;list-style:none;user-select:none}
+  .hud-advanced>summary::-webkit-details-marker{display:none}
+  .hud-advanced[open]>summary{color:#a8b8e8;margin-bottom:.35rem}
+  .hud-advanced .hud-grid{font-size:.74rem}
+  .hud-advanced .hud-grid label{display:flex;align-items:center;gap:.35rem;flex-wrap:wrap;width:100%}
+  .hud-advanced .hud-grid label input[type=range]{flex:1;min-width:100px}
+  .adv-out{font-size:.62rem;color:#8a9abf;font-family:var(--font-mono);min-width:2.5rem;text-align:right;flex-shrink:0}
 </style>
 </head><body><div id="app" class="app-root">
   <div class="top">
@@ -74,6 +141,14 @@
         <button id="camFollow">Follow</button>
         <button id="toggleLanelet">Lanelet OFF</button>
         <button id="toggleFullscreen" type="button" title="Fullscreen viewer">Fullscreen</button>
+        <details class="view-panels" id="viewPanels">
+          <summary>Panels</summary>
+          <div class="view-panels__body">
+            <label title="Scene, layers, and point controls"><input type="checkbox" id="uiShowHud" checked> Settings panel</label>
+            <label title="GT/EST per-frame counts"><input type="checkbox" id="uiShowMetricsCounts" checked> Count chart</label>
+            <label title="TPR, precision, F1, FDR (from counts)"><input type="checkbox" id="uiShowMetricsRates" checked> Rate chart</label>
+          </div>
+        </details>
       </div>
     </div>
     <div class="topRowScrubber">
@@ -87,13 +162,24 @@
     </div>
   </div>
   <div id="canvasWrap"><canvas id="canvas"></canvas>
+    <div id="metricsRatesWrap" class="metrics-wrap metrics-rates-wrap" hidden title="TPR=recall on GT, P=precision on detections, F1=harmonic mean, FDR=FP/(TP+FP)">
+      <div class="panel-drag-handle metrics-drag-head" title="Drag to move · double-click to snap back to default"><span class="metrics-title">Rates · TPR / P / F1 / FDR</span></div>
+      <div id="metricsRatesCaption" class="metrics-caption"></div>
+      <canvas id="metricsRatesCanvas"></canvas>
+      <div class="metrics-legend rates-legend" aria-hidden="true"><span class="r1">●</span>TPR <span class="r2">●</span>Prec <span class="r3">●</span>F1 <span class="r4">●</span>FDR</div>
+    </div>
     <div id="metricsWrap" class="metrics-wrap" hidden>
-      <div class="metrics-title">Frame metrics · WebGL</div>
+      <div class="panel-drag-handle metrics-drag-head" title="Drag to move · double-click to snap back to default"><span class="metrics-title">Counts · GT/EST buckets</span></div>
       <div id="metricsCaption" class="metrics-caption"></div>
       <canvas id="metricsCanvas"></canvas>
       <div class="metrics-legend" aria-hidden="true"><span class="c1">●</span>GT/TP <span class="c2">●</span>GT/FN <span class="c3">●</span>EST/TP <span class="c4">●</span>EST/FP</div>
     </div>
+    <button type="button" id="hudRevealBtn" hidden title="Show settings panel">⚙</button>
     <div id="hud" class="hud-panel">
+      <div class="hud-header-bar">
+        <div class="hud-drag-handle panel-drag-handle" id="hudDragHandle" title="Drag to move · double-click to reset position">Settings</div>
+        <button type="button" class="hud-panel-hide" id="hudHideBtn" title="Hide settings panel">✕</button>
+      </div>
       <div id="status">loading...</div>
       <div id="meta"></div>
       <div id="evalHud" hidden></div>
@@ -104,18 +190,39 @@
         <label>point size <input id="pointSize" type="range" min="0.02" max="0.25" step="0.01" value="0.08"></label>
         <label>point opacity <input id="pointOpacity" type="range" min="0.2" max="1.0" step="0.05" value="0.95"></label>
         <label>intensity gain <input id="intensityGain" type="range" min="0.4" max="2.5" step="0.1" value="1.0"></label>
+        <label>point colors <select id="pointColormap" title="Map lidar intensity to RGB">
+          <option value="turbo" selected>Turbo</option>
+          <option value="viridis">Viridis</option>
+          <option value="plasma">Plasma</option>
+          <option value="jet">Jet</option>
+          <option value="grayscale">Grayscale</option>
+          <option value="classic">Classic (blue→amber)</option>
+        </select></label>
+        <label title="Use min/max of this frame so intensity uses the full palette (helps flat/binary channels)"><input id="pointIntensityNormalize" type="checkbox" checked> normalize intensity (frame)</label>
         <label>box opacity <input id="boxOpacity" type="range" min="0.2" max="1.0" step="0.05" value="0.9"></label>
       </div>
       <hr class="hud-rule">
       <div class="hud-panel__section-title">Layers</div>
-      <div class="hud-grid">
-        <label title="Dataset 3D boxes from lidar / T4 sample (yellow wireframes)"><input id="show3dAnnotations" type="checkbox" checked> Dataset annotations</label>
-        <label title="Green — GT matched to a detection"><input id="showGtTp" type="checkbox" checked> GT / TP</label>
-        <label title="Orange — GT missed by detector"><input id="showGtFn" type="checkbox" checked> GT / FN</label>
-        <label title="Blue — detection matched to GT"><input id="showEstTp" type="checkbox" checked> EST / TP</label>
-        <label title="Red — detection with no GT match"><input id="showEstFp" type="checkbox" checked> EST / FP</label>
-        <label><input id="showMetricsPlot" type="checkbox" checked> Frame metrics chart</label>
+      <p class="hud-panel__hint">GT = filled glass · EST = wireframe (predictions draw on top)</p>
+      <div class="hud-grid hud-grid--layers">
+        <label title="Dataset 3D boxes from lidar / T4 sample (yellow wireframes)"><span class="layer-swatch" style="--sw:#ffd166"></span><input id="show3dAnnotations" type="checkbox" checked> 3D ann.</label>
+        <div class="layer-eval-grid" title="Eval layers — colors match 3D view">
+          <label title="GT / TP — green fill + outline"><span class="layer-swatch" style="--sw:#00cc66"></span><input id="showGtTp" type="checkbox" checked> G·TP</label>
+          <label title="GT / FN — orange fill + outline"><span class="layer-swatch" style="--sw:#ff9933"></span><input id="showGtFn" type="checkbox" checked> G·FN</label>
+          <label title="EST / TP — blue wireframe"><span class="layer-swatch" style="--sw:#66b3ff"></span><input id="showEstTp" type="checkbox" checked> E·TP</label>
+          <label title="EST / FP — red wireframe (fainter)"><span class="layer-swatch" style="--sw:#ff6666"></span><input id="showEstFp" type="checkbox" checked> E·FP</label>
+        </div>
       </div>
+      <details class="hud-advanced" id="hudAdvanced">
+        <summary>Advanced</summary>
+        <div class="hud-grid">
+          <label title="Atmospheric depth fade"><input type="checkbox" id="advFogEnable" checked> Scene fog</label>
+          <label>fog start <input id="fogNear" type="range" min="20" max="280" step="5" value="90"><span class="adv-out" id="fogNearOut">90</span></label>
+          <label>fog end <input id="fogFar" type="range" min="80" max="600" step="10" value="230"><span class="adv-out" id="fogFarOut">230</span></label>
+          <label>camera near <input id="camNear" type="range" min="0.05" max="5" step="0.05" value="0.1"><span class="adv-out" id="camNearOut">0.10</span></label>
+          <label>camera far <input id="camFar" type="range" min="200" max="5000" step="50" value="1000"><span class="adv-out" id="camFarOut">1000</span></label>
+        </div>
+      </details>
     </div>
   </div>
 </div>
@@ -157,6 +264,44 @@ camera.position.set(-12, -8, 4.5);
 camera.up.set(0, 0, 1);
 const controls = new OrbitControls(camera, renderer.domElement);
 controls.target.set(0,0,0); controls.update();
+
+function syncAdvRangeOutputs(){
+  const setOut = (rangeId, outId, decimals) => {
+    const r = document.getElementById(rangeId);
+    const o = document.getElementById(outId);
+    if (!r || !o) return;
+    o.textContent = decimals != null ? Number(r.value).toFixed(decimals) : String(r.value);
+  };
+  setOut("fogNear", "fogNearOut", null);
+  setOut("fogFar", "fogFarOut", null);
+  setOut("camNear", "camNearOut", 2);
+  setOut("camFar", "camFarOut", null);
+}
+
+function applyFogFromSettings(){
+  const en = document.getElementById("advFogEnable");
+  if (!en || !en.checked) {
+    scene.fog = null;
+    return;
+  }
+  const near = Number(document.getElementById("fogNear")?.value ?? 90);
+  let far = Number(document.getElementById("fogFar")?.value ?? 230);
+  if (far <= near + 1) far = near + 2;
+  scene.fog = new THREE.Fog(0x070b16, near, far);
+}
+
+function applyCameraClipFromSettings(){
+  const cn = Number(document.getElementById("camNear")?.value ?? 0.1);
+  let cf = Number(document.getElementById("camFar")?.value ?? 1000);
+  if (cf <= cn + 0.01) cf = cn + 1;
+  perspCamera.near = cn;
+  perspCamera.far = cf;
+  perspCamera.updateProjectionMatrix();
+  orthoCamera.near = cn;
+  orthoCamera.far = cf;
+  orthoCamera.updateProjectionMatrix();
+}
+
 scene.add(new THREE.AmbientLight(0x8aa6ff, 0.7));
 const dl = new THREE.DirectionalLight(0xffffff, 0.9); dl.position.set(12, -10, 30); scene.add(dl);
 const grid = new THREE.GridHelper(180, 90, 0x2b3a6f, 0x1a2342);
@@ -170,6 +315,8 @@ scene.add(pointsObj);
 const boxesGroup = new THREE.Group(); scene.add(boxesGroup);
 const gtLayerGroup = new THREE.Group(); scene.add(gtLayerGroup);
 const predLayerGroup = new THREE.Group(); scene.add(predLayerGroup);
+gtLayerGroup.renderOrder = 0;
+predLayerGroup.renderOrder = 1;
 const laneletGroup = new THREE.Group(); scene.add(laneletGroup);
 const egoAxes = new THREE.AxesHelper(2.8); scene.add(egoAxes);
 /** Ego vehicle root (base_link); mesh from sample_vehicle_description or wireframe fallback. */
@@ -246,6 +393,87 @@ let totalFrames = 0; let playing = false; let frame = startFrame; let fps = 6;
 let lastFrameTs = 0;
 let followEgo = true;
 let intensityGain = 1.0;
+
+function lerp(a, b, u){ return a + (b - a) * u; }
+
+/** Piecewise linear colormap: stops sorted by t in [0,1], RGB in [0,1]. */
+function lerpColorStops(t, stops){
+  t = Math.max(0, Math.min(1, t));
+  if (!stops || !stops.length) return [1, 1, 1];
+  if (t <= stops[0].t) return [stops[0].r, stops[0].g, stops[0].b];
+  const last = stops[stops.length - 1];
+  if (t >= last.t) return [last.r, last.g, last.b];
+  for (let i = 0; i < stops.length - 1; i++) {
+    const a = stops[i];
+    const b = stops[i + 1];
+    if (t >= a.t && t <= b.t) {
+      const u = (t - a.t) / (b.t - a.t + 1e-20);
+      return [lerp(a.r, b.r, u), lerp(a.g, b.g, u), lerp(a.b, b.b, u)];
+    }
+  }
+  return [last.r, last.g, last.b];
+}
+
+const TURBO_STOPS = [
+  { t: 0, r: 0.19, g: 0.07, b: 0.48 },
+  { t: 0.25, r: 0.0, g: 0.53, b: 0.99 },
+  { t: 0.5, r: 0.25, g: 0.99, b: 0.51 },
+  { t: 0.75, r: 0.99, g: 0.9, b: 0.25 },
+  { t: 1, r: 0.9, g: 0.15, b: 0.0 },
+];
+const VIRIDIS_STOPS = [
+  { t: 0, r: 0.267004, g: 0.004874, b: 0.329415 },
+  { t: 0.25, r: 0.282623, g: 0.140956, b: 0.457517 },
+  { t: 0.5, r: 0.253935, g: 0.265254, b: 0.529983 },
+  { t: 0.75, r: 0.206756, g: 0.371758, b: 0.553123 },
+  { t: 1, r: 0.993248, g: 0.906157, b: 0.143936 },
+];
+const PLASMA_STOPS = [
+  { t: 0, r: 0.050383, g: 0.029803, b: 0.527975 },
+  { t: 0.25, r: 0.493733, g: 0.011988, b: 0.657865 },
+  { t: 0.5, r: 0.798216, g: 0.280197, b: 0.469538 },
+  { t: 0.75, r: 0.987053, g: 0.633744, b: 0.279089 },
+  { t: 1, r: 0.940015, g: 0.975158, b: 0.131326 },
+];
+
+function colormapJet(t){
+  t = Math.max(0, Math.min(1, t));
+  const r = Math.min(1, Math.max(0, 1.5 - Math.abs(4 * t - 3)));
+  const g = Math.min(1, Math.max(0, 1.5 - Math.abs(4 * t - 2)));
+  const b = Math.min(1, Math.max(0, 1.5 - Math.abs(4 * t - 1)));
+  return [r, g, b];
+}
+
+/** Previous viewer mapping (blue ↔ warm). */
+function colormapClassic(t){
+  const u = Math.max(0, Math.min(1, t));
+  return [0.15 + 0.85 * u, 0.35 + 0.5 * (1 - u), 1.0 - 0.6 * u];
+}
+
+function intensityToRgb(tNorm, mapName){
+  switch (mapName) {
+    case "viridis": return lerpColorStops(tNorm, VIRIDIS_STOPS);
+    case "plasma": return lerpColorStops(tNorm, PLASMA_STOPS);
+    case "jet": return colormapJet(tNorm);
+    case "grayscale": {
+      const g = Math.max(0, Math.min(1, tNorm));
+      return [g, g, g];
+    }
+    case "classic": return colormapClassic(tNorm);
+    case "turbo":
+    default: return lerpColorStops(tNorm, TURBO_STOPS);
+  }
+}
+
+function getPointColormapName(){
+  const el = document.getElementById("pointColormap");
+  return (el && el.value) ? el.value : "turbo";
+}
+
+function getPointIntensityNormalize(){
+  const el = document.getElementById("pointIntensityNormalize");
+  return !!(el && el.checked);
+}
 let laneletEnabled = false;
 let laneletLoaded = false;
 let laneletBounds = null;
@@ -270,6 +498,21 @@ metricsRenderer.toneMapping = THREE.NoToneMapping;
 let metricsChartGroup = new THREE.Group();
 metricsScene.add(metricsChartGroup);
 let metricsPlayhead = null;
+
+const metricsRatesCanvas = document.getElementById("metricsRatesCanvas");
+const metricsRatesWrapEl = document.getElementById("metricsRatesWrap");
+const metricsRatesScene = new THREE.Scene();
+metricsRatesScene.background = null;
+const metricsRatesCamera = new THREE.OrthographicCamera(-1, 1, 1, -1, 0.1, 20);
+metricsRatesCamera.position.set(0, 0, 3);
+const metricsRatesRenderer = new THREE.WebGLRenderer({ canvas: metricsRatesCanvas, antialias: true, alpha: true });
+metricsRatesRenderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
+metricsRatesRenderer.setClearColor(0x000000, 0);
+metricsRatesRenderer.outputColorSpace = THREE.SRGBColorSpace;
+metricsRatesRenderer.toneMapping = THREE.NoToneMapping;
+let metricsRatesChartGroup = new THREE.Group();
+metricsRatesScene.add(metricsRatesChartGroup);
+let metricsRatesPlayhead = null;
 
 const slider = document.getElementById("slider");
 const frameTxt = document.getElementById("frameTxt");
@@ -350,24 +593,25 @@ function updateEvalHud(){
     return;
   }
   evalHudEl.hidden = false;
-  const mapLine = hasFrameMap
-    ? `<div class="row" style="margin-top:.35rem;opacity:.92"><span>per-frame keys</span><span>${mapKeys}</span></div>`
-    : "";
   const gTot = b.gt_tp + b.gt_fn;
   const pTot = b.est_tp + b.est_fp;
   const recall = gTot > 0 ? (b.gt_tp / gTot) : null;
   const precision = pTot > 0 ? (b.est_tp / pTot) : null;
   const rStr = recall != null ? recall.toFixed(3) : "—";
   const pStr = precision != null ? precision.toFixed(3) : "—";
+  const mapCompact = hasFrameMap
+    ? `<div class="eval-rp" style="margin-top:.2rem;opacity:.88">map keys ${mapKeys}</div>`
+    : "";
   evalHudEl.innerHTML =
-    `<div class="eval-hud-head">Eval · this frame</div>` +
-    `<div class="row"><span>GT / TP</span><span class="nGt">${b.gt_tp}</span></div>` +
-    `<div class="row"><span>GT / FN</span><span style="color:#ff9933">${b.gt_fn}</span></div>` +
-    `<div class="row"><span>EST / TP</span><span style="color:#66b3ff">${b.est_tp}</span></div>` +
-    `<div class="row"><span>EST / FP</span><span style="color:#ff6666">${b.est_fp}</span></div>` +
-    `<div class="row" style="opacity:.9"><span>R (recall)</span><span>${rStr}</span></div>` +
-    `<div class="row" style="opacity:.9"><span>P (precision)</span><span>${pStr}</span></div>` +
-    mapLine;
+    `<div class="eval-hud-head">Eval</div>` +
+    `<div class="eval-grid4">` +
+    `<span><span class="eval-swatch" style="background:#00cc66"></span><span class="eval-lbl">G·TP</span><span class="eval-val" style="color:#5ee4a8">${b.gt_tp}</span></span>` +
+    `<span><span class="eval-swatch" style="background:#ff9933"></span><span class="eval-lbl">G·FN</span><span class="eval-val" style="color:#ff9933">${b.gt_fn}</span></span>` +
+    `<span><span class="eval-swatch" style="background:#66b3ff"></span><span class="eval-lbl">E·TP</span><span class="eval-val" style="color:#8ec8ff">${b.est_tp}</span></span>` +
+    `<span><span class="eval-swatch" style="background:#ff6666"></span><span class="eval-lbl">E·FP</span><span class="eval-val" style="color:#ff9999">${b.est_fp}</span></span>` +
+    `</div>` +
+    `<div class="eval-rp">R ${rStr} · P ${pStr}</div>` +
+    mapCompact;
 }
 function syncFullscreenButton(){
   const btn = document.getElementById("toggleFullscreen");
@@ -390,14 +634,145 @@ function resizeMainRenderer(){
     camera.bottom = -fr;
   }
   camera.updateProjectionMatrix();
+  layoutMetricsStacks();
   resizeMetricsRenderer();
 }
 
+function layoutMetricsStacks(){
+  const countOn = document.getElementById("uiShowMetricsCounts") && document.getElementById("uiShowMetricsCounts").checked;
+  const ratesOn = document.getElementById("uiShowMetricsRates") && document.getElementById("uiShowMetricsRates").checked;
+  const gap = 8;
+  const chartH = 168;
+  if (metricsRatesWrapEl && !metricsRatesWrapEl.dataset.userPos) {
+    if (ratesOn && countOn) metricsRatesWrapEl.style.bottom = `${12 + chartH + gap}px`;
+    else if (ratesOn) metricsRatesWrapEl.style.bottom = "12px";
+    else metricsRatesWrapEl.style.bottom = "";
+  }
+}
+
+function clampPanelToParent(panelEl, parentEl){
+  const parent = parentEl || document.getElementById("canvasWrap");
+  if (!panelEl || !parent || panelEl.hidden || !panelEl.dataset.userPos) return;
+  const pr = parent.getBoundingClientRect();
+  const ew = panelEl.offsetWidth;
+  const eh = panelEl.offsetHeight;
+  let l = parseFloat(panelEl.style.left);
+  let t = parseFloat(panelEl.style.top);
+  if (!Number.isFinite(l) || !Number.isFinite(t)) return;
+  l = Math.max(0, Math.min(l, Math.max(0, pr.width - ew)));
+  t = Math.max(0, Math.min(t, Math.max(0, pr.height - eh)));
+  panelEl.style.left = `${l}px`;
+  panelEl.style.top = `${t}px`;
+}
+
+function clampAllMovablePanels(){
+  const parent = document.getElementById("canvasWrap");
+  ["hud", "metricsWrap", "metricsRatesWrap"].forEach((id) => {
+    const el = document.getElementById(id);
+    if (el) clampPanelToParent(el, parent);
+  });
+}
+
+function resetPanelPosition(panelEl){
+  if (!panelEl) return;
+  delete panelEl.dataset.userPos;
+  panelEl.style.left = "";
+  panelEl.style.top = "";
+  panelEl.style.right = "";
+  panelEl.style.bottom = "";
+  layoutMetricsStacks();
+}
+
+/** Clear drag offsets on all overlay panels; one layoutMetricsStacks at end. */
+function resetAllPanelPositions(){
+  ["hud", "metricsWrap", "metricsRatesWrap"].forEach((id) => {
+    const el = document.getElementById(id);
+    if (!el) return;
+    delete el.dataset.userPos;
+    el.style.left = "";
+    el.style.top = "";
+    el.style.right = "";
+    el.style.bottom = "";
+  });
+  layoutMetricsStacks();
+}
+
+/**
+ * Drag panel by handle (pointer); double-click handle resets to default CSS layout.
+ * Uses #canvasWrap as bounding box.
+ */
+function makePanelDraggable(panelEl, handleEl, parentEl){
+  const parent = parentEl || document.getElementById("canvasWrap");
+  if (!panelEl || !handleEl || !parent) return;
+  let dragging = false;
+  let startX = 0;
+  let startY = 0;
+  let origLeft = 0;
+  let origTop = 0;
+
+  function panelToLeftTop(){
+    const er = panelEl.getBoundingClientRect();
+    const pr = parent.getBoundingClientRect();
+    panelEl.style.left = `${er.left - pr.left}px`;
+    panelEl.style.top = `${er.top - pr.top}px`;
+    panelEl.style.right = "auto";
+    panelEl.style.bottom = "auto";
+    panelEl.dataset.userPos = "1";
+  }
+
+  handleEl.addEventListener("pointerdown", (ev) => {
+    if (ev.button !== 0) return;
+    ev.preventDefault();
+    panelToLeftTop();
+    dragging = true;
+    startX = ev.clientX;
+    startY = ev.clientY;
+    origLeft = parseFloat(panelEl.style.left) || 0;
+    origTop = parseFloat(panelEl.style.top) || 0;
+    try {
+      handleEl.setPointerCapture(ev.pointerId);
+    } catch (_) {}
+    handleEl.style.cursor = "grabbing";
+  });
+
+  handleEl.addEventListener("pointermove", (ev) => {
+    if (!dragging) return;
+    const dx = ev.clientX - startX;
+    const dy = ev.clientY - startY;
+    panelEl.style.left = `${origLeft + dx}px`;
+    panelEl.style.top = `${origTop + dy}px`;
+    clampPanelToParent(panelEl, parent);
+  });
+
+  function endDrag(ev){
+    if (!dragging) return;
+    dragging = false;
+    try {
+      if (ev && ev.pointerId != null) handleEl.releasePointerCapture(ev.pointerId);
+    } catch (_) {}
+    handleEl.style.cursor = "grab";
+  }
+
+  handleEl.addEventListener("pointerup", endDrag);
+  handleEl.addEventListener("pointercancel", endDrag);
+
+  handleEl.addEventListener("dblclick", (ev) => {
+    ev.preventDefault();
+    resetPanelPosition(panelEl);
+  });
+}
+
 function resizeMetricsRenderer(){
-  if (!metricsWrapEl || !metricsCanvas || metricsWrapEl.hidden) return;
-  const w = Math.max(120, metricsWrapEl.clientWidth || 280);
-  const h = Math.max(80, metricsWrapEl.clientHeight || 120);
-  metricsRenderer.setSize(w, h, false);
+  if (metricsWrapEl && metricsCanvas && !metricsWrapEl.hidden) {
+    const w = Math.max(120, metricsWrapEl.clientWidth || 280);
+    const h = Math.max(80, metricsWrapEl.clientHeight || 120);
+    metricsRenderer.setSize(w, h, false);
+  }
+  if (metricsRatesWrapEl && metricsRatesCanvas && !metricsRatesWrapEl.hidden) {
+    const w = Math.max(120, metricsRatesWrapEl.clientWidth || 280);
+    const h = Math.max(80, metricsRatesWrapEl.clientHeight || 120);
+    metricsRatesRenderer.setSize(w, h, false);
+  }
 }
 
 /** Four count series per frame from override or per-frame bbox map (GT·TP / GT·FN / EST·TP / EST·FP). */
@@ -465,14 +840,43 @@ function computeMetricsSeries(){
   return { gt_tp, gt_fn, est_tp, est_fp, n: totalFrames };
 }
 
+/** Per-frame rates in [0,1]: TPR (recall), precision, F1, FDR = FP/(TP+FP) on detections. */
+function computeRateSeries(){
+  const s = computeMetricsSeries();
+  if (!s || s.n <= 0) return null;
+  const n = s.n;
+  const tpr = [];
+  const prec = [];
+  const f1 = [];
+  const fdr = [];
+  for (let i = 0; i < n; i++) {
+    const a = s.gt_tp[i];
+    const b = s.gt_fn[i];
+    const c = s.est_tp[i];
+    const d = s.est_fp[i];
+    const gTot = a + b;
+    const pTot = c + d;
+    const R = gTot > 0 ? a / gTot : 0;
+    const P = pTot > 0 ? c / pTot : 0;
+    const F1 = R + P > 1e-12 ? (2 * R * P) / (R + P) : 0;
+    const FDR = pTot > 0 ? d / pTot : 0;
+    tpr.push(R);
+    prec.push(P);
+    f1.push(F1);
+    fdr.push(FDR);
+  }
+  return { tpr, prec, f1, fdr, n };
+}
+
 function rebuildMetricsPlot(){
   while (metricsChartGroup.children.length) metricsChartGroup.remove(metricsChartGroup.children[0]);
   metricsPlayhead = null;
-  const want = document.getElementById("showMetricsPlot") && document.getElementById("showMetricsPlot").checked;
+  const want = document.getElementById("uiShowMetricsCounts") && document.getElementById("uiShowMetricsCounts").checked;
   if (!metricsWrapEl || !want) {
     if (metricsWrapEl) metricsWrapEl.hidden = true;
     const cap0 = document.getElementById("metricsCaption");
     if (cap0) cap0.textContent = "";
+    layoutMetricsStacks();
     return;
   }
   const series = computeMetricsSeries();
@@ -480,6 +884,7 @@ function rebuildMetricsPlot(){
     metricsWrapEl.hidden = true;
     const cap1 = document.getElementById("metricsCaption");
     if (cap1) cap1.textContent = "";
+    layoutMetricsStacks();
     return;
   }
   const { gt_tp, gt_fn, est_tp, est_fp, n } = series;
@@ -556,9 +961,95 @@ function rebuildMetricsPlot(){
   metricsChartGroup.add(metricsPlayhead);
 
   metricsWrapEl.hidden = false;
+  layoutMetricsStacks();
   resizeMetricsRenderer();
   updateMetricsPlayhead();
   updateMetricsFrameCaption();
+}
+
+function rebuildMetricsRatesPlot(){
+  while (metricsRatesChartGroup.children.length) metricsRatesChartGroup.remove(metricsRatesChartGroup.children[0]);
+  metricsRatesPlayhead = null;
+  const want = document.getElementById("uiShowMetricsRates") && document.getElementById("uiShowMetricsRates").checked;
+  if (!metricsRatesWrapEl || !want) {
+    if (metricsRatesWrapEl) metricsRatesWrapEl.hidden = true;
+    const c0 = document.getElementById("metricsRatesCaption");
+    if (c0) c0.textContent = "";
+    layoutMetricsStacks();
+    return;
+  }
+  const rs = computeRateSeries();
+  if (!rs || rs.n <= 0) {
+    metricsRatesWrapEl.hidden = true;
+    const c1 = document.getElementById("metricsRatesCaption");
+    if (c1) c1.textContent = "";
+    layoutMetricsStacks();
+    return;
+  }
+  const { tpr, prec, f1, fdr, n } = rs;
+  const x0 = -0.9;
+  const x1 = 0.9;
+  const y0 = -0.78;
+  const y1 = 0.78;
+  const span = x1 - x0;
+
+  const bg = new THREE.Mesh(
+    new THREE.PlaneGeometry(2.05, 1.85),
+    new THREE.MeshBasicMaterial({ color: 0x06091c, transparent: true, opacity: 0.92 })
+  );
+  bg.position.z = -0.02;
+  metricsRatesChartGroup.add(bg);
+
+  for (let g = 0; g <= 4; g++) {
+    const t = g / 4;
+    const yy = y0 + (y1 - y0) * t;
+    const gg = new THREE.BufferGeometry();
+    gg.setAttribute("position", new THREE.Float32BufferAttribute([x0, yy, 0, x1, yy, 0], 3));
+    metricsRatesChartGroup.add(new THREE.Line(gg, new THREE.LineBasicMaterial({ color: 0x2a3f60, transparent: true, opacity: 0.55 })));
+  }
+
+  function lineStrip01(vals, color){
+    const pts = [];
+    for (let i = 0; i < n; i++) {
+      const xf = n <= 1 ? 0.5 : i / (n - 1);
+      const x = x0 + span * xf;
+      const vn = Math.max(0, Math.min(1, vals[i]));
+      const y = y0 + (y1 - y0) * vn;
+      pts.push(x, y, 0.02);
+    }
+    if (pts.length === 3) pts.push(pts[0], pts[1], pts[2]);
+    const geom = new THREE.BufferGeometry();
+    geom.setAttribute("position", new THREE.Float32BufferAttribute(pts, 3));
+    return new THREE.Line(geom, new THREE.LineBasicMaterial({ color, transparent: true, opacity: 0.95 }));
+  }
+  metricsRatesChartGroup.add(lineStrip01(tpr, 0x5ee4a8));
+  metricsRatesChartGroup.add(lineStrip01(prec, 0x66b3ff));
+  metricsRatesChartGroup.add(lineStrip01(f1, 0xffcc66));
+  metricsRatesChartGroup.add(lineStrip01(fdr, 0xff7799));
+
+  const phGeom = new THREE.BufferGeometry();
+  const phPos = new Float32Array([-0.9, -0.78, 0.04, -0.9, 0.78, 0.04]);
+  phGeom.setAttribute("position", new THREE.BufferAttribute(phPos, 3));
+  metricsRatesPlayhead = new THREE.Group();
+  metricsRatesPlayhead.userData.geom = phGeom;
+  metricsRatesPlayhead.add(new THREE.Line(phGeom, new THREE.LineBasicMaterial({ color: 0xffffff, transparent: true, opacity: 1 })));
+  const phGeom2 = new THREE.BufferGeometry();
+  const phPos2 = new Float32Array(phPos);
+  phGeom2.setAttribute("position", new THREE.BufferAttribute(phPos2, 3));
+  metricsRatesPlayhead.userData.geomGlow = phGeom2;
+  metricsRatesPlayhead.add(new THREE.Line(phGeom2, new THREE.LineBasicMaterial({ color: 0xffcc66, transparent: true, opacity: 0.45 })));
+  metricsRatesChartGroup.add(metricsRatesPlayhead);
+
+  metricsRatesWrapEl.hidden = false;
+  layoutMetricsStacks();
+  resizeMetricsRenderer();
+  updateMetricsRatesPlayhead();
+  updateMetricsRatesCaption();
+}
+
+function rebuildAllMetricsPlots(){
+  rebuildMetricsPlot();
+  rebuildMetricsRatesPlot();
 }
 
 function updateMetricsFrameCaption(){
@@ -581,6 +1072,45 @@ function updateMetricsFrameCaption(){
   cap.textContent =
     `f${i}: GT·TP=${a} GT·FN=${b} · EST·TP=${c} EST·FP=${d}` +
     ` · R=${r != null ? r.toFixed(3) : "—"} P=${p != null ? p.toFixed(3) : "—"}`;
+}
+
+function updateMetricsRatesCaption(){
+  const cap = document.getElementById("metricsRatesCaption");
+  if (!cap) return;
+  const rs = computeRateSeries();
+  if (!rs || rs.n <= 0) {
+    cap.textContent = "";
+    return;
+  }
+  const i = Math.min(Math.max(0, frame), rs.n - 1);
+  cap.textContent =
+    `f${i}: TPR=${rs.tpr[i].toFixed(3)} P=${rs.prec[i].toFixed(3)} F1=${rs.f1[i].toFixed(3)} FDR=${rs.fdr[i].toFixed(3)}`;
+}
+
+function updateMetricsRatesPlayhead(){
+  if (!metricsRatesPlayhead || !metricsRatesPlayhead.userData || !metricsRatesWrapEl || metricsRatesWrapEl.hidden) return;
+  const rs = computeRateSeries();
+  if (!rs || rs.n <= 0) return;
+  const n = rs.n;
+  const xf = n <= 1 ? 0.5 : frame / Math.max(n - 1, 1);
+  const x0 = -0.9;
+  const x1 = 0.9;
+  const x = x0 + (x1 - x0) * xf;
+  const y0 = -0.78;
+  const y1 = 0.78;
+  const g0 = metricsRatesPlayhead.userData.geom;
+  const g1 = metricsRatesPlayhead.userData.geomGlow;
+  if (g0 && g0.attributes.position) {
+    const a = g0.attributes.position.array;
+    a[0] = x; a[1] = y0; a[3] = x; a[4] = y1;
+    g0.attributes.position.needsUpdate = true;
+  }
+  if (g1 && g1.attributes.position) {
+    const b = g1.attributes.position.array;
+    b[0] = x; b[1] = y0; b[3] = x; b[4] = y1;
+    g1.attributes.position.needsUpdate = true;
+  }
+  updateMetricsRatesCaption();
 }
 
 function updateMetricsPlayhead(){
@@ -607,18 +1137,71 @@ function updateMetricsPlayhead(){
     g1.attributes.position.needsUpdate = true;
   }
   updateMetricsFrameCaption();
+  updateMetricsRatesPlayhead();
 }
 
 function syncMetricsPlotVisibility(){
-  const chk = document.getElementById("showMetricsPlot");
+  const chk = document.getElementById("uiShowMetricsCounts");
   if (!chk || !chk.checked) {
     if (metricsWrapEl) metricsWrapEl.hidden = true;
     const cap = document.getElementById("metricsCaption");
     if (cap) cap.textContent = "";
+    layoutMetricsStacks();
+    resizeMetricsRenderer();
     return;
   }
   rebuildMetricsPlot();
 }
+
+function syncMetricsRatesPlotVisibility(){
+  const chk = document.getElementById("uiShowMetricsRates");
+  if (!chk || !chk.checked) {
+    if (metricsRatesWrapEl) metricsRatesWrapEl.hidden = true;
+    const cap = document.getElementById("metricsRatesCaption");
+    if (cap) cap.textContent = "";
+    layoutMetricsStacks();
+    resizeMetricsRenderer();
+    return;
+  }
+  rebuildMetricsRatesPlot();
+}
+
+function applyPanelVisibility(){
+  const hudEl = document.getElementById("hud");
+  const hudOn = document.getElementById("uiShowHud") && document.getElementById("uiShowHud").checked;
+  const fab = document.getElementById("hudRevealBtn");
+  if (hudEl) hudEl.hidden = !hudOn;
+  if (fab) fab.hidden = hudOn;
+  syncMetricsPlotVisibility();
+  syncMetricsRatesPlotVisibility();
+}
+
+(function wireHudHideAndAdvanced(){
+  document.getElementById("advFogEnable")?.addEventListener("change", applyFogFromSettings);
+  ["fogNear", "fogFar"].forEach((id) => {
+    document.getElementById(id)?.addEventListener("input", () => {
+      syncAdvRangeOutputs();
+      applyFogFromSettings();
+    });
+  });
+  ["camNear", "camFar"].forEach((id) => {
+    document.getElementById(id)?.addEventListener("input", () => {
+      syncAdvRangeOutputs();
+      applyCameraClipFromSettings();
+    });
+  });
+  syncAdvRangeOutputs();
+  applyFogFromSettings();
+  applyCameraClipFromSettings();
+
+  document.getElementById("hudHideBtn")?.addEventListener("click", (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    const c = document.getElementById("uiShowHud");
+    if (c) c.checked = false;
+    applyPanelVisibility();
+  });
+})();
 
 function readFloat32Copied(buf, off, count){
   const bytes = new Uint8Array(buf, off, count * 4);
@@ -743,6 +1326,106 @@ function evalLineColor(box, layerId){
   return layerId === "pred" ? 0x66b3ff : 0x4bd08d;
 }
 
+/** Same pose math as wireframe path; used for GT solid boxes. */
+function readEvalBoxPose(box){
+  const yawOff = getExternalBboxYawOffset();
+  const swapLW = getExternalBboxSwapLW();
+  const cx = Number(box.x ?? box.cx ?? 0);
+  const cy = Number(box.y ?? box.cy ?? 0);
+  const cz = Number(box.z ?? box.cz ?? 0);
+  let l = Math.max(0.01, Number(box.length ?? box.l ?? 1.0));
+  let w = Math.max(0.01, Number(box.width ?? box.w ?? 1.0));
+  const h = Math.max(0.01, Number(box.height ?? box.h ?? 1.0));
+  if (swapLW || box.swap_lw === true) {
+    const t = l;
+    l = w;
+    w = t;
+  }
+  const yaw = Number(box.yaw ?? box.heading ?? 0.0) + yawOff;
+  return { cx, cy, cz, l, w, h, yaw };
+}
+
+/** Mesh GT boxes need center+size; pure 24-float corners use wireframe fallback. */
+function canBuildGtMeshFromBox(box){
+  if (Array.isArray(box.corners) && box.corners.length === 24) return false;
+  const l = Number(box.length ?? box.l ?? 0);
+  const wi = Number(box.width ?? box.w ?? 0);
+  const hi = Number(box.height ?? box.h ?? 0);
+  if (!(l > 0 && wi > 0 && hi > 0)) return false;
+  return true;
+}
+
+/**
+ * GT: semi-transparent filled box + crisp edges (reference geometry).
+ * FN: lighter fill so TP reads as “solid match”; edges stay visible.
+ */
+function addGtEvalBoxMesh(group, box, layerId){
+  const pose = readEvalBoxPose(box);
+  const col = evalLineColor(box, layerId);
+  const st = normalizeEvalStatus(box);
+  const isFn = st === "FN";
+  const v = Number(document.getElementById("boxOpacity").value || "0.9");
+  const faceMul = isFn ? 0.08 : 0.19;
+  const edgeMul = isFn ? 0.82 : 1.0;
+  const geom = new THREE.BoxGeometry(pose.l, pose.w, pose.h);
+  const faceMat = new THREE.MeshBasicMaterial({
+    color: col,
+    transparent: true,
+    opacity: v * faceMul,
+    depthWrite: false,
+    side: THREE.DoubleSide,
+    polygonOffset: true,
+    polygonOffsetFactor: 1,
+    polygonOffsetUnits: 1,
+  });
+  const mesh = new THREE.Mesh(geom, faceMat);
+  mesh.position.set(pose.cx, pose.cy, pose.cz);
+  mesh.rotation.z = pose.yaw;
+  mesh.userData.opacityFactor = faceMul;
+  const edgeGeom = new THREE.EdgesGeometry(geom, 22);
+  const edgeMat = new THREE.LineBasicMaterial({
+    color: col,
+    transparent: true,
+    opacity: v * edgeMul,
+  });
+  const outline = new THREE.LineSegments(edgeGeom, edgeMat);
+  outline.userData.opacityFactor = edgeMul;
+  mesh.add(outline);
+  group.add(mesh);
+}
+
+/** EST: wireframe only; FP drawn fainter so TP/FP separate without new color names. */
+function addEstEvalWireframe(group, box, layerId){
+  const edges = boxEdgesFromCorners(box) || boxEdgesFromCenterExternal(box);
+  const g = new THREE.BufferGeometry();
+  g.setAttribute("position", new THREE.Float32BufferAttribute(edges, 3));
+  const col = evalLineColor(box, layerId);
+  const st = normalizeEvalStatus(box);
+  const isFp = st === "FP";
+  const v = Number(document.getElementById("boxOpacity").value || "0.9");
+  const edgeMul = isFp ? 0.5 : 1.0;
+  const m = new THREE.LineBasicMaterial({
+    color: col,
+    transparent: true,
+    opacity: v * edgeMul,
+  });
+  const seg = new THREE.LineSegments(g, m);
+  seg.userData.opacityFactor = edgeMul;
+  group.add(seg);
+}
+
+function addEvalWireframeLinesOnly(group, box, layerId){
+  const edges = boxEdgesFromCorners(box) || boxEdgesFromCenterExternal(box);
+  const g = new THREE.BufferGeometry();
+  g.setAttribute("position", new THREE.Float32BufferAttribute(edges, 3));
+  const col = evalLineColor(box, layerId);
+  const v = Number(document.getElementById("boxOpacity").value || "0.9");
+  const m = new THREE.LineBasicMaterial({ color: col, transparent: true, opacity: v });
+  const seg = new THREE.LineSegments(g, m);
+  seg.userData.opacityFactor = 1;
+  group.add(seg);
+}
+
 function isEvalTupleVisible(box, layerId){
   const kind = normalizeEvalKind(box, layerId);
   const st = normalizeEvalStatus(box);
@@ -758,26 +1441,23 @@ function isEvalTupleVisible(box, layerId){
   return showEstTp || showEstFp;
 }
 
-function drawLayerBoxes(group, boxes, layerId, width=1.4){
+function drawLayerBoxes(group, boxes, layerId){
   clearGroup(group);
   if (!Array.isArray(boxes)) return;
-  const opacity = Number(document.getElementById("boxOpacity").value || "0.9");
   for (const b of boxes){
     if (!isEvalTupleVisible(b, layerId)) continue;
-    const edges = boxEdgesFromCorners(b) || boxEdgesFromCenterExternal(b);
-    const g = new THREE.BufferGeometry();
-    g.setAttribute("position", new THREE.Float32BufferAttribute(edges, 3));
-    const col = evalLineColor(b, layerId);
-    const m = new THREE.LineBasicMaterial({ color: col, transparent: true, opacity });
-    const seg = new THREE.LineSegments(g, m);
-    seg.userData.lineWidth = width;
-    group.add(seg);
+    if (layerId === "gt") {
+      if (canBuildGtMeshFromBox(b)) addGtEvalBoxMesh(group, b, layerId);
+      else addEvalWireframeLinesOnly(group, b, layerId);
+    } else {
+      addEstEvalWireframe(group, b, layerId);
+    }
   }
 }
 
 function renderExternalLayers(){
-  drawLayerBoxes(gtLayerGroup, externalLayers.gt, "gt", 1.2);
-  drawLayerBoxes(predLayerGroup, externalLayers.pred, "pred", 1.2);
+  drawLayerBoxes(gtLayerGroup, externalLayers.gt, "gt");
+  drawLayerBoxes(predLayerGroup, externalLayers.pred, "pred");
   const gtOn = !!(document.getElementById("showGtTp") && document.getElementById("showGtTp").checked)
     || !!(document.getElementById("showGtFn") && document.getElementById("showGtFn").checked);
   const prOn = !!(document.getElementById("showEstTp") && document.getElementById("showEstTp").checked)
@@ -892,13 +1572,42 @@ async function prefetchAround(i){
 }
 
 function setFrameData(data){
-  const pos = new Float32Array(data.pointCount * 3);
-  const col = new Float32Array(data.pointCount * 3);
-  for (let i=0;i<data.pointCount;i++) {
-    const x = data.pts[i*4], y=data.pts[i*4+1], z=data.pts[i*4+2], inten=data.pts[i*4+3];
-    pos[i*3]=x; pos[i*3+1]=y; pos[i*3+2]=z;
-    const t = Math.max(0, Math.min(1, inten * intensityGain));
-    col[i*3]=0.15+0.85*t; col[i*3+1]=0.35+0.5*(1-t); col[i*3+2]=1.0-0.6*t;
+  const n = data.pointCount;
+  const pos = new Float32Array(n * 3);
+  const col = new Float32Array(n * 3);
+  const mapName = getPointColormapName();
+  const normalize = getPointIntensityNormalize();
+  let minI = Infinity;
+  let maxI = -Infinity;
+  if (normalize && n > 0) {
+    for (let i = 0; i < n; i++) {
+      const s = data.pts[i * 4 + 3] * intensityGain;
+      if (s < minI) minI = s;
+      if (s > maxI) maxI = s;
+    }
+  }
+  const rng = maxI - minI;
+  const eps = 1e-9;
+  for (let i = 0; i < n; i++) {
+    const x = data.pts[i * 4];
+    const y = data.pts[i * 4 + 1];
+    const z = data.pts[i * 4 + 2];
+    const inten = data.pts[i * 4 + 3];
+    pos[i * 3] = x;
+    pos[i * 3 + 1] = y;
+    pos[i * 3 + 2] = z;
+    const scaled = inten * intensityGain;
+    let tNorm;
+    if (normalize && n > 0) {
+      if (rng <= eps) tNorm = 0.5;
+      else tNorm = (scaled - minI) / rng;
+    } else {
+      tNorm = Math.max(0, Math.min(1, scaled));
+    }
+    const rgb = intensityToRgb(tNorm, mapName);
+    col[i * 3] = rgb[0];
+    col[i * 3 + 1] = rgb[1];
+    col[i * 3 + 2] = rgb[2];
   }
   pointsGeom.setAttribute("position", new THREE.BufferAttribute(pos, 3));
   pointsGeom.setAttribute("color", new THREE.BufferAttribute(col, 3));
@@ -1011,9 +1720,22 @@ document.getElementById("toggleLanelet").addEventListener("click", async () => {
 document.getElementById("show3dAnnotations").addEventListener("change", (e) => {
   boxesGroup.visible = !!e.target.checked;
 });
-document.getElementById("showMetricsPlot").addEventListener("change", () => {
-  syncMetricsPlotVisibility();
+["uiShowHud", "uiShowMetricsCounts", "uiShowMetricsRates"].forEach((id) => {
+  const el = document.getElementById(id);
+  if (el) el.addEventListener("change", () => applyPanelVisibility());
 });
+{
+  const hudFab = document.getElementById("hudRevealBtn");
+  if (hudFab) {
+    hudFab.addEventListener("click", () => {
+      const c = document.getElementById("uiShowHud");
+      if (c) {
+        c.checked = true;
+        applyPanelVisibility();
+      }
+    });
+  }
+}
 document.getElementById("pointSize").addEventListener("input", (e) => {
   pointsMat.size = Number(e.target.value || "0.08");
 });
@@ -1025,18 +1747,34 @@ document.getElementById("intensityGain").addEventListener("input", async (e) => 
   const data = cache.get(frame);
   if (data) setFrameData(data);
 });
-function applyOpacityToLineGroup(grp, v){
-  for (const child of grp.children) {
-    if (child.material) child.material.opacity = v;
-  }
+document.getElementById("pointColormap").addEventListener("change", () => {
+  const data = cache.get(frame);
+  if (data) setFrameData(data);
+});
+document.getElementById("pointIntensityNormalize").addEventListener("change", () => {
+  const data = cache.get(frame);
+  if (data) setFrameData(data);
+});
+/** GT meshes + nested edge outlines; EST line segments — scale by userData.opacityFactor. */
+function applyOpacityToEvalLayerGroup(grp, v){
+  grp.traverse((o) => {
+    if (!o.material) return;
+    const f = o.userData.opacityFactor != null ? o.userData.opacityFactor : 1;
+    const mats = Array.isArray(o.material) ? o.material : [o.material];
+    for (const m of mats) {
+      if (!m) continue;
+      m.transparent = true;
+      m.opacity = v * f;
+    }
+  });
 }
 document.getElementById("boxOpacity").addEventListener("input", () => {
   const v = Number(document.getElementById("boxOpacity").value || "0.9");
   for (const child of boxesGroup.children) {
     if (child.material) child.material.opacity = v;
   }
-  applyOpacityToLineGroup(gtLayerGroup, v);
-  applyOpacityToLineGroup(predLayerGroup, v);
+  applyOpacityToEvalLayerGroup(gtLayerGroup, v);
+  applyOpacityToEvalLayerGroup(predLayerGroup, v);
   applyEgoOpacity(v);
 });
 ["showGtTp", "showGtFn", "showEstTp", "showEstFp"].forEach((id) => {
@@ -1080,7 +1818,7 @@ window.addEventListener("message", (ev) => {
         .then((body) => console.info("[viewer-debug] bbox_layers_by_frame ack ok", body))
         .catch((err) => console.warn("[viewer-debug] bbox_layers_by_frame ack failed", err));
       applyEvalLayersForFrame(frame);
-      rebuildMetricsPlot();
+      rebuildAllMetricsPlots();
     }
   } else if (d.type === "eval_metrics_series") {
     metricsSeriesOverride = {
@@ -1092,19 +1830,19 @@ window.addEventListener("message", (ev) => {
       pred: Array.isArray(d.pred) ? d.pred : [],
       tpr: Array.isArray(d.tpr) ? d.tpr : null,
     };
-    rebuildMetricsPlot();
+    rebuildAllMetricsPlots();
   } else if (d.type === "bbox_layers_clear") {
     bboxLayersByFrame = null;
     metricsSeriesOverride = null;
     externalLayers = { gt: [], pred: [] };
     renderExternalLayers();
     updateEvalHud();
-    rebuildMetricsPlot();
+    rebuildAllMetricsPlots();
   }
 });
 window.T4ViewerAPI = {
   setLayers(payload){ bboxLayersByFrame = null; setExternalLayerPayload(payload || {}); },
-  clearLayers(){ bboxLayersByFrame = null; externalLayers = { gt: [], pred: [] }; renderExternalLayers(); updateEvalHud(); rebuildMetricsPlot(); },
+  clearLayers(){ bboxLayersByFrame = null; externalLayers = { gt: [], pred: [] }; renderExternalLayers(); updateEvalHud(); rebuildAllMetricsPlots(); },
   setMetricsSeries(obj){
     if (!obj || typeof obj !== "object") return;
     metricsSeriesOverride = {
@@ -1116,9 +1854,9 @@ window.T4ViewerAPI = {
       pred: Array.isArray(obj.pred) ? obj.pred : [],
       tpr: Array.isArray(obj.tpr) ? obj.tpr : null,
     };
-    rebuildMetricsPlot();
+    rebuildAllMetricsPlots();
   },
-  clearMetricsSeries(){ metricsSeriesOverride = null; rebuildMetricsPlot(); },
+  clearMetricsSeries(){ metricsSeriesOverride = null; rebuildAllMetricsPlots(); },
   getFrameContext(){ return { dataset, scenario, frame, totalFrames }; },
 };
 document.getElementById("toggleFullscreen").addEventListener("click", async () => {
@@ -1135,6 +1873,7 @@ document.getElementById("toggleFullscreen").addEventListener("click", async () =
 });
 document.addEventListener("fullscreenchange", () => {
   syncFullscreenButton();
+  resetAllPanelPositions();
   resizeMainRenderer();
   resizeMetricsRenderer();
 });
@@ -1147,6 +1886,7 @@ document.getElementById("frameNext").addEventListener("click", () => {
 window.addEventListener("resize", () => {
   resizeMainRenderer();
   resizeMetricsRenderer();
+  clampAllMovablePanels();
 });
 
 function animate(ts){
@@ -1158,9 +1898,13 @@ function animate(ts){
   }
   controls.update();
   renderer.render(scene, camera);
-  const mchk = document.getElementById("showMetricsPlot");
-  if (mchk && mchk.checked && metricsWrapEl && !metricsWrapEl.hidden && metricsChartGroup.children.length) {
+  const cntOn = document.getElementById("uiShowMetricsCounts") && document.getElementById("uiShowMetricsCounts").checked;
+  const rateOn = document.getElementById("uiShowMetricsRates") && document.getElementById("uiShowMetricsRates").checked;
+  if (cntOn && metricsWrapEl && !metricsWrapEl.hidden && metricsChartGroup.children.length) {
     metricsRenderer.render(metricsScene, metricsCamera);
+  }
+  if (rateOn && metricsRatesWrapEl && !metricsRatesWrapEl.hidden && metricsRatesChartGroup.children.length) {
+    metricsRatesRenderer.render(metricsRatesScene, metricsRatesCamera);
   }
 }
 
@@ -1183,7 +1927,18 @@ function animate(ts){
   requestAnimationFrame(() => resizeMainRenderer());
   setTimeout(() => resizeMainRenderer(), 0);
   await showFrame(Math.min(startFrame, Math.max(0, totalFrames - 1)));
-  rebuildMetricsPlot();
+  applyPanelVisibility();
+  const hudEl = document.getElementById("hud");
+  const hudHandle = document.getElementById("hudDragHandle");
+  if (hudEl && hudHandle) makePanelDraggable(hudEl, hudHandle);
+  if (metricsWrapEl) {
+    const h = metricsWrapEl.querySelector(".panel-drag-handle");
+    if (h) makePanelDraggable(metricsWrapEl, h);
+  }
+  if (metricsRatesWrapEl) {
+    const h = metricsRatesWrapEl.querySelector(".panel-drag-handle");
+    if (h) makePanelDraggable(metricsRatesWrapEl, h);
+  }
   egoMeshPromise.catch(() => {});
   animate(0);
 })().catch((err) => {
