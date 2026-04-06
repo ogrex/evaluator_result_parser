@@ -53,12 +53,8 @@
   .hud-panel .hud-grid{display:grid;gap:.38rem;font-size:.8rem}
   #evalHud{margin-top:.4rem;padding-top:.4rem;border-top:1px solid rgba(60,80,140,.25);font-size:.68rem;line-height:1.2}
   #evalHud .eval-hud-head{font-weight:700;font-size:.58rem;letter-spacing:.08em;text-transform:uppercase;color:#8b9cc4;margin-bottom:.2rem}
-  #evalHud .eval-grid4{display:grid;grid-template-columns:1fr 1fr;gap:.12rem .45rem;font-variant-numeric:tabular-nums;align-items:baseline}
-  #evalHud .eval-grid4>span{display:flex;align-items:center;gap:.28rem;min-width:0}
-  #evalHud .eval-swatch{width:8px;height:8px;border-radius:2px;flex-shrink:0;box-shadow:0 0 0 1px rgba(0,0,0,.35) inset}
-  #evalHud .eval-lbl{color:#8a96b0;font-size:.62rem}
-  #evalHud .eval-val{font-weight:600;font-size:.72rem}
   #evalHud .eval-rp{margin-top:.28rem;font-family:var(--font-mono);font-size:.62rem;opacity:.92;color:#aab6d4}
+  .layer-eval-grid .layer-count{font-family:var(--font-mono);font-size:.7rem;opacity:.9;margin-left:.25rem;color:#aab6d4}
   #evalHud .row{display:flex;justify-content:space-between;align-items:center;gap:.6rem}
   #evalHud .row span:first-child{color:#9aa6c8;font-size:.76rem}
   #evalHud .nGt{color:#5ee4a8;font-weight:600;text-shadow:0 0 20px rgba(94,228,168,.35)}
@@ -243,7 +239,6 @@
       </div>
       <div id="status">loading...</div>
       <div id="meta"></div>
-      <div id="evalHud" hidden></div>
       <hr class="hud-rule">
       <div class="hud-panel__section-title">Scene</div>
       <div class="hud-grid">
@@ -263,17 +258,18 @@
         <label>box opacity <input id="boxOpacity" type="range" min="0.2" max="1.0" step="0.05" value="0.9"></label>
       </div>
       <hr class="hud-rule">
-      <div class="hud-panel__section-title">Layers</div>
+      <div class="hud-panel__section-title">Eval &amp; layers</div>
       <p class="hud-panel__hint">GT = filled glass · EST = wireframe (predictions draw on top)</p>
       <div class="hud-grid hud-grid--layers">
         <label title="Dataset 3D boxes from lidar / T4 sample (yellow wireframes)"><span class="layer-swatch" style="--sw:#ffd166"></span><input id="show3dAnnotations" type="checkbox" checked> 3D ann.</label>
         <div class="layer-eval-grid" title="Eval layers — colors match 3D view">
-          <label title="GT / TP — green fill + outline"><span class="layer-swatch" style="--sw:#00cc66"></span><input id="showGtTp" type="checkbox" checked> G·TP</label>
-          <label title="GT / FN — orange fill + outline"><span class="layer-swatch" style="--sw:#ff9933"></span><input id="showGtFn" type="checkbox" checked> G·FN</label>
-          <label title="EST / TP — blue wireframe"><span class="layer-swatch" style="--sw:#66b3ff"></span><input id="showEstTp" type="checkbox" checked> E·TP</label>
-          <label title="EST / FP — red wireframe (fainter)"><span class="layer-swatch" style="--sw:#ff6666"></span><input id="showEstFp" type="checkbox" checked> E·FP</label>
+          <label title="GT / TP — green fill + outline"><span class="layer-swatch" style="--sw:#00cc66"></span><input id="showGtTp" type="checkbox" checked> G·TP <span class="layer-count" id="cntGtTp">0</span></label>
+          <label title="GT / FN — orange fill + outline"><span class="layer-swatch" style="--sw:#ff9933"></span><input id="showGtFn" type="checkbox" checked> G·FN <span class="layer-count" id="cntGtFn">0</span></label>
+          <label title="EST / TP — blue wireframe"><span class="layer-swatch" style="--sw:#66b3ff"></span><input id="showEstTp" type="checkbox" checked> E·TP <span class="layer-count" id="cntEstTp">0</span></label>
+          <label title="EST / FP — red wireframe (fainter)"><span class="layer-swatch" style="--sw:#ff6666"></span><input id="showEstFp" type="checkbox" checked> E·FP <span class="layer-count" id="cntEstFp">0</span></label>
         </div>
       </div>
+      <div id="evalHud" hidden></div>
       <details class="hud-advanced" id="hudAdvanced">
         <summary>Advanced</summary>
         <div class="hud-grid">
@@ -656,29 +652,30 @@ function updateEvalHud(){
   const hasAny = gt > 0 || pred > 0 || hasFrameMap || b.gt_tp + b.gt_fn + b.est_tp + b.est_fp > 0;
   if (!hasAny) {
     evalHudEl.hidden = true;
-    evalHudEl.innerHTML = "";
+    const ids = ["cntGtTp","cntGtFn","cntEstTp","cntEstFp"];
+    for (const id of ids) {
+      const el = document.getElementById(id);
+      if (el) el.textContent = "0";
+    }
     return;
   }
-  evalHudEl.hidden = false;
   const gTot = b.gt_tp + b.gt_fn;
   const pTot = b.est_tp + b.est_fp;
   const recall = gTot > 0 ? (b.gt_tp / gTot) : null;
   const precision = pTot > 0 ? (b.est_tp / pTot) : null;
   const rStr = recall != null ? recall.toFixed(3) : "—";
   const pStr = precision != null ? precision.toFixed(3) : "—";
-  const mapCompact = hasFrameMap
-    ? `<div class="eval-rp" style="margin-top:.2rem;opacity:.88">map keys ${mapKeys}</div>`
-    : "";
-  evalHudEl.innerHTML =
-    `<div class="eval-hud-head">Eval</div>` +
-    `<div class="eval-grid4">` +
-    `<span><span class="eval-swatch" style="background:#00cc66"></span><span class="eval-lbl">G·TP</span><span class="eval-val" style="color:#5ee4a8">${b.gt_tp}</span></span>` +
-    `<span><span class="eval-swatch" style="background:#ff9933"></span><span class="eval-lbl">G·FN</span><span class="eval-val" style="color:#ff9933">${b.gt_fn}</span></span>` +
-    `<span><span class="eval-swatch" style="background:#66b3ff"></span><span class="eval-lbl">E·TP</span><span class="eval-val" style="color:#8ec8ff">${b.est_tp}</span></span>` +
-    `<span><span class="eval-swatch" style="background:#ff6666"></span><span class="eval-lbl">E·FP</span><span class="eval-val" style="color:#ff9999">${b.est_fp}</span></span>` +
-    `</div>` +
-    `<div class="eval-rp">R ${rStr} · P ${pStr}</div>` +
-    mapCompact;
+  const cntGtTp = document.getElementById("cntGtTp");
+  const cntGtFn = document.getElementById("cntGtFn");
+  const cntEstTp = document.getElementById("cntEstTp");
+  const cntEstFp = document.getElementById("cntEstFp");
+  if (cntGtTp) cntGtTp.textContent = String(b.gt_tp);
+  if (cntGtFn) cntGtFn.textContent = String(b.gt_fn);
+  if (cntEstTp) cntEstTp.textContent = String(b.est_tp);
+  if (cntEstFp) cntEstFp.textContent = String(b.est_fp);
+  evalHudEl.hidden = false;
+  const mapCompact = hasFrameMap ? ` · map keys ${mapKeys}` : "";
+  evalHudEl.innerHTML = `<div class="eval-rp">R ${rStr} · P ${pStr}${mapCompact}</div>`;
 }
 function syncFullscreenButton(){
   const btn = document.getElementById("toggleFullscreen");
