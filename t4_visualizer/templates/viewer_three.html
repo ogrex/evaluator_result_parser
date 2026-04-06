@@ -261,12 +261,12 @@
       <div class="hud-panel__section-title">Eval &amp; layers</div>
       <p class="hud-panel__hint">GT = filled glass · EST = wireframe (predictions draw on top)</p>
       <div class="hud-grid hud-grid--layers">
-        <label title="Dataset 3D boxes from lidar / T4 sample (yellow wireframes)"><span class="layer-swatch" style="--sw:#ffd166"></span><input id="show3dAnnotations" type="checkbox" checked> 3D ann.</label>
+        <label title="Dataset 3D boxes from lidar / T4 sample (yellow wireframes)"><span class="layer-swatch" style="--sw:#ffd166"></span><input id="show3dAnnotations" type="checkbox" checked> 3D annotations</label>
         <div class="layer-eval-grid" title="Eval layers — colors match 3D view">
-          <label title="GT / TP — green fill + outline"><span class="layer-swatch" style="--sw:#00cc66"></span><input id="showGtTp" type="checkbox" checked> G·TP <span class="layer-count" id="cntGtTp">0</span></label>
-          <label title="GT / FN — orange fill + outline"><span class="layer-swatch" style="--sw:#ff9933"></span><input id="showGtFn" type="checkbox" checked> G·FN <span class="layer-count" id="cntGtFn">0</span></label>
-          <label title="EST / TP — blue wireframe"><span class="layer-swatch" style="--sw:#66b3ff"></span><input id="showEstTp" type="checkbox" checked> E·TP <span class="layer-count" id="cntEstTp">0</span></label>
-          <label title="EST / FP — red wireframe (fainter)"><span class="layer-swatch" style="--sw:#ff6666"></span><input id="showEstFp" type="checkbox" checked> E·FP <span class="layer-count" id="cntEstFp">0</span></label>
+          <label title="GT / TP — green fill + outline"><span class="layer-swatch" style="--sw:#00cc66"></span><input id="showGtTp" type="checkbox" checked> GT·TP <span class="layer-count" id="cntGtTp">0</span></label>
+          <label title="GT / FN — orange fill + outline"><span class="layer-swatch" style="--sw:#ff9933"></span><input id="showGtFn" type="checkbox" checked> GT·FN <span class="layer-count" id="cntGtFn">0</span></label>
+          <label title="EST / TP — blue wireframe"><span class="layer-swatch" style="--sw:#66b3ff"></span><input id="showEstTp" type="checkbox" checked> EST·TP <span class="layer-count" id="cntEstTp">0</span></label>
+          <label title="EST / FP — red wireframe (fainter)"><span class="layer-swatch" style="--sw:#ff6666"></span><input id="showEstFp" type="checkbox" checked> EST·FP <span class="layer-count" id="cntEstFp">0</span></label>
         </div>
       </div>
       <div id="evalHud" hidden></div>
@@ -1820,6 +1820,56 @@ function strokeBoxes2dOnCanvas(ctx, bxs, iw, ih, cw, ch, strokeStyle, lineWidth)
   }
 }
 
+function normalizeCameraOverlayStatus(b){
+  if (!b || typeof b !== "object") return "TP";
+  const raw = (b.status != null ? String(b.status) : "").trim().toUpperCase();
+  if (!raw) return "TP";
+  if (raw === "TRUE_POSITIVE") return "TP";
+  if (raw === "FALSE_NEGATIVE") return "FN";
+  if (raw === "FALSE_POSITIVE") return "FP";
+  return raw;
+}
+
+function isCameraOverlayEvalVisible(kind, status){
+  const st = String(status || "").toUpperCase();
+  const showGtTp = !!(document.getElementById("showGtTp") && document.getElementById("showGtTp").checked);
+  const showGtFn = !!(document.getElementById("showGtFn") && document.getElementById("showGtFn").checked);
+  const showEstTp = !!(document.getElementById("showEstTp") && document.getElementById("showEstTp").checked);
+  const showEstFp = !!(document.getElementById("showEstFp") && document.getElementById("showEstFp").checked);
+  if (kind === "GT" && st === "TP") return showGtTp;
+  if (kind === "GT" && st === "FN") return showGtFn;
+  if (kind === "EST" && st === "TP") return showEstTp;
+  if (kind === "EST" && st === "FP") return showEstFp;
+  if (kind === "GT") return showGtTp || showGtFn;
+  return showEstTp || showEstFp;
+}
+
+function filterCameraOverlayEvalRows(rows, kind){
+  if (!Array.isArray(rows) || !rows.length) return [];
+  const out = [];
+  for (const r of rows) {
+    const st = normalizeCameraOverlayStatus(r);
+    if (!isCameraOverlayEvalVisible(kind, st)) continue;
+    out.push(r);
+  }
+  return out;
+}
+
+function splitCameraOverlayEvalRowsByStatus(rows, kind){
+  const tp = [];
+  const fn = [];
+  const fp = [];
+  const other = [];
+  for (const r of filterCameraOverlayEvalRows(rows, kind)) {
+    const st = normalizeCameraOverlayStatus(r);
+    if (st === "TP") tp.push(r);
+    else if (st === "FN") fn.push(r);
+    else if (st === "FP") fp.push(r);
+    else other.push(r);
+  }
+  return { tp, fn, fp, other };
+}
+
 function clearCameraViewportCanvases(){
   const c = document.getElementById("overlayCanvasSingle");
   if (c) {
@@ -1886,9 +1936,11 @@ function drawPayloadOnCanvas(canvas, payload, labelEl, gen){
       ctx.drawImage(img, 0, 0, cw, ch);
       const ann = document.getElementById("showOverlayAnnotations");
       if (ann && ann.checked) {
+        const ann3d = document.getElementById("show3dAnnotations");
+        const wantScene3d = !ann3d || !!ann3d.checked;
         strokeBoxes2dOnCanvas(
           ctx,
-          Array.isArray(payload.boxes_2d) ? payload.boxes_2d : [],
+          wantScene3d && Array.isArray(payload.boxes_2d) ? payload.boxes_2d : [],
           iw,
           ih,
           cw,
@@ -1896,26 +1948,22 @@ function drawPayloadOnCanvas(canvas, payload, labelEl, gen){
           "rgba(255, 94, 200, 0.95)",
           2,
         );
-        strokeBoxes2dOnCanvas(
-          ctx,
+        const gtSplit = splitCameraOverlayEvalRowsByStatus(
           Array.isArray(payload.boxes_2d_eval_gt) ? payload.boxes_2d_eval_gt : [],
-          iw,
-          ih,
-          cw,
-          ch,
-          "rgba(75, 208, 141, 0.92)",
-          2,
+          "GT",
         );
-        strokeBoxes2dOnCanvas(
-          ctx,
+        strokeBoxes2dOnCanvas(ctx, gtSplit.tp, iw, ih, cw, ch, "rgba(75, 208, 141, 0.92)", 2);
+        strokeBoxes2dOnCanvas(ctx, gtSplit.fn, iw, ih, cw, ch, "rgba(255, 153, 51, 0.92)", 2);
+        // Unknown statuses: keep visible with the GT color so they don't silently disappear.
+        strokeBoxes2dOnCanvas(ctx, gtSplit.other, iw, ih, cw, ch, "rgba(75, 208, 141, 0.92)", 2);
+
+        const estSplit = splitCameraOverlayEvalRowsByStatus(
           Array.isArray(payload.boxes_2d_pred) ? payload.boxes_2d_pred : [],
-          iw,
-          ih,
-          cw,
-          ch,
-          "rgba(102, 179, 255, 0.95)",
-          2,
+          "EST",
         );
+        strokeBoxes2dOnCanvas(ctx, estSplit.tp, iw, ih, cw, ch, "rgba(102, 179, 255, 0.95)", 2);
+        strokeBoxes2dOnCanvas(ctx, estSplit.fp, iw, ih, cw, ch, "rgba(255, 102, 102, 0.75)", 2);
+        strokeBoxes2dOnCanvas(ctx, estSplit.other, iw, ih, cw, ch, "rgba(102, 179, 255, 0.95)", 2);
       }
       if (labelEl) labelEl.textContent = shortCamLabel(payload.camera || "");
       resolve();
@@ -2237,6 +2285,7 @@ document.getElementById("toggleLanelet").addEventListener("click", async () => {
 });
 document.getElementById("show3dAnnotations").addEventListener("change", (e) => {
   boxesGroup.visible = !!e.target.checked;
+  refreshCameraOverlay().catch(() => {});
 });
 ["uiShowHud", "uiShowMetricsCounts", "uiShowMetricsRates", "uiShowCameraViewport"].forEach((id) => {
   const el = document.getElementById(id);
@@ -2297,7 +2346,10 @@ document.getElementById("boxOpacity").addEventListener("input", () => {
 });
 ["showGtTp", "showGtFn", "showEstTp", "showEstFp"].forEach((id) => {
   const el = document.getElementById(id);
-  if (el) el.addEventListener("change", () => renderExternalLayers());
+  if (el) el.addEventListener("change", () => {
+    renderExternalLayers();
+    refreshCameraOverlay().catch(() => {});
+  });
 });
 document.getElementById("projMode").addEventListener("click", () => {
   const wasPersp = camera === perspCamera;
