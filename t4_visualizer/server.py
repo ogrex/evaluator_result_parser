@@ -1040,6 +1040,108 @@ def _build_app(
             "projection": proj_meta,
         }
 
+    def _camera_calibration_payload_for_sample(
+        t4,
+        sample,
+        camera: Optional[str] = None,
+        *,
+        all_cameras: bool = False,
+    ) -> Dict[str, object]:
+        """Return camera calibration metadata for one sample.
+
+        The payload is intentionally JSON-friendly so browser code and external
+        tools can use it directly without depending on t4-devkit model classes.
+        Extrinsics are reported as the calibrated sensor pose in ego/base_link:
+        rotation is ``sensor -> ego`` quaternion ``[w, x, y, z]`` and
+        translation is the sensor origin in ego meters.
+        """
+        from t4_visualizer.visualize import list_camera_channels
+
+        channels = list_camera_channels(t4, sample)
+        if not channels:
+            return {
+                "camera": None,
+                "available_cameras": [],
+                "sample_token": str(sample.token),
+                "timestamp_us": int(sample.timestamp),
+                "calibration": None,
+                "calibrations": [],
+            }
+
+        requested_channel = camera if camera in channels else channels[0]
+        selected_channels = channels if all_cameras else [requested_channel]
+        rows: List[Dict[str, object]] = []
+
+        for channel_name in selected_channels:
+            token = sample.data.get(channel_name)
+            if token is None:
+                continue
+            sample_data = t4.get("sample_data", token)
+            calibrated_sensor = t4.get("calibrated_sensor", sample_data.calibrated_sensor_token)
+            sensor = t4.get("sensor", calibrated_sensor.sensor_token)
+
+            intrinsics_raw = getattr(calibrated_sensor, "camera_intrinsic", None)
+            intrinsics: List[List[float]] = []
+            if intrinsics_raw is not None:
+                try:
+                    intrinsics = [
+                        [float(v) for v in row]
+                        for row in intrinsics_raw
+                    ]
+                except TypeError:
+                    intrinsics = []
+            distortion_raw = getattr(calibrated_sensor, "camera_distortion", None)
+            if distortion_raw is None:
+                distortion_raw = getattr(calibrated_sensor, "distortion_coefficients", None)
+            distortion = None
+            if distortion_raw is not None:
+                try:
+                    distortion = [float(v) for v in distortion_raw]
+                except TypeError:
+                    distortion = None
+
+            translation_raw = getattr(calibrated_sensor, "translation", None)
+            if translation_raw is None:
+                translation_raw = [0.0, 0.0, 0.0]
+            rotation_raw = getattr(calibrated_sensor, "rotation", None)
+            if rotation_raw is None:
+                rotation_raw = [1.0, 0.0, 0.0, 0.0]
+            translation = [float(v) for v in translation_raw]
+            if hasattr(rotation_raw, "elements"):
+                rotation = [float(v) for v in rotation_raw.elements]
+            else:
+                rotation = [float(v) for v in rotation_raw]
+
+            rows.append(
+                {
+                    "camera": channel_name,
+                    "sample_data_token": str(token),
+                    "sample_token": str(sample.token),
+                    "timestamp_us": int(sample.timestamp),
+                    "sensor_token": str(getattr(sensor, "token", "") or ""),
+                    "sensor_modality": str(getattr(sensor, "modality", "") or ""),
+                    "sensor_channel": str(getattr(sensor, "channel", channel_name) or channel_name),
+                    "calibrated_sensor_token": str(getattr(calibrated_sensor, "token", "") or ""),
+                    "image_width": int(getattr(sample_data, "width", 0) or 0),
+                    "image_height": int(getattr(sample_data, "height", 0) or 0),
+                    "image_format": str(getattr(getattr(sample_data, "fileformat", None), "value", "") or ""),
+                    "camera_intrinsic": intrinsics,
+                    "camera_distortion": distortion,
+                    "translation_ego_m": translation,
+                    "rotation_sensor_to_ego_wxyz": rotation,
+                }
+            )
+
+        single = next((row for row in rows if row.get("camera") == requested_channel), rows[0] if rows else None)
+        return {
+            "camera": requested_channel if rows else None,
+            "available_cameras": channels,
+            "sample_token": str(sample.token),
+            "timestamp_us": int(sample.timestamp),
+            "calibration": single,
+            "calibrations": rows,
+        }
+
     @lru_cache(maxsize=8)
     def _load_lanelet_graph(map_path_txt: str):
         """Load lanelet2 OSM once and return nodes/ways/relation way roles."""
@@ -2007,6 +2109,55 @@ def _build_app(
                 status_code=500,
                 code="viewer_camera_overlay_failed",
                 message="Failed to generate camera overlay payload.",
+                exc=exc,
+            )
+
+    @app.get(
+        "/viewer/three/camera-info",
+        tags=["viewer"],
+        summary="Camera calibration metadata for a viewer frame",
+    )
+    def viewer_three_camera_info(
+        t4dataset_id: str,
+        scenario_name: Optional[str] = None,
+        frame_index: int = Query(..., ge=0),
+        camera: Optional[str] = Query(
+            None,
+            description="Camera channel to return. Omit to use the first available camera.",
+        ),
+        version: Optional[str] = None,
+        all_cameras: bool = Query(
+            False,
+            description="When true, include calibration rows for every camera in the sample.",
+        ),
+    ):
+        dataset_path = _resolve_dataset(t4dataset_id)
+        try:
+            t4 = _cache.load(dataset_path, version=version)
+            resolved_scenario = _resolve_viewer_scenario_name(t4, scenario_name)
+            sample = _get_scenario_sample(t4, resolved_scenario, frame_index)
+            payload = _camera_calibration_payload_for_sample(
+                t4,
+                sample,
+                camera=camera,
+                all_cameras=all_cameras,
+            )
+            payload.update(
+                {
+                    "t4dataset_id": t4dataset_id,
+                    "scenario_name": resolved_scenario,
+                    "frame_index": frame_index,
+                    "version": version,
+                }
+            )
+            return payload
+        except HTTPException:
+            raise
+        except Exception as exc:
+            _safe_error(
+                status_code=500,
+                code="viewer_camera_info_failed",
+                message="Failed to build camera calibration payload.",
                 exc=exc,
             )
 

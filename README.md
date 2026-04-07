@@ -583,6 +583,12 @@ for img in resp.json()["images"]:
 
 例（ローカル）: `http://localhost:8000/viewer/three?t4dataset_id=<id>&scenario_name=<scene>&frame_index=0`
 
+カメラキャリブレーション情報だけ欲しい場合は、`/viewer/three/camera-info` で取得できます。
+
+```text
+http://localhost:8000/viewer/three/camera-info?t4dataset_id=<id>&scenario_name=<scene>&frame_index=0&camera=CAM_FRONT
+```
+
 ---
 
 ### downloader.py — ダウンローダーと LRU キャッシュ

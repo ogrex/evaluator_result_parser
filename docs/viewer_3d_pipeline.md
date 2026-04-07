@@ -176,13 +176,30 @@ If enabled in the UI, the client loads **`GET /viewer/three/lanelet-lines`** (cl
 
 ---
 
-## 8. Metrics charts
+## 8. Camera calibration API
+
+If a caller needs the raw camera calibration for the current sample, the server also exposes
+**`GET /viewer/three/camera-info`**.
+
+- `camera=CAM_FRONT` returns the selected camera as `calibration`.
+- `all_cameras=true` also returns a `calibrations` array for every camera in the sample.
+- The payload includes image size, intrinsic matrix, optional distortion coefficients, and calibrated-sensor extrinsics in ego (`translation_ego_m`, `rotation_sensor_to_ego_wxyz`).
+
+Example:
+
+```text
+/viewer/three/camera-info?t4dataset_id=<id>&scenario_name=<scene>&frame_index=0&camera=CAM_FRONT
+```
+
+---
+
+## 9. Metrics charts
 
 The parent can send **`postMessage` `eval_metrics_series`** with per-frame series (e.g. TP/FN/FP counts). The viewer updates small orthographic charts (`metricsCanvas`, `metricsRatesCanvas`) and a playhead synced with `frame_index`. This path is **orthogonal** to `frame.bin` (no server round-trip for the series data itself).
 
 ---
 
-## 9. Quick endpoint map
+## 10. Quick endpoint map
 
 | Endpoint | Purpose |
 |----------|---------|
@@ -190,13 +207,14 @@ The parent can send **`postMessage` `eval_metrics_series`** with per-frame serie
 | `GET /viewer/three/frame.bin` | LiDAR + T4 3D boxes (binary `T4V3D002`). |
 | `GET /viewer/three/schema` | Document binary layout for client authors. |
 | `GET/POST /viewer/three/camera-overlay` | Camera image + 2D boxes; **POST** carries GT/EST JSON for projection. |
+| `GET /viewer/three/camera-info` | Camera calibration metadata for one frame / sample. |
 | `GET /viewer/three/lanelet-lines` | Lanelet / map segments near ego. |
 | `GET /viewer/three/frames/window` | Prefetch hints (URLs per frame index). |
 | `GET /viewer/three/debug/message-received` | Optional ack when layers are applied (debug/telemetry). |
 
 ---
 
-## 10. Mental model summary
+## 11. Mental model summary
 
 | Layer | Source | Where it is rendered |
 |-------|--------|----------------------|

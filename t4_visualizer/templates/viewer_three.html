@@ -123,7 +123,7 @@
   .hud-advanced .hud-grid label input[type=range]{flex:1;min-width:100px}
   .adv-out{font-size:.62rem;color:#8a9abf;font-family:var(--font-mono);min-width:2.5rem;text-align:right;flex-shrink:0}
   .cam-viewport-wrap{
-    position:absolute;left:12px;bottom:12px;width:min(94vw,760px);max-height:min(58vh,480px);
+    position:absolute;left:12px;bottom:12px;width:min(94vw,760px);max-height:min(72vh,760px);
     display:flex;flex-direction:column;border:1px solid #2b3f7d;border-radius:12px;overflow:hidden;z-index:6;
     background:linear-gradient(180deg,#0c1022 0%,#080c18 100%);box-shadow:0 8px 32px rgba(0,0,0,.5);
     min-width:260px;min-height:120px;
@@ -152,7 +152,7 @@
     flex:0 1 auto;overflow:hidden;max-height:none;min-height:0;
   }
   .cam-viewport-wrap.cam-mode-grid .cam-viewport-body{
-    flex:1;min-height:100px;overflow:auto;max-height:min(48vh,400px);
+    flex:1;min-height:100px;overflow:auto;max-height:none;
   }
   .cam-single-wrap{background:#050810;text-align:center;min-width:0}
   .cam-single-wrap canvas{max-width:100%;height:auto;display:block}
@@ -1657,8 +1657,8 @@ async function prefetchAround(i){
 }
 
 const RING_CAMERA_ORDER = [
-  "CAM_FRONT", "CAM_FRONT_LEFT", "CAM_FRONT_RIGHT",
-  "CAM_BACK_LEFT", "CAM_BACK_RIGHT", "CAM_BACK",
+  "CAM_FRONT_LEFT", "CAM_FRONT", "CAM_FRONT_RIGHT",
+  "CAM_BACK_LEFT",  "CAM_BACK", "CAM_BACK_RIGHT",
 ];
 
 function shortCamLabel(name){
@@ -1732,6 +1732,59 @@ function applyCameraViewportModeFromUi(){
     if (singleWrap) singleWrap.hidden = false;
     if (gridWrap) gridWrap.hidden = true;
   }
+}
+
+function currentCameraViewportLayout(){
+  const sel = document.getElementById("cameraLayoutMode");
+  return sel && sel.value ? sel.value : "single";
+}
+
+function cameraPayloadAspectForLayout(payload, layout){
+  const fallback = 16 / 9;
+  if (!payload || typeof payload !== "object") return fallback;
+  const rows = Array.isArray(payload.cameras_payload) ? payload.cameras_payload.filter(Boolean) : [];
+  const base = rows[0] || payload;
+  const iw = Math.max(1, Number(base && base.width ? base.width : 0));
+  const ih = Math.max(1, Number(base && base.height ? base.height : 0));
+  if (!(iw > 0 && ih > 0)) return fallback;
+  const oneAspect = iw / ih;
+  return layout === "grid6" ? (3 * iw) / (2 * ih) : oneAspect;
+}
+
+function autoSizeCameraViewport(payload){
+  const wrap = document.getElementById("cameraViewportWrap");
+  if (!wrap) return;
+  const layout = currentCameraViewportLayout();
+  const aspect = cameraPayloadAspectForLayout(payload, layout);
+  const chromeH = 86;
+  const minW = 260;
+  const minBodyH = layout === "grid6" ? 220 : 140;
+  const minH = chromeH + minBodyH;
+  const maxW = Math.max(minW, Math.min(window.innerWidth - 24, layout === "grid6" ? 1200 : 980));
+  const maxH = Math.max(minH, Math.min(window.innerHeight - 48, layout === "grid6" ? 820 : 760));
+
+  let width = maxW;
+  let bodyH = Math.round(width / Math.max(0.2, aspect));
+  let height = chromeH + bodyH;
+  if (height > maxH) {
+    height = maxH;
+    bodyH = Math.max(minBodyH, height - chromeH);
+    width = Math.round(bodyH * aspect);
+  }
+  width = Math.max(minW, Math.min(width, maxW));
+  height = Math.max(minH, Math.min(height, maxH));
+
+  wrap.style.width = `${Math.round(width)}px`;
+  wrap.style.height = `${Math.round(height)}px`;
+}
+
+function resetCameraViewportUserSize(){
+  const wrap = document.getElementById("cameraViewportWrap");
+  if (!wrap) return;
+  delete wrap.dataset.userSize;
+  try {
+    localStorage.removeItem(CAM_VP_SIZE_STORAGE_KEY);
+  } catch (_) {}
 }
 
 function ensureOverlayCameraOptions(payload){
@@ -2036,6 +2089,8 @@ async function refreshCameraOverlay(){
     lastCameraPayload = payload;
     if (payload) {
       ensureOverlayCameraOptions(payload);
+      const wrap = document.getElementById("cameraViewportWrap");
+      if (wrap && !wrap.dataset.userSize) autoSizeCameraViewport(payload);
       await renderCameraViewport(payload, gen);
     }
   } catch (e) {
@@ -2060,10 +2115,10 @@ function wireCameraViewportResize(){
     if (raw) {
       const o = JSON.parse(raw);
       const w = Number(o.w);
-      const maxH = Number(o.maxH);
-      if (Number.isFinite(w) && Number.isFinite(maxH)) {
+      const h = Number(o.h != null ? o.h : o.maxH);
+      if (Number.isFinite(w) && Number.isFinite(h)) {
         wrap.style.width = `${Math.round(w)}px`;
-        wrap.style.maxHeight = `${Math.round(maxH)}px`;
+        wrap.style.height = `${Math.round(h)}px`;
         wrap.dataset.userSize = "1";
       }
     }
@@ -2101,7 +2156,7 @@ function wireCameraViewportResize(){
     nw = Math.max(260, Math.min(nw, vw - 8));
     nh = Math.max(140, Math.min(nh, vh - 48));
     wrap.style.width = `${nw}px`;
-    wrap.style.maxHeight = `${nh}px`;
+    wrap.style.height = `${nh}px`;
     wrap.dataset.userSize = "1";
     resizeCameraViewport();
   });
@@ -2114,7 +2169,7 @@ function wireCameraViewportResize(){
     } catch (_) {}
     const r = wrap.getBoundingClientRect();
     try {
-      localStorage.setItem(CAM_VP_SIZE_STORAGE_KEY, JSON.stringify({ w: r.width, maxH: r.height }));
+      localStorage.setItem(CAM_VP_SIZE_STORAGE_KEY, JSON.stringify({ w: r.width, h: r.height }));
     } catch (_) {}
   }
 
@@ -2125,7 +2180,7 @@ function wireCameraViewportResize(){
     ev.preventDefault();
     ev.stopPropagation();
     wrap.style.width = "";
-    wrap.style.maxHeight = "";
+    wrap.style.height = "";
     delete wrap.dataset.userSize;
     try {
       localStorage.removeItem(CAM_VP_SIZE_STORAGE_KEY);
@@ -2464,7 +2519,9 @@ document.getElementById("cameraViewportHideBtn")?.addEventListener("click", () =
   applyPanelVisibility();
 });
 document.getElementById("cameraLayoutMode")?.addEventListener("change", () => {
+  resetCameraViewportUserSize();
   updateCameraToolbarMode();
+  if (lastCameraPayload) autoSizeCameraViewport(lastCameraPayload);
   refreshCameraOverlay().catch((e) => setStatus(`camera: ${e.message}`));
 });
 document.getElementById("overlayCamera")?.addEventListener("change", () => {
