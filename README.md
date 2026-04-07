@@ -469,6 +469,8 @@ with ThreadPoolExecutor(max_workers=4) as ex:
 `render_frame` を HTTP 経由で呼び出せるサーバーです。
 複数のデータセットを事前にキャッシュするため、繰り返しリクエストの際のロードコストを最小化します。
 
+詳細なシーケンス図は `docs/render_server_pipeline.md` を参照してください。
+
 #### 起動
 
 ```bash
