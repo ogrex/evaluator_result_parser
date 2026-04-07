@@ -54,6 +54,18 @@
   #evalHud{margin-top:.4rem;padding-top:.4rem;border-top:1px solid rgba(60,80,140,.25);font-size:.68rem;line-height:1.2}
   #evalHud .eval-hud-head{font-weight:700;font-size:.58rem;letter-spacing:.08em;text-transform:uppercase;color:#8b9cc4;margin-bottom:.2rem}
   #evalHud .eval-rp{margin-top:.28rem;font-family:var(--font-mono);font-size:.62rem;opacity:.92;color:#aab6d4}
+  #inspectHud{margin-top:.55rem;padding-top:.55rem;border-top:1px solid rgba(60,80,140,.25);font-size:.7rem;line-height:1.35}
+  #inspectHud[hidden]{display:none !important}
+  #inspectHud .inspect-head{display:flex;justify-content:space-between;align-items:center;gap:.5rem;margin-bottom:.35rem}
+  #inspectHud .inspect-head strong{font-size:.58rem;letter-spacing:.1em;text-transform:uppercase;color:#8b9cc4}
+  #inspectHud .inspect-chip{padding:.1rem .38rem;border-radius:999px;border:1px solid rgba(120,160,255,.25);background:rgba(25,33,60,.72);color:#cdd9fb;font-family:var(--font-mono);font-size:.6rem}
+  #inspectHud .inspect-meta{display:grid;gap:.2rem;margin-top:.22rem}
+  #inspectHud .inspect-row{display:flex;justify-content:space-between;align-items:center;gap:.55rem}
+  #inspectHud .inspect-row span:first-child{color:#91a0c3}
+  #inspectHud .inspect-row code{color:#dce7ff}
+  #inspectHud .inspect-actions{display:flex;gap:.38rem;flex-wrap:wrap;margin-top:.45rem}
+  #inspectHud .inspect-actions button{font-size:.68rem;padding:.25rem .45rem}
+  #inspectHud .inspect-note{margin-top:.35rem;color:#8d9bbd;font-size:.62rem;line-height:1.35}
   .layer-eval-grid .layer-count{font-family:var(--font-mono);font-size:.7rem;opacity:.9;margin-left:.25rem;color:#aab6d4}
   #evalHud .row{display:flex;justify-content:space-between;align-items:center;gap:.6rem}
   #evalHud .row span:first-child{color:#9aa6c8;font-size:.76rem}
@@ -270,6 +282,28 @@
         </div>
       </div>
       <div id="evalHud" hidden></div>
+      <div id="inspectHud" hidden>
+        <div class="inspect-head">
+          <strong>Inspector</strong>
+          <span class="inspect-chip" id="inspectTypeChip">none</span>
+        </div>
+        <div id="inspectEmpty" class="inspect-note">Click any 3D dataset or eval box to inspect it, lock focus, and draw a short temporal trail.</div>
+        <div id="inspectBody" hidden>
+          <div class="inspect-meta">
+            <div class="inspect-row"><span>Label</span><code id="inspectLabel">-</code></div>
+            <div class="inspect-row"><span>Frame</span><code id="inspectFrame">-</code></div>
+            <div class="inspect-row"><span>Position</span><code id="inspectPos">-</code></div>
+            <div class="inspect-row"><span>Size</span><code id="inspectSize">-</code></div>
+            <div class="inspect-row"><span>Motion</span><code id="inspectMotion">-</code></div>
+          </div>
+          <div class="inspect-actions">
+            <button type="button" id="inspectFocusBtn">Focus</button>
+            <button type="button" id="inspectLockBtn" aria-pressed="true">Lock focus: on</button>
+            <button type="button" id="inspectClearBtn">Clear</button>
+          </div>
+          <div id="inspectTrailNote" class="inspect-note"></div>
+        </div>
+      </div>
       <details class="hud-advanced" id="hudAdvanced">
         <summary>Advanced</summary>
         <div class="hud-grid">
@@ -278,6 +312,9 @@
           <label>fog end <input id="fogFar" type="range" min="80" max="600" step="10" value="230"><span class="adv-out" id="fogFarOut">230</span></label>
           <label>camera near <input id="camNear" type="range" min="0.05" max="5" step="0.05" value="0.1"><span class="adv-out" id="camNearOut">0.10</span></label>
           <label>camera far <input id="camFar" type="range" min="200" max="5000" step="50" value="1000"><span class="adv-out" id="camFarOut">1000</span></label>
+          <label title="Master toggle for animated emphasis markers"><input type="checkbox" id="fxEnableEmphasis" checked> Emphasis effects</label>
+          <label title="False negatives: expanding ring under the box"><input type="checkbox" id="fxFnRing" checked> FN shockwave ring</label>
+          <label title="False positives: pulsing beacon at the box center"><input type="checkbox" id="fxFpPulse" checked> FP pulse beacon</label>
         </div>
       </details>
     </div>
@@ -359,6 +396,13 @@ function applyCameraClipFromSettings(){
   orthoCamera.updateProjectionMatrix();
 }
 
+function fxEnabled(id){
+  const master = document.getElementById("fxEnableEmphasis");
+  if (!master || !master.checked) return false;
+  const el = document.getElementById(id);
+  return !!(el && el.checked);
+}
+
 scene.add(new THREE.AmbientLight(0x8aa6ff, 0.7));
 const dl = new THREE.DirectionalLight(0xffffff, 0.9); dl.position.set(12, -10, 30); scene.add(dl);
 const grid = new THREE.GridHelper(180, 90, 0x2b3a6f, 0x1a2342);
@@ -372,8 +416,12 @@ scene.add(pointsObj);
 const boxesGroup = new THREE.Group(); scene.add(boxesGroup);
 const gtLayerGroup = new THREE.Group(); scene.add(gtLayerGroup);
 const predLayerGroup = new THREE.Group(); scene.add(predLayerGroup);
+const inspectOverlayGroup = new THREE.Group(); scene.add(inspectOverlayGroup);
+const inspectTrailGroup = new THREE.Group(); scene.add(inspectTrailGroup);
 gtLayerGroup.renderOrder = 0;
 predLayerGroup.renderOrder = 1;
+inspectOverlayGroup.renderOrder = 3;
+inspectTrailGroup.renderOrder = 2;
 const laneletGroup = new THREE.Group(); scene.add(laneletGroup);
 const egoAxes = new THREE.AxesHelper(2.8); scene.add(egoAxes);
 /** Ego vehicle root (base_link); mesh from sample_vehicle_description or wireframe fallback. */
@@ -450,12 +498,21 @@ let totalFrames = 0; let playing = false; let frame = startFrame; let fps = 6;
 let lastFrameTs = 0;
 let followEgo = true;
 let intensityGain = 1.0;
+let inspectLockFocus = true;
 let cameraViewportEnabled = false;
 /** Last `/viewer/three/camera-overlay` JSON; used to redraw on resize / 2D toggle. */
 let lastCameraPayload = null;
 let lastCameraPanelCheckbox = false;
 /** Bumped when the user turns the camera panel off or starts a new overlay fetch (drops stale async work). */
 let cameraOverlayGeneration = 0;
+const inspectRaycaster = new THREE.Raycaster();
+inspectRaycaster.params.Line = { threshold: 0.5 };
+const inspectPointer = new THREE.Vector2();
+let pointerDownState = null;
+let sceneSelectionCandidates = [];
+let externalSelectionCandidates = [];
+let selectedInspectState = null;
+let inspectTrackGeneration = 0;
 
 function lerp(a, b, u){ return a + (b - a) * u; }
 
@@ -585,6 +642,241 @@ const evalHudEl = document.getElementById("evalHud");
 const appRootEl = document.getElementById("app");
 function setStatus(t){ statusEl.textContent = t; }
 function setFrameText(){ frameTxt.textContent = `frame ${frame}/${Math.max(0,totalFrames-1)}`; slider.value = String(frame); }
+function fmtNum(v, d){
+  return Number.isFinite(v) ? Number(v).toFixed(d) : "—";
+}
+function fmtVec3(v, d){
+  if (!v || v.length < 3) return "—";
+  return `${fmtNum(v[0], d)}, ${fmtNum(v[1], d)}, ${fmtNum(v[2], d)}`;
+}
+function boxCenterFromCornersArray(arr){
+  if (!Array.isArray(arr) || arr.length < 24) return null;
+  let sx = 0, sy = 0, sz = 0;
+  for (let i = 0; i < 8; i++) {
+    sx += Number(arr[i * 3] || 0);
+    sy += Number(arr[i * 3 + 1] || 0);
+    sz += Number(arr[i * 3 + 2] || 0);
+  }
+  return [sx / 8, sy / 8, sz / 8];
+}
+function boxSizeFromCornersArray(arr){
+  if (!Array.isArray(arr) || arr.length < 24) return null;
+  const p0 = new THREE.Vector3(arr[0], arr[1], arr[2]);
+  const p1 = new THREE.Vector3(arr[3], arr[4], arr[5]);
+  const p3 = new THREE.Vector3(arr[9], arr[10], arr[11]);
+  const p4 = new THREE.Vector3(arr[12], arr[13], arr[14]);
+  return [p0.distanceTo(p4), p0.distanceTo(p3), p0.distanceTo(p1)];
+}
+function getInspectableBoxMeta(box, layerId){
+  if (!box || typeof box !== "object") return null;
+  if (Array.isArray(box.corners) && box.corners.length === 24) {
+    const center = boxCenterFromCornersArray(box.corners);
+    const size = boxSizeFromCornersArray(box.corners);
+    return {
+      center,
+      size,
+      corners: box.corners.slice(0, 24),
+      label: String(box.label ?? box.name ?? "box"),
+      kind: normalizeEvalKind(box, layerId),
+      status: normalizeEvalStatus(box),
+      source: layerId === "pred" ? "eval-pred" : "eval-gt",
+      trackId: String(box.uuid ?? box.id ?? box.track_id ?? box.object_id ?? box.instance_token ?? ""),
+    };
+  }
+  if (layerId === "gt" || layerId === "pred") {
+    const pose = readEvalBoxPose(box);
+    const corners = boxCornersFromPose(pose.cx, pose.cy, pose.cz, pose.l, pose.w, pose.h, pose.yaw);
+    return {
+      center: [pose.cx, pose.cy, pose.cz],
+      size: [pose.l, pose.w, pose.h],
+      corners,
+      label: String(box.label ?? box.name ?? normalizeEvalKind(box, layerId)),
+      kind: normalizeEvalKind(box, layerId),
+      status: normalizeEvalStatus(box),
+      source: layerId === "pred" ? "eval-pred" : "eval-gt",
+      trackId: String(box.uuid ?? box.id ?? box.track_id ?? box.object_id ?? box.instance_token ?? ""),
+    };
+  }
+  return null;
+}
+function buildInspectCandidate(meta, extra){
+  if (!meta || !meta.center || !meta.corners) return null;
+  const c = meta.center;
+  const size = Array.isArray(meta.size) ? meta.size : [0, 0, 0];
+  return {
+    center: [Number(c[0] || 0), Number(c[1] || 0), Number(c[2] || 0)],
+    size: [Number(size[0] || 0), Number(size[1] || 0), Number(size[2] || 0)],
+    corners: meta.corners.slice(0, 24).map((v) => Number(v || 0)),
+    label: String(meta.label || "box"),
+    kind: String(meta.kind || "SCENE"),
+    status: String(meta.status || ""),
+    source: String(meta.source || "scene"),
+    trackId: String(meta.trackId || ""),
+    frameIndex: frame,
+    sampleToken: extra && extra.sampleToken ? String(extra.sampleToken) : "",
+  };
+}
+function clearGroupDeep(g){
+  while (g.children.length) {
+    const child = g.children[0];
+    if (!child) break;
+    g.remove(child);
+    if (child.geometry) child.geometry.dispose?.();
+    if (child.material) {
+      const mats = Array.isArray(child.material) ? child.material : [child.material];
+      mats.forEach((m) => m && m.dispose && m.dispose());
+    }
+    if (child.children && child.children.length) clearGroupDeep(child);
+  }
+}
+function boxCornersFromPose(cx, cy, cz, l, w, h, yaw){
+  const hl = Math.max(0.01, l) * 0.5;
+  const hw = Math.max(0.01, w) * 0.5;
+  const hh = Math.max(0.01, h) * 0.5;
+  const c = Math.cos(yaw || 0);
+  const s = Math.sin(yaw || 0);
+  const body = [
+    [ hl,  hw,  hh], [ hl, -hw,  hh], [ hl, -hw, -hh], [ hl,  hw, -hh],
+    [-hl,  hw,  hh], [-hl, -hw,  hh], [-hl, -hw, -hh], [-hl,  hw, -hh],
+  ];
+  const out = [];
+  for (const [bx, by, bz] of body) {
+    out.push(cx + bx * c - by * s, cy + bx * s + by * c, cz + bz);
+  }
+  return out;
+}
+
+function addEvalPulseMarker(parent, center, colorHex, opts){
+  if (!parent || !center || center.length < 3) return null;
+  const radius = Math.max(0.12, Number(opts && opts.radius) || 0.18);
+  const opacity = Math.max(0.18, Number(opts && opts.opacity) || 0.42);
+  const marker = new THREE.Mesh(
+    new THREE.SphereGeometry(radius, 18, 14),
+    new THREE.MeshBasicMaterial({
+      color: colorHex,
+      transparent: true,
+      opacity,
+      depthWrite: false,
+    })
+  );
+  marker.position.set(Number(center[0] || 0), Number(center[1] || 0), Number(center[2] || 0));
+  marker.userData.pulseMarker = true;
+  marker.userData.pulseBaseScale = Number(opts && opts.baseScale) || 1;
+  marker.userData.pulseScaleAmp = Number(opts && opts.scaleAmp) || 0.28;
+  marker.userData.pulseOpacityBase = opacity;
+  marker.userData.pulseOpacityAmp = Number(opts && opts.opacityAmp) || 0.22;
+  marker.userData.pulsePhase = Number(opts && opts.phase) || 0;
+  parent.add(marker);
+  return marker;
+}
+
+function boxEdgeSegmentsFromCorners(corners){
+  if (!Array.isArray(corners) || corners.length < 24) return [];
+  const edges = [[0,1],[1,2],[2,3],[3,0],[4,5],[5,6],[6,7],[7,4],[0,4],[1,5],[2,6],[3,7]];
+  const out = [];
+  for (const [a, b] of edges) {
+    const a0 = a * 3;
+    const b0 = b * 3;
+    out.push(
+      corners[a0], corners[a0 + 1], corners[a0 + 2],
+      corners[b0], corners[b0 + 1], corners[b0 + 2]
+    );
+  }
+  return out;
+}
+
+function addEvalShockwaveRing(parent, center, colorHex, opts){
+  if (!parent || !center || center.length < 3) return null;
+  const radius = Math.max(0.4, Number(opts && opts.radius) || 1.4);
+  const width = Math.max(0.08, Number(opts && opts.width) || 0.18);
+  const opacity = Math.max(0.12, Number(opts && opts.opacity) || 0.34);
+  const ring = new THREE.Mesh(
+    new THREE.RingGeometry(Math.max(0.01, radius - width), radius, 48),
+    new THREE.MeshBasicMaterial({
+      color: colorHex,
+      transparent: true,
+      opacity,
+      depthWrite: false,
+      side: THREE.DoubleSide,
+    })
+  );
+  ring.position.set(Number(center[0] || 0), Number(center[1] || 0), Number(center[2] || 0));
+  ring.userData.effectKind = "shockwave";
+  ring.userData.effectBaseScale = Number(opts && opts.baseScale) || 1;
+  ring.userData.effectScaleAmp = Number(opts && opts.scaleAmp) || 0.55;
+  ring.userData.effectOpacityBase = opacity;
+  ring.userData.effectOpacityAmp = Number(opts && opts.opacityAmp) || 0.18;
+  ring.userData.effectPhase = Number(opts && opts.phase) || 0;
+  parent.add(ring);
+  return ring;
+}
+
+function addEvalLightPillar(parent, center, height, colorHex, opts){
+  if (!parent || !center || center.length < 3) return null;
+  const pillarHeight = Math.max(1.4, Number(height) || 2);
+  const radius = Math.max(0.08, Number(opts && opts.radius) || 0.18);
+  const opacity = Math.max(0.08, Number(opts && opts.opacity) || 0.16);
+  const pillar = new THREE.Mesh(
+    new THREE.CylinderGeometry(radius, radius * 1.75, pillarHeight, 18, 1, true),
+    new THREE.MeshBasicMaterial({
+      color: colorHex,
+      transparent: true,
+      opacity,
+      depthWrite: false,
+      side: THREE.DoubleSide,
+    })
+  );
+  pillar.position.set(
+    Number(center[0] || 0),
+    Number(center[1] || 0),
+    Number(center[2] || 0) + pillarHeight * 0.5
+  );
+  pillar.userData.effectKind = "pillar";
+  pillar.userData.effectBaseScale = Number(opts && opts.baseScale) || 1;
+  pillar.userData.effectScaleAmp = Number(opts && opts.scaleAmp) || 0.12;
+  pillar.userData.effectOpacityBase = opacity;
+  pillar.userData.effectOpacityAmp = Number(opts && opts.opacityAmp) || 0.08;
+  pillar.userData.effectPhase = Number(opts && opts.phase) || 0;
+  parent.add(pillar);
+  return pillar;
+}
+
+function addEvalGhostEchoes(parent, pose, colorHex, opts){
+  if (!parent || !pose) return [];
+  const count = Math.max(2, Math.min(5, Math.floor(Number(opts && opts.count) || 3)));
+  const spacing = Math.max(0.35, Number(opts && opts.spacing) || 0.85);
+  const rise = Number(opts && opts.rise) || 0.06;
+  const c = Math.cos(Number(pose.yaw || 0));
+  const s = Math.sin(Number(pose.yaw || 0));
+  const dirX = c;
+  const dirY = s;
+  const cornersBase = boxCornersFromPose(0, 0, 0, pose.l, pose.w, pose.h, pose.yaw);
+  const edgePts = boxEdgeSegmentsFromCorners(cornersBase);
+  const made = [];
+  for (let i = 1; i <= count; i++) {
+    const g = new THREE.BufferGeometry();
+    g.setAttribute("position", new THREE.Float32BufferAttribute(edgePts, 3));
+    const alpha = Math.max(0.08, 0.34 - i * 0.07);
+    const echo = new THREE.LineSegments(g, new THREE.LineBasicMaterial({
+      color: colorHex,
+      transparent: true,
+      opacity: alpha,
+      depthWrite: false,
+    }));
+    echo.position.set(
+      Number(pose.cx || 0) - dirX * spacing * i,
+      Number(pose.cy || 0) - dirY * spacing * i,
+      Number(pose.cz || 0) + rise * i
+    );
+    echo.userData.effectKind = "ghost";
+    echo.userData.effectOpacityBase = alpha;
+    echo.userData.effectOpacityAmp = 0.045;
+    echo.userData.effectPhase = Number(opts && opts.phase) || 0;
+    parent.add(echo);
+    made.push(echo);
+  }
+  return made;
+}
 
 /** Per-frame eval bucket counts for HUD and metrics (GT×TP|FN, EST×TP|FP). */
 function countEvalBucketsFromBoxes(gtBoxes, predBoxes){
@@ -1287,6 +1579,34 @@ function applyPanelVisibility(){
     applyPanelVisibility();
   });
 })();
+updateInspectHud();
+
+function wireInspectPicking(){
+  canvas.addEventListener("pointerdown", (ev) => {
+    pointerDownState = { x: ev.clientX, y: ev.clientY, moved: false };
+  });
+  canvas.addEventListener("pointermove", (ev) => {
+    if (!pointerDownState) return;
+    if (Math.hypot(ev.clientX - pointerDownState.x, ev.clientY - pointerDownState.y) > 6) {
+      pointerDownState.moved = true;
+    }
+  });
+  canvas.addEventListener("pointerup", (ev) => {
+    const pd = pointerDownState;
+    pointerDownState = null;
+    if (!pd || pd.moved) return;
+    const rect = canvas.getBoundingClientRect();
+    if (!(rect.width > 0 && rect.height > 0)) return;
+    inspectPointer.x = ((ev.clientX - rect.left) / rect.width) * 2 - 1;
+    inspectPointer.y = -((ev.clientY - rect.top) / rect.height) * 2 + 1;
+    inspectRaycaster.setFromCamera(inspectPointer, camera);
+    const hits = inspectRaycaster.intersectObjects([boxesGroup, gtLayerGroup, predLayerGroup], true);
+    const hit = hits.find((row) => !!getInspectCandidateFromObject(row.object));
+    if (!hit) return;
+    const cand = getInspectCandidateFromObject(hit.object);
+    setSelectedInspectCandidate(cand, { focus: true });
+  });
+}
 
 function readFloat32Copied(buf, off, count){
   const bytes = new Uint8Array(buf, off, count * 4);
@@ -1312,6 +1632,33 @@ function parseFrameBuffer(buf){
   const labelLen = dv.getUint32(off, true); off += 4;
   const labels = JSON.parse(new TextDecoder().decode(new Uint8Array(buf, off, labelLen)));
   return { frameIndex, timestampUs, sampleToken, pointCount, boxCount, pts, boxes, labels, format: magic };
+}
+
+function buildSceneCandidatesFromFrameData(data, frameIndex){
+  const out = [];
+  if (!data || !Number.isFinite(data.boxCount)) return out;
+  if (data.format !== "T4V3D002") return out;
+  for (let i = 0; i < data.boxCount; i++) {
+    const base = i * 24;
+    const corners = [];
+    for (let j = 0; j < 24; j++) corners.push(Number(data.boxes[base + j] || 0));
+    const center = boxCenterFromCornersArray(corners);
+    const size = boxSizeFromCornersArray(corners);
+    out.push({
+      center,
+      size,
+      corners,
+      label: String((Array.isArray(data.labels) ? data.labels[i] : null) || `box-${i}`),
+      kind: "SCENE",
+      status: "",
+      source: "scene",
+      trackId: "",
+      frameIndex,
+      sampleToken: String(data.sampleToken || ""),
+      boxIndex: i,
+    });
+  }
+  return out;
 }
 
 function clearGroup(g){
@@ -1476,7 +1823,20 @@ function addGtEvalBoxMesh(group, box, layerId){
   const outline = new THREE.LineSegments(edgeGeom, edgeMat);
   outline.userData.opacityFactor = edgeMul;
   mesh.add(outline);
+  if (isFn && fxEnabled("fxFnRing")) {
+    const floorZ = -Math.max(0.05, pose.h * 0.5) + 0.03;
+    addEvalShockwaveRing(mesh, [0, 0, floorZ], col, {
+      radius: Math.max(0.85, 0.42 * Math.max(pose.l, pose.w)),
+      width: 0.16,
+      opacity: 0.26,
+      baseScale: 1,
+      scaleAmp: 0.68,
+      opacityAmp: 0.16,
+      phase: 0.6,
+    });
+  }
   group.add(mesh);
+  return mesh;
 }
 
 /** EST: wireframe only; FP drawn fainter so TP/FP separate without new color names. */
@@ -1496,7 +1856,288 @@ function addEstEvalWireframe(group, box, layerId){
   });
   const seg = new THREE.LineSegments(g, m);
   seg.userData.opacityFactor = edgeMul;
+  if (isFp) {
+    const meta = getInspectableBoxMeta(box, layerId);
+    if (meta && meta.center && fxEnabled("fxFpPulse")) {
+      addEvalPulseMarker(seg, meta.center, col, {
+        radius: Math.max(0.14, Math.min(0.28, 0.08 * Math.max(...(meta.size || [1, 1, 1])))),
+        opacity: 0.26,
+        baseScale: 1,
+        scaleAmp: 0.42,
+        opacityAmp: 0.24,
+        phase: 1.6,
+      });
+    }
+  }
   group.add(seg);
+  return seg;
+}
+
+function setInspectUserData(obj, candidate){
+  if (!obj || !candidate) return;
+  obj.userData.inspectCandidate = candidate;
+  obj.userData.inspectSelectable = true;
+}
+
+function getInspectCandidateFromObject(obj){
+  let cur = obj || null;
+  while (cur) {
+    if (cur.userData && cur.userData.inspectSelectable && cur.userData.inspectCandidate) {
+      return cur.userData.inspectCandidate;
+    }
+    cur = cur.parent || null;
+  }
+  return null;
+}
+
+function candidateDistance(a, b){
+  if (!a || !b || !a.center || !b.center) return Infinity;
+  const dx = Number(a.center[0] || 0) - Number(b.center[0] || 0);
+  const dy = Number(a.center[1] || 0) - Number(b.center[1] || 0);
+  const dz = Number(a.center[2] || 0) - Number(b.center[2] || 0);
+  return Math.hypot(dx, dy, dz);
+}
+
+function candidateSizeDelta(a, b){
+  const as = Array.isArray(a && a.size) ? a.size : [];
+  const bs = Array.isArray(b && b.size) ? b.size : [];
+  if (as.length < 3 || bs.length < 3) return 0;
+  return Math.abs(as[0] - bs[0]) + Math.abs(as[1] - bs[1]) + Math.abs(as[2] - bs[2]);
+}
+
+function scoreCandidateMatch(sel, cand){
+  if (!sel || !cand) return Infinity;
+  const sid = String(sel.trackId || "");
+  const cid = String(cand.trackId || "");
+  if (sid && cid && sid === cid && sel.source === cand.source) return 0;
+  if (sel.source !== cand.source) return Infinity;
+  if (sel.kind && cand.kind && sel.kind !== cand.kind) return Infinity;
+  const selLabel = String(sel.label || "").toLowerCase();
+  const candLabel = String(cand.label || "").toLowerCase();
+  if (selLabel && candLabel && selLabel !== candLabel) return Infinity;
+  return candidateDistance(sel, cand) + (0.35 * candidateSizeDelta(sel, cand));
+}
+
+function findBestCandidateForSelection(candidates, sel){
+  let best = null;
+  let bestScore = Infinity;
+  for (const cand of candidates || []) {
+    const score = scoreCandidateMatch(sel, cand);
+    if (score < bestScore) {
+      bestScore = score;
+      best = cand;
+    }
+  }
+  if (!best) return null;
+  if (bestScore > 12) return null;
+  return best;
+}
+
+function focusCameraOnCandidate(candidate, smooth){
+  if (!candidate || !candidate.center) return;
+  const dst = new THREE.Vector3(candidate.center[0], candidate.center[1], candidate.center[2]);
+  const target = controls.target.clone();
+  const delta = camera.position.clone().sub(target);
+  if (smooth) {
+    controls.target.lerp(dst, 0.75);
+    camera.position.copy(dst.clone().add(delta));
+  } else {
+    controls.target.copy(dst);
+    camera.position.copy(dst.clone().add(delta));
+  }
+  controls.update();
+}
+
+function renderInspectSelection(){
+  clearGroupDeep(inspectOverlayGroup);
+  if (!selectedInspectState || !selectedInspectState.current || !selectedInspectState.current.corners) return;
+  const corners = selectedInspectState.current.corners;
+  const edges = [[0,1],[1,2],[2,3],[3,0],[4,5],[5,6],[6,7],[7,4],[0,4],[1,5],[2,6],[3,7]];
+  const edgePts = [];
+  for (const [a, b] of edges) {
+    const a0 = a * 3;
+    const b0 = b * 3;
+    edgePts.push(
+      corners[a0], corners[a0 + 1], corners[a0 + 2],
+      corners[b0], corners[b0 + 1], corners[b0 + 2]
+    );
+  }
+  const g = new THREE.BufferGeometry();
+  g.setAttribute("position", new THREE.Float32BufferAttribute(edgePts, 3));
+  const glow = new THREE.LineSegments(g, new THREE.LineBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.95 }));
+  inspectOverlayGroup.add(glow);
+  const g2 = new THREE.BufferGeometry();
+  g2.setAttribute("position", new THREE.Float32BufferAttribute(edgePts, 3));
+  const accent = new THREE.LineSegments(g2, new THREE.LineBasicMaterial({ color: 0x7cb3ff, transparent: true, opacity: 0.42 }));
+  accent.scale.setScalar(1.03);
+  inspectOverlayGroup.add(accent);
+  const c = selectedInspectState.current.center;
+  const pulse = new THREE.Mesh(
+    new THREE.SphereGeometry(0.26, 18, 14),
+    new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.85 })
+  );
+  pulse.position.set(c[0], c[1], c[2]);
+  inspectOverlayGroup.add(pulse);
+}
+
+function renderInspectTrail(points){
+  clearGroupDeep(inspectTrailGroup);
+  if (!Array.isArray(points) || points.length < 1) return;
+  if (points.length >= 2) {
+    const arr = [];
+    for (const p of points) arr.push(p[0], p[1], p[2]);
+    const g = new THREE.BufferGeometry();
+    g.setAttribute("position", new THREE.Float32BufferAttribute(arr, 3));
+    inspectTrailGroup.add(new THREE.Line(
+      g,
+      new THREE.LineBasicMaterial({ color: 0x86d4ff, transparent: true, opacity: 0.8 })
+    ));
+  }
+  points.forEach((p, idx) => {
+    const alpha = idx === points.length - 1 ? 0.9 : (0.22 + 0.5 * (idx / Math.max(1, points.length - 1)));
+    const m = new THREE.Mesh(
+      new THREE.SphereGeometry(idx === points.length - 1 ? 0.16 : 0.11, 12, 10),
+      new THREE.MeshBasicMaterial({ color: idx === points.length - 1 ? 0xffffff : 0x7cb3ff, transparent: true, opacity: alpha })
+    );
+    m.position.set(p[0], p[1], p[2]);
+    inspectTrailGroup.add(m);
+  });
+}
+
+async function rebuildInspectTrack(){
+  const sel = selectedInspectState;
+  const gen = ++inspectTrackGeneration;
+  if (!sel || !sel.current) {
+    renderInspectTrail([]);
+    updateInspectHud();
+    return;
+  }
+  const radius = 8;
+  const frames = [];
+  for (let i = Math.max(0, frame - radius); i <= Math.min(totalFrames - 1, frame + radius); i++) frames.push(i);
+  const resolved = [];
+  for (const fi of frames) {
+    try {
+      let candidates = [];
+      if (sel.current.source === "scene") {
+        const data = await fetchFrame(fi);
+        if (gen !== inspectTrackGeneration) return;
+        candidates = buildSceneCandidatesFromFrameData(data, fi);
+      } else {
+        candidates = buildExternalCandidatesForFrameIndex(fi);
+      }
+      const hit = findBestCandidateForSelection(candidates, sel.current);
+      if (hit) resolved.push(hit);
+    } catch (_) {}
+  }
+  if (gen !== inspectTrackGeneration) return;
+  sel.track = resolved;
+  renderInspectTrail(resolved.map((r) => r.center));
+  updateInspectHud();
+}
+
+function setSelectedInspectCandidate(candidate, opts){
+  if (!candidate) {
+    selectedInspectState = null;
+    inspectTrackGeneration++;
+    renderInspectSelection();
+    renderInspectTrail([]);
+    updateInspectHud();
+    return;
+  }
+  selectedInspectState = {
+    current: candidate,
+    track: [candidate],
+  };
+  renderInspectSelection();
+  if (!opts || opts.focus !== false) focusCameraOnCandidate(candidate, false);
+  updateInspectHud();
+  rebuildInspectTrack().catch(() => {});
+}
+
+function updateSelectedCandidateForFrame(){
+  if (!selectedInspectState) return;
+  const merged = [...sceneSelectionCandidates, ...externalSelectionCandidates];
+  const hit = findBestCandidateForSelection(merged, selectedInspectState.current);
+  if (!hit) {
+    selectedInspectState.current.frameIndex = frame;
+    renderInspectSelection();
+    updateInspectHud();
+    return;
+  }
+  selectedInspectState.current = hit;
+  renderInspectSelection();
+  if (inspectLockFocus) focusCameraOnCandidate(hit, true);
+  updateInspectHud();
+  rebuildInspectTrack().catch(() => {});
+}
+
+function updateInspectHud(){
+  const wrap = document.getElementById("inspectHud");
+  const empty = document.getElementById("inspectEmpty");
+  const body = document.getElementById("inspectBody");
+  const chip = document.getElementById("inspectTypeChip");
+  if (!wrap || !empty || !body || !chip) return;
+  wrap.hidden = false;
+  const sel = selectedInspectState && selectedInspectState.current ? selectedInspectState.current : null;
+  if (!sel) {
+    chip.textContent = "none";
+    empty.hidden = false;
+    body.hidden = true;
+    return;
+  }
+  const track = Array.isArray(selectedInspectState.track) ? selectedInspectState.track : [];
+  empty.hidden = true;
+  body.hidden = false;
+  chip.textContent = `${sel.kind || "BOX"} · ${sel.status || sel.source}`;
+  const posEl = document.getElementById("inspectPos");
+  const sizeEl = document.getElementById("inspectSize");
+  const labelEl = document.getElementById("inspectLabel");
+  const frameEl = document.getElementById("inspectFrame");
+  const motionEl = document.getElementById("inspectMotion");
+  const noteEl = document.getElementById("inspectTrailNote");
+  if (labelEl) labelEl.textContent = sel.label || "box";
+  if (frameEl) frameEl.textContent = `${sel.frameIndex}/${Math.max(0, totalFrames - 1)}`;
+  if (posEl) posEl.textContent = fmtVec3(sel.center, 2);
+  if (sizeEl) sizeEl.textContent = fmtVec3(sel.size, 2);
+  let motionText = "stationary";
+  if (track.length >= 2) {
+    const first = track[0].center;
+    const last = track[track.length - 1].center;
+    motionText = `${fmtNum(last[0] - first[0], 2)}m x, ${fmtNum(last[1] - first[1], 2)}m y`;
+  }
+  if (motionEl) motionEl.textContent = motionText;
+  if (noteEl) noteEl.textContent = track.length > 1
+    ? `Trail frames ${track[0].frameIndex} → ${track[track.length - 1].frameIndex} (${track.length} matched)`
+    : "Trail is building from nearby frames.";
+}
+
+function animatePulseMarkers(root, tsMs){
+  if (!root) return;
+  root.traverse((obj) => {
+    if (!obj || !obj.userData) return;
+    const isPulse = !!obj.userData.pulseMarker;
+    const kind = String(obj.userData.effectKind || "");
+    if (!isPulse && !kind) return;
+    const phase = Number(isPulse ? obj.userData.pulsePhase : obj.userData.effectPhase || 0);
+    const u = 0.5 + 0.5 * Math.sin((tsMs || 0) * 0.006 + phase);
+    const baseScale = Number(isPulse ? obj.userData.pulseBaseScale : obj.userData.effectBaseScale || 1);
+    const scaleAmp = Number(isPulse ? obj.userData.pulseScaleAmp : obj.userData.effectScaleAmp || 0.25);
+    const opacityBase = Number(isPulse ? obj.userData.pulseOpacityBase : obj.userData.effectOpacityBase || 0.4);
+    const opacityAmp = Number(isPulse ? obj.userData.pulseOpacityAmp : obj.userData.effectOpacityAmp || 0.2);
+    if (kind === "pillar") {
+      obj.scale.set(1 + scaleAmp * u, 1, 1 + scaleAmp * u);
+    } else {
+      const s = baseScale + scaleAmp * u;
+      obj.scale.setScalar(s);
+    }
+    if (obj.material) {
+      const alpha = kind === "ghost"
+        ? Math.max(0.02, opacityBase + opacityAmp * (0.35 + 0.65 * u))
+        : opacityBase + opacityAmp * u;
+      obj.material.opacity = alpha;
+    }
+  });
 }
 
 function addEvalWireframeLinesOnly(group, box, layerId){
@@ -1508,7 +2149,24 @@ function addEvalWireframeLinesOnly(group, box, layerId){
   const m = new THREE.LineBasicMaterial({ color: col, transparent: true, opacity: v });
   const seg = new THREE.LineSegments(g, m);
   seg.userData.opacityFactor = 1;
+  const st = normalizeEvalStatus(box);
+  if (layerId === "gt" && st === "FN" && fxEnabled("fxFnRing")) {
+    const meta = getInspectableBoxMeta(box, layerId);
+    if (meta && meta.center) {
+      const floorZ = Number(meta.center[2] || 0) - Math.max(0.08, 0.5 * Number(meta.size && meta.size[2] || 0.8)) + 0.03;
+      addEvalShockwaveRing(seg, [meta.center[0], meta.center[1], floorZ], col, {
+        radius: Math.max(0.85, 0.42 * Math.max(...(meta.size || [1, 1, 1]))),
+        width: 0.16,
+        opacity: 0.24,
+        baseScale: 1,
+        scaleAmp: 0.68,
+        opacityAmp: 0.16,
+        phase: 0.6,
+      });
+    }
+  }
   group.add(seg);
+  return seg;
 }
 
 function isEvalTupleVisible(box, layerId){
@@ -1528,15 +2186,34 @@ function isEvalTupleVisible(box, layerId){
 
 function drawLayerBoxes(group, boxes, layerId){
   clearGroup(group);
-  if (!Array.isArray(boxes)) return;
+  const nextCandidates = [];
+  if (!Array.isArray(boxes)) {
+    if (layerId === "gt") externalSelectionCandidates = externalSelectionCandidates.filter((c) => c && c.source === "eval-pred");
+    else externalSelectionCandidates = externalSelectionCandidates.filter((c) => c && c.source === "eval-gt");
+    return;
+  }
   for (const b of boxes){
     if (!isEvalTupleVisible(b, layerId)) continue;
+    const candidate = buildInspectCandidate(getInspectableBoxMeta(b, layerId), null);
     if (layerId === "gt") {
-      if (canBuildGtMeshFromBox(b)) addGtEvalBoxMesh(group, b, layerId);
-      else addEvalWireframeLinesOnly(group, b, layerId);
+      const obj = canBuildGtMeshFromBox(b) ? addGtEvalBoxMesh(group, b, layerId) : addEvalWireframeLinesOnly(group, b, layerId);
+      setInspectUserData(obj, candidate);
     } else {
-      addEstEvalWireframe(group, b, layerId);
+      const obj = addEstEvalWireframe(group, b, layerId);
+      setInspectUserData(obj, candidate);
     }
+    if (candidate) nextCandidates.push(candidate);
+  }
+  if (layerId === "gt") {
+    externalSelectionCandidates = [
+      ...nextCandidates,
+      ...externalSelectionCandidates.filter((c) => c && c.source === "eval-pred"),
+    ];
+  } else {
+    externalSelectionCandidates = [
+      ...externalSelectionCandidates.filter((c) => c && c.source === "eval-gt"),
+      ...nextCandidates,
+    ];
   }
 }
 
@@ -1549,6 +2226,28 @@ function renderExternalLayers(){
     || !!(document.getElementById("showEstFp") && document.getElementById("showEstFp").checked);
   gtLayerGroup.visible = gtOn;
   predLayerGroup.visible = prOn;
+}
+
+function buildExternalCandidatesForFrameIndex(i){
+  const out = [];
+  const pushFrom = (rows, layerId) => {
+    if (!Array.isArray(rows)) return;
+    for (const row of rows) {
+      if (!isEvalTupleVisible(row, layerId)) continue;
+      const cand = buildInspectCandidate(getInspectableBoxMeta(row, layerId), null);
+      if (cand) {
+        cand.frameIndex = i;
+        out.push(cand);
+      }
+    }
+  };
+  if (!bboxLayersByFrame || typeof bboxLayersByFrame !== "object") return out;
+  const sk = String(i);
+  const entry = Object.prototype.hasOwnProperty.call(bboxLayersByFrame, sk) ? bboxLayersByFrame[sk] : bboxLayersByFrame[i];
+  if (!entry || typeof entry !== "object") return out;
+  pushFrom(entry.gt, "gt");
+  pushFrom(entry.pred, "pred");
+  return out;
 }
 
 function setExternalLayerPayload(payload, opts){
@@ -2190,6 +2889,7 @@ function wireCameraViewportResize(){
 }
 
 function setFrameData(data){
+  sceneSelectionCandidates = buildSceneCandidatesFromFrameData(data, frame);
   const n = data.pointCount;
   const pos = new Float32Array(n * 3);
   const col = new Float32Array(n * 3);
@@ -2237,6 +2937,7 @@ function setFrameData(data){
     [0,4],[1,5],[2,6],[3,7]
   ];
   for (let i=0;i<data.boxCount;i++) {
+    const candidate = sceneSelectionCandidates[i] || null;
     if (data.format === "T4V3D002") {
       const base = i * 24;
       const linePts = [];
@@ -2255,6 +2956,7 @@ function setFrameData(data){
         opacity:Number(document.getElementById("boxOpacity").value || "0.9")
       });
       const lines = new THREE.LineSegments(g, m);
+      setInspectUserData(lines, candidate);
       boxesGroup.add(lines);
     } else {
       const cx=data.boxes[i*7], cy=data.boxes[i*7+1], cz=data.boxes[i*7+2];
@@ -2264,6 +2966,7 @@ function setFrameData(data){
       const box = new THREE.Mesh(g, m);
       box.position.set(cx, cy, cz);
       box.rotation.set(0, 0, yaw);
+      setInspectUserData(box, candidate);
       boxesGroup.add(box);
     }
   }
@@ -2293,6 +2996,7 @@ async function showFrame(i){
     updateEvalHud();
     setStatus(`ready · cached=${cache.size}`);
   }
+  updateSelectedCandidateForFrame();
   if (cameraViewportEnabled) {
     await refreshCameraOverlay();
   }
@@ -2309,7 +3013,17 @@ document.getElementById("speed").addEventListener("change", (e) => {
 slider.addEventListener("input", () => showFrame(Number(slider.value)));
 document.getElementById("camReset").addEventListener("click", () => {
   followEgo = false;
-  camera.position.set(-12,-8,4.5); controls.target.set(0,0,0); controls.update();
+  camera.position.set(-12,-8,4.5);
+  if (selectedInspectState && selectedInspectState.current) {
+    controls.target.set(
+      Number(selectedInspectState.current.center[0] || 0),
+      Number(selectedInspectState.current.center[1] || 0),
+      Number(selectedInspectState.current.center[2] || 0),
+    );
+  } else {
+    controls.target.set(0,0,0);
+  }
+  controls.update();
 });
 document.getElementById("camTop").addEventListener("click", () => {
   followEgo = false;
@@ -2319,6 +3033,20 @@ document.getElementById("camFollow").addEventListener("click", () => {
   followEgo = true;
   camera.position.set(-10,-2,3.8); controls.target.set(0,0,0); controls.update();
   setStatus("follow ego: on");
+});
+document.getElementById("inspectFocusBtn")?.addEventListener("click", () => {
+  if (selectedInspectState && selectedInspectState.current) focusCameraOnCandidate(selectedInspectState.current, false);
+});
+document.getElementById("inspectLockBtn")?.addEventListener("click", () => {
+  inspectLockFocus = !inspectLockFocus;
+  const btn = document.getElementById("inspectLockBtn");
+  if (btn) {
+    btn.textContent = inspectLockFocus ? "Lock focus: on" : "Lock focus: off";
+    btn.setAttribute("aria-pressed", inspectLockFocus ? "true" : "false");
+  }
+});
+document.getElementById("inspectClearBtn")?.addEventListener("click", () => {
+  setSelectedInspectCandidate(null);
 });
 document.getElementById("toggleLanelet").addEventListener("click", async () => {
   laneletEnabled = !laneletEnabled;
@@ -2404,6 +3132,13 @@ document.getElementById("boxOpacity").addEventListener("input", () => {
   if (el) el.addEventListener("change", () => {
     renderExternalLayers();
     refreshCameraOverlay().catch(() => {});
+  });
+});
+["fxEnableEmphasis", "fxFnRing", "fxFpPulse"].forEach((id) => {
+  const el = document.getElementById(id);
+  if (el) el.addEventListener("change", () => {
+    renderExternalLayers();
+    renderInspectSelection();
   });
 });
 document.getElementById("projMode").addEventListener("click", () => {
@@ -2542,6 +3277,13 @@ window.addEventListener("resize", () => {
   resizeCameraViewport();
   clampAllMovablePanels();
 });
+window.addEventListener("keydown", (ev) => {
+  if (ev.key === "Escape" && selectedInspectState) {
+    setSelectedInspectCandidate(null);
+  } else if ((ev.key === "f" || ev.key === "F") && selectedInspectState && selectedInspectState.current) {
+    focusCameraOnCandidate(selectedInspectState.current, false);
+  }
+});
 
 function animate(ts){
   requestAnimationFrame(animate);
@@ -2551,6 +3293,17 @@ function animate(ts){
     showFrame(nxt).catch((err) => setStatus(`error: ${err.message}`));
   }
   controls.update();
+  animatePulseMarkers(gtLayerGroup, ts);
+  animatePulseMarkers(predLayerGroup, ts);
+  if (inspectOverlayGroup.children.length > 1) {
+    const pulse = inspectOverlayGroup.children[2];
+    if (pulse) {
+      const u = 0.5 + 0.5 * Math.sin((ts || 0) * 0.006);
+      const s = 0.92 + 0.22 * u;
+      pulse.scale.setScalar(s);
+      if (pulse.material) pulse.material.opacity = 0.45 + 0.4 * u;
+    }
+  }
   renderer.render(scene, camera);
   const cntOn = document.getElementById("uiShowMetricsCounts") && document.getElementById("uiShowMetricsCounts").checked;
   const rateOn = document.getElementById("uiShowMetricsRates") && document.getElementById("uiShowMetricsRates").checked;
@@ -2565,6 +3318,7 @@ function animate(ts){
 (async function boot(){
   setStatus("bootstrapping...");
   wireCameraViewportResize();
+  wireInspectPicking();
   const egoMeshPromise = loadEgoVehicleMesh().catch((err) => {
     console.warn("[viewer] ego vehicle mesh unavailable, using box fallback", err);
   });
