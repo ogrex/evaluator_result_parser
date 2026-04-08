@@ -66,6 +66,16 @@
   #inspectHud .inspect-actions{display:flex;gap:.38rem;flex-wrap:wrap;margin-top:.45rem}
   #inspectHud .inspect-actions button{font-size:.68rem;padding:.25rem .45rem}
   #inspectHud .inspect-note{margin-top:.35rem;color:#8d9bbd;font-size:.62rem;line-height:1.35}
+  #spotlightHud{margin-top:.55rem;padding-top:.55rem;border-top:1px solid rgba(60,80,140,.25);font-size:.7rem;line-height:1.35}
+  #spotlightHud[hidden]{display:none !important}
+  #spotlightHud .spotlight-head{display:flex;justify-content:space-between;align-items:center;gap:.5rem;margin-bottom:.35rem}
+  #spotlightHud .spotlight-head strong{font-size:.58rem;letter-spacing:.1em;text-transform:uppercase;color:#ffb766}
+  #spotlightHud .spotlight-chip{padding:.1rem .38rem;border-radius:999px;border:1px solid rgba(255,166,87,.28);background:rgba(54,28,10,.6);color:#ffd7aa;font-family:var(--font-mono);font-size:.6rem}
+  #spotlightHud .spotlight-row{display:flex;justify-content:space-between;align-items:center;gap:.55rem}
+  #spotlightHud .spotlight-row span:first-child{color:#91a0c3}
+  #spotlightHud .spotlight-actions{display:flex;gap:.38rem;flex-wrap:wrap;margin-top:.45rem}
+  #spotlightHud .spotlight-actions button{font-size:.68rem;padding:.25rem .45rem}
+  #spotlightHud .spotlight-note{margin-top:.35rem;color:#8d9bbd;font-size:.62rem;line-height:1.35}
   .layer-eval-grid .layer-count{font-family:var(--font-mono);font-size:.7rem;opacity:.9;margin-left:.25rem;color:#aab6d4}
   #evalHud .row{display:flex;justify-content:space-between;align-items:center;gap:.6rem}
   #evalHud .row span:first-child{color:#9aa6c8;font-size:.76rem}
@@ -282,6 +292,22 @@
         </div>
       </div>
       <div id="evalHud" hidden></div>
+      <div id="spotlightHud" hidden>
+        <div class="spotlight-head">
+          <strong>Error spotlight</strong>
+          <span class="spotlight-chip" id="spotlightChip">idle</span>
+        </div>
+        <div class="spotlight-row"><span>Current</span><code id="spotlightCurrent">No hotspot selected</code></div>
+        <div class="spotlight-row"><span>Rank</span><code id="spotlightRank">—</code></div>
+        <div class="spotlight-row"><span>FN rate</span><code id="spotlightRate">—</code></div>
+        <div class="spotlight-row"><span>FN count</span><code id="spotlightCount">—</code></div>
+        <div class="spotlight-actions">
+          <button type="button" id="spotlightPrevBtn">Prev hotspot</button>
+          <button type="button" id="spotlightNextBtn">Next hotspot</button>
+          <button type="button" id="spotlightPlayBtn">Tour hotspots</button>
+        </div>
+        <div id="spotlightNote" class="spotlight-note">Uses per-frame GT/FN counts from eval layers to rank the hardest moments.</div>
+      </div>
       <div id="inspectHud" hidden>
         <div class="inspect-head">
           <strong>Inspector</strong>
@@ -513,6 +539,11 @@ let sceneSelectionCandidates = [];
 let externalSelectionCandidates = [];
 let selectedInspectState = null;
 let inspectTrackGeneration = 0;
+let spotlightFrames = [];
+let spotlightIndex = -1;
+let spotlightTouring = false;
+let spotlightLastSwitchTs = 0;
+let spotlightJumpInFlight = false;
 
 function lerp(a, b, u){ return a + (b - a) * u; }
 
@@ -929,6 +960,120 @@ function metricsFromEntry(entry){
   const sum = fromBoxes.gt_tp + fromBoxes.gt_fn + fromBoxes.est_tp + fromBoxes.est_fp;
   if (sum > 0) return fromBoxes;
   return metricsFromEntryLegacy(entry);
+}
+
+function buildSpotlightFrames(){
+  const series = computeMetricsSeries();
+  if (!series || series.n <= 0) return [];
+  const ranked = [];
+  for (let i = 0; i < series.n; i++) {
+    const fn = Number(series.gt_fn[i] || 0);
+    const tp = Number(series.gt_tp[i] || 0);
+    const gt = fn + tp;
+    if (fn <= 0 || gt <= 0) continue;
+    const rate = fn / gt;
+    const score = rate * 1000 + fn * 10 + Math.min(20, gt);
+    ranked.push({
+      frameIndex: i,
+      fnCount: fn,
+      gtCount: gt,
+      fnRate: rate,
+      score,
+    });
+  }
+  ranked.sort((a, b) => {
+    if (b.score !== a.score) return b.score - a.score;
+    if (b.fnCount !== a.fnCount) return b.fnCount - a.fnCount;
+    return a.frameIndex - b.frameIndex;
+  });
+  const top = ranked.slice(0, 24);
+  top.sort((a, b) => a.frameIndex - b.frameIndex);
+  return top;
+}
+
+function syncSpotlightFrames(){
+  const prevFrame = spotlightIndex >= 0 && spotlightIndex < spotlightFrames.length
+    ? spotlightFrames[spotlightIndex].frameIndex
+    : null;
+  spotlightFrames = buildSpotlightFrames();
+  if (!spotlightFrames.length) {
+    spotlightIndex = -1;
+    spotlightTouring = false;
+    updateSpotlightHud();
+    return;
+  }
+  const sameIdx = prevFrame != null ? spotlightFrames.findIndex((row) => row.frameIndex === prevFrame) : -1;
+  if (sameIdx >= 0) spotlightIndex = sameIdx;
+  else if (spotlightIndex < 0 || spotlightIndex >= spotlightFrames.length) spotlightIndex = 0;
+  updateSpotlightHud();
+}
+
+function spotlightEntryForCurrentFrame(){
+  return spotlightFrames.find((row) => row.frameIndex === frame) || null;
+}
+
+function currentFrameIsSpotlightHot(){
+  return !!spotlightEntryForCurrentFrame();
+}
+
+function focusFirstFnBoxInFrame(){
+  const fnCandidate = externalSelectionCandidates.find((cand) => cand && cand.source === "eval-gt" && cand.status === "FN");
+  if (fnCandidate) {
+    focusCameraOnCandidate(fnCandidate, false, false);
+    return fnCandidate;
+  }
+  return null;
+}
+
+async function jumpToSpotlightIndex(nextIdx){
+  if (!spotlightFrames.length) return;
+  if (spotlightJumpInFlight) return;
+  spotlightJumpInFlight = true;
+  const n = spotlightFrames.length;
+  try {
+    spotlightIndex = ((nextIdx % n) + n) % n;
+    const target = spotlightFrames[spotlightIndex];
+    await showFrame(target.frameIndex);
+    focusFirstFnBoxInFrame();
+    updateSpotlightHud();
+  } finally {
+    spotlightJumpInFlight = false;
+  }
+}
+
+function updateSpotlightHud(){
+  const wrap = document.getElementById("spotlightHud");
+  const chip = document.getElementById("spotlightChip");
+  const cur = document.getElementById("spotlightCurrent");
+  const rank = document.getElementById("spotlightRank");
+  const rate = document.getElementById("spotlightRate");
+  const count = document.getElementById("spotlightCount");
+  const note = document.getElementById("spotlightNote");
+  const playBtn = document.getElementById("spotlightPlayBtn");
+  if (!wrap || !chip || !cur || !rank || !rate || !count || !note || !playBtn) return;
+  const hasAny = spotlightFrames.length > 0;
+  wrap.hidden = !hasAny;
+  if (!hasAny) return;
+  const current = spotlightEntryForCurrentFrame();
+  const idx = current ? spotlightFrames.findIndex((row) => row.frameIndex === current.frameIndex) : spotlightIndex;
+  const row = current || (idx >= 0 ? spotlightFrames[idx] : null);
+  chip.textContent = spotlightTouring ? "touring" : (current ? "live hotspot" : "ready");
+  playBtn.textContent = spotlightTouring ? "Stop tour" : "Tour hotspots";
+  if (!row) {
+    cur.textContent = "No hotspot selected";
+    rank.textContent = "—";
+    rate.textContent = "—";
+    count.textContent = "—";
+    note.textContent = "Uses per-frame GT/FN counts from eval layers to rank the hardest moments.";
+    return;
+  }
+  cur.textContent = `frame ${row.frameIndex}`;
+  rank.textContent = `${Math.max(1, (idx >= 0 ? idx : 0) + 1)} / ${spotlightFrames.length}`;
+  rate.textContent = `${(100 * row.fnRate).toFixed(1)}%`;
+  count.textContent = `${row.fnCount} / ${row.gtCount}`;
+  note.textContent = current
+    ? "Current frame is a ranked FN hotspot. Spotlight keeps camera centering, but does not take over selection."
+    : "Use Prev/Next or Tour to move through ranked FN hotspots in frame order.";
 }
 
 /** Update HUD for eval buckets when postMessage or per-frame eval data is present. */
@@ -1406,6 +1551,7 @@ function rebuildMetricsRatesPlot(){
 function rebuildAllMetricsPlots(){
   rebuildMetricsPlot();
   rebuildMetricsRatesPlot();
+  syncSpotlightFrames();
 }
 
 function updateMetricsFrameCaption(){
@@ -1824,16 +1970,28 @@ function addGtEvalBoxMesh(group, box, layerId){
   outline.userData.opacityFactor = edgeMul;
   mesh.add(outline);
   if (isFn && fxEnabled("fxFnRing")) {
+    const hot = currentFrameIsSpotlightHot();
     const floorZ = -Math.max(0.05, pose.h * 0.5) + 0.03;
     addEvalShockwaveRing(mesh, [0, 0, floorZ], col, {
       radius: Math.max(0.85, 0.42 * Math.max(pose.l, pose.w)),
       width: 0.16,
-      opacity: 0.26,
+      opacity: hot ? 0.34 : 0.26,
       baseScale: 1,
-      scaleAmp: 0.68,
-      opacityAmp: 0.16,
+      scaleAmp: hot ? 0.82 : 0.68,
+      opacityAmp: hot ? 0.2 : 0.16,
       phase: 0.6,
     });
+    if (hot) {
+      addEvalShockwaveRing(mesh, [0, 0, floorZ + 0.01], 0xffe1ae, {
+        radius: Math.max(0.56, 0.28 * Math.max(pose.l, pose.w)),
+        width: 0.12,
+        opacity: 0.22,
+        baseScale: 1,
+        scaleAmp: 0.56,
+        opacityAmp: 0.12,
+        phase: 2.0,
+      });
+    }
   }
   group.add(mesh);
   return mesh;
@@ -1933,11 +2091,14 @@ function findBestCandidateForSelection(candidates, sel){
   return best;
 }
 
-function focusCameraOnCandidate(candidate, smooth){
+function focusCameraOnCandidate(candidate, smooth, preserveOffset){
   if (!candidate || !candidate.center) return;
   const dst = new THREE.Vector3(candidate.center[0], candidate.center[1], candidate.center[2]);
+  const keepOffset = preserveOffset !== false;
   const target = controls.target.clone();
-  const delta = camera.position.clone().sub(target);
+  const delta = keepOffset
+    ? camera.position.clone().sub(target)
+    : new THREE.Vector3(-12, -8, 4.5);
   if (smooth) {
     controls.target.lerp(dst, 0.75);
     camera.position.copy(dst.clone().add(delta));
@@ -2151,18 +2312,30 @@ function addEvalWireframeLinesOnly(group, box, layerId){
   seg.userData.opacityFactor = 1;
   const st = normalizeEvalStatus(box);
   if (layerId === "gt" && st === "FN" && fxEnabled("fxFnRing")) {
+    const hot = currentFrameIsSpotlightHot();
     const meta = getInspectableBoxMeta(box, layerId);
     if (meta && meta.center) {
       const floorZ = Number(meta.center[2] || 0) - Math.max(0.08, 0.5 * Number(meta.size && meta.size[2] || 0.8)) + 0.03;
       addEvalShockwaveRing(seg, [meta.center[0], meta.center[1], floorZ], col, {
         radius: Math.max(0.85, 0.42 * Math.max(...(meta.size || [1, 1, 1]))),
         width: 0.16,
-        opacity: 0.24,
+        opacity: hot ? 0.34 : 0.24,
         baseScale: 1,
-        scaleAmp: 0.68,
-        opacityAmp: 0.16,
+        scaleAmp: hot ? 0.82 : 0.68,
+        opacityAmp: hot ? 0.2 : 0.16,
         phase: 0.6,
       });
+      if (hot) {
+        addEvalShockwaveRing(seg, [meta.center[0], meta.center[1], floorZ + 0.01], 0xffe1ae, {
+          radius: Math.max(0.56, 0.28 * Math.max(...(meta.size || [1, 1, 1]))),
+          width: 0.12,
+          opacity: 0.22,
+          baseScale: 1,
+          scaleAmp: 0.56,
+          opacityAmp: 0.12,
+          phase: 2.0,
+        });
+      }
     }
   }
   group.add(seg);
@@ -2257,6 +2430,7 @@ function setExternalLayerPayload(payload, opts){
   externalLayers = { gt, pred };
   renderExternalLayers();
   updateEvalHud();
+  syncSpotlightFrames();
   const b = countEvalBucketsFromBoxes(gt, pred);
   setStatus(`ready · cached=${cache.size} · ext(GT·TP=${b.gt_tp},GT·FN=${b.gt_fn},EST·TP=${b.est_tp},EST·FP=${b.est_fp})`);
   if (!doAck) return;
@@ -2996,6 +3170,7 @@ async function showFrame(i){
     updateEvalHud();
     setStatus(`ready · cached=${cache.size}`);
   }
+  updateSpotlightHud();
   updateSelectedCandidateForFrame();
   if (cameraViewportEnabled) {
     await refreshCameraOverlay();
@@ -3013,16 +3188,9 @@ document.getElementById("speed").addEventListener("change", (e) => {
 slider.addEventListener("input", () => showFrame(Number(slider.value)));
 document.getElementById("camReset").addEventListener("click", () => {
   followEgo = false;
+  setSelectedInspectCandidate(null);
   camera.position.set(-12,-8,4.5);
-  if (selectedInspectState && selectedInspectState.current) {
-    controls.target.set(
-      Number(selectedInspectState.current.center[0] || 0),
-      Number(selectedInspectState.current.center[1] || 0),
-      Number(selectedInspectState.current.center[2] || 0),
-    );
-  } else {
-    controls.target.set(0,0,0);
-  }
+  controls.target.set(0,0,0);
   controls.update();
 });
 document.getElementById("camTop").addEventListener("click", () => {
@@ -3047,6 +3215,22 @@ document.getElementById("inspectLockBtn")?.addEventListener("click", () => {
 });
 document.getElementById("inspectClearBtn")?.addEventListener("click", () => {
   setSelectedInspectCandidate(null);
+});
+document.getElementById("spotlightPrevBtn")?.addEventListener("click", () => {
+  if (!spotlightFrames.length) return;
+  const base = spotlightIndex >= 0 ? spotlightIndex : 0;
+  jumpToSpotlightIndex(base - 1).catch((e) => setStatus(`spotlight: ${e.message}`));
+});
+document.getElementById("spotlightNextBtn")?.addEventListener("click", () => {
+  if (!spotlightFrames.length) return;
+  const base = spotlightIndex >= 0 ? spotlightIndex : -1;
+  jumpToSpotlightIndex(base + 1).catch((e) => setStatus(`spotlight: ${e.message}`));
+});
+document.getElementById("spotlightPlayBtn")?.addEventListener("click", () => {
+  if (!spotlightFrames.length) return;
+  spotlightTouring = !spotlightTouring;
+  spotlightLastSwitchTs = 0;
+  updateSpotlightHud();
 });
 document.getElementById("toggleLanelet").addEventListener("click", async () => {
   laneletEnabled = !laneletEnabled;
@@ -3291,6 +3475,13 @@ function animate(ts){
     lastFrameTs = ts;
     const nxt = frame + 1 >= totalFrames ? 0 : frame + 1;
     showFrame(nxt).catch((err) => setStatus(`error: ${err.message}`));
+  }
+  if (spotlightTouring && spotlightFrames.length > 0 && !spotlightJumpInFlight) {
+    if (!spotlightLastSwitchTs || ts - spotlightLastSwitchTs > 1800) {
+      spotlightLastSwitchTs = ts;
+      const base = spotlightIndex >= 0 ? spotlightIndex : -1;
+      jumpToSpotlightIndex(base + 1).catch((err) => setStatus(`spotlight: ${err.message}`));
+    }
   }
   controls.update();
   animatePulseMarkers(gtLayerGroup, ts);
