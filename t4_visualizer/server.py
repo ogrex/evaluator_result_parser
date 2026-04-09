@@ -1316,6 +1316,14 @@ def _build_app(
         clip_radius_m: float = 160.0,
     ) -> Dict[str, object]:
         """Return lanelet segments transformed into current ego frame."""
+        def _as_float(value: object, default: float = 0.0) -> float:
+            try:
+                if value is None:
+                    return default
+                return float(value)
+            except (TypeError, ValueError):
+                return default
+
         map_path = dataset_path / "map" / "lanelet2_map.osm"
         if not map_path.exists():
             return {"available": False, "reason": f"map file not found: {map_path}", "segments": []}
@@ -1323,6 +1331,12 @@ def _build_app(
             nodes_latlon_ele, nodes_localxy_ele, ways, lanelet_way_ids, role_of_way = _load_lanelet_graph(str(map_path))
         except Exception as exc:
             _safe_error(500, "lanelet_parse_failed", "Failed to parse lanelet2_map.osm.", exc=exc)
+        if not nodes_latlon_ele:
+            return {
+                "available": False,
+                "reason": "lanelet map has no usable nodes with lat/lon coordinates",
+                "segments": [],
+            }
 
         sample = _get_scenario_sample(t4, scenario_name, frame_index)
         from t4_visualizer.visualize import list_lidar_channels
@@ -1334,22 +1348,32 @@ def _build_app(
         if lidar_token is None:
             return {"available": False, "reason": "no lidar sample_data token", "segments": []}
         sample_data = t4.get("sample_data", lidar_token)
-        ego_pose = t4.get("ego_pose", sample_data.ego_pose_token)
+        ego_pose_token = getattr(sample_data, "ego_pose_token", None)
+        if not ego_pose_token:
+            return {"available": False, "reason": "lidar sample_data missing ego_pose_token", "segments": []}
+        ego_pose = t4.get("ego_pose", ego_pose_token)
         geocoord = getattr(ego_pose, "geocoordinate", None)
-        ego_t = getattr(ego_pose, "translation", None) or [0.0, 0.0, 0.0]
-        ego_tx = float(ego_t[0]) if len(ego_t) >= 1 else 0.0
-        ego_ty = float(ego_t[1]) if len(ego_t) >= 2 else 0.0
-        ego_tz = float(ego_t[2]) if len(ego_t) >= 3 else 0.0
+        ego_t = getattr(ego_pose, "translation", None)
+        if ego_t is None:
+            ego_t = [0.0, 0.0, 0.0]
+        ego_tx = _as_float(ego_t[0]) if len(ego_t) >= 1 else 0.0
+        ego_ty = _as_float(ego_t[1]) if len(ego_t) >= 2 else 0.0
+        ego_tz = _as_float(ego_t[2]) if len(ego_t) >= 3 else 0.0
         lat0 = None
         lon0 = None
         alt0 = ego_tz
         align_mode = "translation_xy"
         if geocoord and len(geocoord) >= 2:
-            lat0 = float(geocoord[0])
-            lon0 = float(geocoord[1])
-            alt0 = float(geocoord[2]) if len(geocoord) >= 3 and geocoord[2] is not None else ego_tz
-            align_mode = "geocoordinate"
-        rot = getattr(ego_pose, "rotation", None) or [1.0, 0.0, 0.0, 0.0]
+            lat_candidate = _as_float(geocoord[0], default=float("nan"))
+            lon_candidate = _as_float(geocoord[1], default=float("nan"))
+            if math.isfinite(lat_candidate) and math.isfinite(lon_candidate):
+                lat0 = lat_candidate
+                lon0 = lon_candidate
+                alt0 = _as_float(geocoord[2], default=ego_tz) if len(geocoord) >= 3 else ego_tz
+                align_mode = "geocoordinate"
+        rot = getattr(ego_pose, "rotation", None)
+        if rot is None:
+            rot = [1.0, 0.0, 0.0, 0.0]
         try:
             w, x, y, z = [float(v) for v in rot]
             yaw = math.atan2(2.0 * (w * z + x * y), 1.0 - 2.0 * (y * y + z * z))
