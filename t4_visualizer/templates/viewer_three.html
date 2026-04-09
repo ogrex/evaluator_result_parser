@@ -52,7 +52,7 @@
   .hud-panel__hint{font-size:.62rem;color:#7d8caf;line-height:1.35;margin:-.15rem 0 .4rem;opacity:.92}
   .hud-panel .hud-grid{display:grid;gap:.38rem;font-size:.8rem}
   .inspect-panel{
-    position:absolute;left:14px;top:14px;bottom:14px;min-width:min(48vw,460px);width:min(52vw,720px);max-width:min(94vw,980px);
+    position:absolute;left:14px;top:14px;bottom:14px;min-width:min(56vw,620px);width:min(64vw,900px);max-width:min(95vw,1120px);
     background:linear-gradient(165deg,rgba(16,20,42,.96) 0%,rgba(7,10,22,.96) 52%,rgba(11,16,34,.97) 100%);
     backdrop-filter:blur(18px) saturate(1.18);
     border:1px solid rgba(124,146,212,.26);border-radius:16px;
@@ -77,8 +77,32 @@
   #evalHud .eval-rp{margin-top:.28rem;font-family:var(--font-mono);font-size:.62rem;opacity:.92;color:#aab6d4}
   #inspectHud{font-size:.82rem;line-height:1.45}
   #inspectHud[hidden]{display:none !important}
-  #inspectHud .inspect-head{display:flex;justify-content:space-between;align-items:center;gap:.65rem;margin-bottom:.45rem}
+  #inspectHud .inspect-head{display:grid;grid-template-columns:minmax(0,1fr) minmax(220px,280px);align-items:stretch;gap:.72rem;margin-bottom:.55rem}
   #inspectHud .inspect-head strong{font-size:.72rem;letter-spacing:.12em;text-transform:uppercase;color:#d3e0ff}
+  #inspectHud .inspect-title-stack{display:flex;flex-direction:column;gap:.45rem;min-width:0}
+  #inspectHud .inspect-headline{display:flex;justify-content:space-between;align-items:center;gap:.65rem;min-width:0}
+  #inspectHud .inspect-subchips{display:flex;flex-wrap:wrap;gap:.35rem}
+  #inspectHud .inspect-subchips .inspect-chip{font-size:.66rem}
+  #inspectHud .inspect-hero-strip{
+    display:grid;grid-template-columns:minmax(0,1fr) auto;gap:.6rem;padding:.68rem .76rem;border-radius:14px;
+    border:1px solid rgba(110,140,210,.26);
+    background:linear-gradient(155deg,rgba(17,26,52,.92) 0%,rgba(8,12,28,.9) 55%,rgba(10,16,36,.94) 100%);
+    box-shadow:inset 0 1px 0 rgba(255,255,255,.06),0 0 32px rgba(70,124,255,.08);
+  }
+  #inspectHud .inspect-confidence{display:grid;gap:.3rem;min-width:0}
+  #inspectHud .inspect-confidence-label{font-size:.62rem;letter-spacing:.16em;text-transform:uppercase;color:#8ca6df}
+  #inspectHud .inspect-confidence-value{font-family:var(--font-mono);font-size:1.7rem;line-height:1;font-weight:700;color:#f6fbff;letter-spacing:-.05em}
+  #inspectHud .inspect-confidence-meter{height:8px;border-radius:999px;background:rgba(255,255,255,.08);overflow:hidden;border:1px solid rgba(115,145,215,.22)}
+  #inspectHud .inspect-confidence-fill{
+    height:100%;width:0%;
+    background:linear-gradient(90deg,#59d6ff 0%,#8fb6ff 52%,#f7c471 100%);
+    box-shadow:0 0 18px rgba(104,194,255,.35);
+  }
+  #inspectHud .inspect-confidence-note{font-size:.7rem;color:#9bb0dc}
+  #inspectHud .inspect-score-stack{display:grid;align-content:center;justify-items:end;gap:.18rem;text-align:right}
+  #inspectHud .inspect-score-label{font-size:.6rem;letter-spacing:.16em;text-transform:uppercase;color:#8ca6df}
+  #inspectHud .inspect-score-value{font-family:var(--font-mono);font-size:1rem;color:#eef5ff}
+  #inspectHud .inspect-score-bucket{font-size:.76rem;color:#ffd9aa;text-transform:capitalize}
   #inspectHud .inspect-chip{padding:.18rem .5rem;border-radius:999px;border:1px solid rgba(120,160,255,.25);background:rgba(25,33,60,.72);color:#cdd9fb;font-family:var(--font-mono);font-size:.7rem}
   #inspectHud .inspect-chip-row{display:flex;flex-wrap:wrap;gap:.36rem;margin:.14rem 0 .46rem}
   #inspectHud .inspect-meta{display:grid;gap:.26rem;margin-top:.16rem}
@@ -106,7 +130,7 @@
   #inspectHud .inspect-card{padding:.58rem .66rem;border-radius:12px;background:rgba(12,18,36,.78);border:1px solid rgba(88,110,175,.24)}
   #inspectHud .inspect-card strong{display:block;margin-bottom:.32rem;font-size:.6rem;letter-spacing:.12em;text-transform:uppercase;color:#8ca0cf}
   #inspectHud .inspect-card canvas{width:100%;height:auto;display:block;background:radial-gradient(circle at 50% 50%,rgba(64,84,132,.16),rgba(8,12,28,.72));border-radius:10px;border:1px solid rgba(88,110,175,.22)}
-  #inspectHud .inspect-card.inspect-hero-card canvas{min-height:220px}
+  #inspectHud .inspect-card.inspect-hero-card canvas{min-height:320px}
   #inspectHud .inspect-summary{margin-top:.38rem;color:#cad6f6;font-size:.72rem;line-height:1.46}
   #inspectHud .inspect-kpi-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:.4rem}
   #inspectHud .inspect-kpi{padding:.42rem .5rem;border-radius:10px;background:rgba(19,27,50,.82);border:1px solid rgba(88,110,175,.2)}
@@ -123,6 +147,15 @@
   #spotlightHud .spotlight-actions button{font-size:.68rem;padding:.25rem .45rem}
   #spotlightHud .spotlight-note{margin-top:.35rem;color:#8d9bbd;font-size:.62rem;line-height:1.35}
   #spotlightHud select{font-size:.68rem;min-width:8rem;padding:.2rem .35rem}
+  #inspectHud[data-status="TP"] .inspect-hero-strip{box-shadow:inset 0 1px 0 rgba(255,255,255,.06),0 0 32px rgba(79,212,255,.12)}
+  #inspectHud[data-status="FP"] .inspect-hero-strip{background:linear-gradient(155deg,rgba(52,20,18,.94) 0%,rgba(25,8,10,.92) 56%,rgba(36,14,12,.94) 100%);border-color:rgba(255,130,102,.28);box-shadow:inset 0 1px 0 rgba(255,255,255,.05),0 0 32px rgba(255,96,86,.12)}
+  #inspectHud[data-status="FN"] .inspect-hero-strip{background:linear-gradient(155deg,rgba(54,34,12,.94) 0%,rgba(26,14,6,.92) 56%,rgba(38,20,8,.94) 100%);border-color:rgba(255,186,103,.28);box-shadow:inset 0 1px 0 rgba(255,255,255,.05),0 0 32px rgba(255,174,86,.11)}
+  #inspectHud[data-status="FP"] .inspect-score-bucket{color:#ffb39d}
+  #inspectHud[data-status="FN"] .inspect-score-bucket{color:#ffd08f}
+  #inspectHud[data-status="FP"] .inspect-confidence-fill{background:linear-gradient(90deg,#ff7966 0%,#ffb06e 60%,#ffd98c 100%);box-shadow:0 0 18px rgba(255,112,103,.32)}
+  #inspectHud[data-status="FN"] .inspect-confidence-fill{background:linear-gradient(90deg,#ffc06b 0%,#ffd88a 50%,#fff0b0 100%);box-shadow:0 0 18px rgba(255,188,98,.28)}
+  #inspectHud[data-status="FN"] .inspect-confidence-note{color:#d8be95}
+  #inspectHud[data-status="FP"] .inspect-confidence-note{color:#deb0a2}
   .layer-eval-grid .layer-count{font-family:var(--font-mono);font-size:.7rem;opacity:.9;margin-left:.25rem;color:#aab6d4}
   #evalHud .row{display:flex;justify-content:space-between;align-items:center;gap:.6rem}
   #evalHud .row span:first-child{color:#9aa6c8;font-size:.76rem}
@@ -234,6 +267,11 @@
   @media (min-width:960px){
     #inspectHud .inspect-info-grid{grid-template-columns:repeat(2,minmax(0,1fr))}
   }
+  @media (max-width:960px){
+    #inspectHud .inspect-head{grid-template-columns:minmax(0,1fr)}
+    #inspectHud .inspect-hero-strip{grid-template-columns:minmax(0,1fr)}
+    #inspectHud .inspect-score-stack{justify-items:start;text-align:left}
+  }
 </style>
 </head><body><div id="app" class="app-root">
   <div class="top">
@@ -326,8 +364,6 @@
       <div class="hud-panel__section-title">Scene</div>
       <div class="hud-grid">
         <div>projection: <strong id="projMode">perspective</strong></div>
-        <label>point size <input id="pointSize" type="range" min="0.02" max="0.25" step="0.01" value="0.08"></label>
-        <label>point opacity <input id="pointOpacity" type="range" min="0.2" max="1.0" step="0.05" value="0.95"></label>
         <label>intensity gain <input id="intensityGain" type="range" min="0.4" max="2.5" step="0.1" value="1.0"></label>
         <label>point colors <select id="pointColormap" title="Map lidar intensity to RGB">
           <option value="turbo" selected>Turbo</option>
@@ -382,8 +418,10 @@
           <label>camera far <input id="camFar" type="range" min="200" max="5000" step="50" value="1000"><span class="adv-out" id="camFarOut">1000</span></label>
           <label title="Master toggle for animated emphasis markers"><input type="checkbox" id="fxEnableEmphasis" checked> Emphasis effects</label>
           <label title="False negatives: expanding ring under the box"><input type="checkbox" id="fxFnRing" checked> FN shockwave ring</label>
-          <label title="False positives: pulsing beacon at the box center"><input type="checkbox" id="fxFpPulse" checked> FP pulse beacon</label>
-          <label title="High-severity true positives: subtle error aura"><input type="checkbox" id="fxTpQuality" checked> TP quality overlay</label>
+          <label>point size <input id="pointSize" type="range" min="0.02" max="0.25" step="0.01" value="0.08"></label>
+          <label>point opacity <input id="pointOpacity" type="range" min="0.2" max="1.0" step="0.05" value="0.95"></label>
+          <label title="False positives: larger pulsing beacon at the box center"><input type="checkbox" id="fxFpPulse" checked> FP pulse beacon</label>
+          <label title="High-error true positives: object-hugging aura tied to the box footprint"><input type="checkbox" id="fxTpQuality" checked> TP severity aura</label>
           <label title="Only emphasize objects above the severe threshold"><input type="checkbox" id="highlightSevereOnly"> Highlight severe only</label>
         </div>
       </details>
@@ -396,21 +434,41 @@
       <div class="inspect-panel__body">
         <div id="inspectHud" hidden>
           <div class="inspect-head">
-            <strong>Inspector</strong>
-            <span class="inspect-chip" id="inspectTypeChip">none</span>
+            <div class="inspect-title-stack">
+              <div class="inspect-headline">
+                <strong>Inspector</strong>
+                <span class="inspect-chip" id="inspectTypeChip">none</span>
+              </div>
+              <div class="inspect-subchips">
+                <span class="inspect-chip" id="inspectStatusChip">status</span>
+                <span class="inspect-chip" id="inspectSourceChip">source</span>
+              </div>
+            </div>
+            <div class="inspect-hero-strip">
+              <div class="inspect-confidence">
+                <span class="inspect-confidence-label">Confidence</span>
+                <div class="inspect-confidence-value" id="inspectConfidenceHero">—</div>
+                <div class="inspect-confidence-meter"><div id="inspectConfidenceFill" class="inspect-confidence-fill"></div></div>
+                <div class="inspect-confidence-note" id="inspectConfidenceNote">No confidence data</div>
+              </div>
+              <div class="inspect-score-stack">
+                <span class="inspect-score-label">Severity</span>
+                <span class="inspect-score-bucket" id="inspectSeverityBucket">Low</span>
+                <span class="inspect-score-value" id="inspectSeverityScore">Score —</span>
+              </div>
+            </div>
           </div>
           <div id="inspectEmpty" class="inspect-note">Click any 3D dataset or eval box to inspect it, lock focus, and draw a short temporal trail.</div>
           <div id="inspectBody" hidden>
             <div class="inspect-chip-row">
-              <span class="inspect-chip" id="inspectStatusChip">status</span>
               <span class="inspect-chip" id="inspectConfidenceChip">conf</span>
               <span class="inspect-chip" id="inspectSeverityChip">severity</span>
-              <span class="inspect-chip" id="inspectSourceChip">source</span>
+              <span class="inspect-chip" id="inspectFocusChip">focus</span>
             </div>
             <div class="inspect-main-grid">
               <div class="inspect-card inspect-hero-card">
                 <strong>Error focus</strong>
-                <canvas id="inspectErrorGlyph" width="520" height="300"></canvas>
+                <canvas id="inspectErrorGlyph" width="680" height="340"></canvas>
                 <div id="inspectSummary" class="inspect-summary"></div>
               </div>
               <div class="inspect-info-grid">
@@ -2216,7 +2274,8 @@ function applyPanelVisibility(){
   if (fab) fab.hidden = hudOn;
   const inspectEl = document.getElementById("inspectPanel");
   const inspectOn = document.getElementById("uiShowInspector") && document.getElementById("uiShowInspector").checked;
-  if (inspectEl) inspectEl.hidden = !inspectOn;
+  const hasSelection = !!(selectedInspectState && selectedInspectState.current);
+  if (inspectEl) inspectEl.hidden = !inspectOn || !hasSelection;
   const camWrap = document.getElementById("cameraViewportWrap");
   const camOn = document.getElementById("uiShowCameraViewport") && document.getElementById("uiShowCameraViewport").checked;
   if (camWrap) camWrap.hidden = !camOn;
@@ -2522,22 +2581,43 @@ function addTpQualityAura(parent, box, layerId){
   if (sev < 0.22) return;
   const meta = getInspectableBoxMeta(box, layerId);
   if (!meta || !meta.center || !meta.size) return;
+  const rel = selectionRelationForMeta(meta.meta || meta, selectedInspectState && selectedInspectState.current);
+  if (selectedInspectState && selectedInspectState.current && rel === "none") return;
   const maxSize = Math.max(...(meta.size || [1, 1, 1]));
-  const floorZ = Number(meta.center[2] || 0) - Math.max(0.08, 0.5 * Number(meta.size[2] || 0.8)) + 0.04;
-  addEvalShockwaveRing(parent, [meta.center[0], meta.center[1], floorZ], 0x7fe3ff, {
-    radius: Math.max(0.68, 0.36 * maxSize),
-    width: 0.11,
-    opacity: 0.12 + sev * 0.14,
+  const pose = readEvalBoxPose(box);
+  const floorZ = (parent && parent.isMesh)
+    ? (-Math.max(0.08, 0.5 * Number(meta.size[2] || 0.8)) + 0.035)
+    : (Number(meta.center[2] || 0) - Math.max(0.08, 0.5 * Number(meta.size[2] || 0.8)) + 0.035);
+  const hw = Math.max(0.05, Number(meta.size[1] || 0.8) * 0.5 + 0.08 + sev * 0.05);
+  const hl = Math.max(0.05, Number(meta.size[0] || 0.8) * 0.5 + 0.08 + sev * 0.05);
+  const yaw = Number(pose.yaw || 0);
+  const c = Math.cos(yaw);
+  const s = Math.sin(yaw);
+  const footprintPts = [];
+  const corners = [[hl, hw], [hl, -hw], [-hl, -hw], [-hl, hw], [hl, hw]];
+  for (const [bx, by] of corners) {
+    if (parent && parent.isMesh) footprintPts.push(bx, by, floorZ);
+    else footprintPts.push(meta.center[0] + bx * c - by * s, meta.center[1] + bx * s + by * c, floorZ);
+  }
+  const geom = new THREE.BufferGeometry();
+  geom.setAttribute("position", new THREE.Float32BufferAttribute(footprintPts, 3));
+  const ring = new THREE.Line(
+    geom,
+    new THREE.LineBasicMaterial({ color: 0x8de4ff, transparent: true, opacity: 0.2 + sev * 0.18 })
+  );
+  ring.userData.effectKind = "footprint";
+  ring.userData.effectBaseScale = 1;
+  ring.userData.effectScaleAmp = 0.04 + sev * 0.08;
+  ring.userData.effectOpacityBase = 0.16 + sev * 0.08;
+  ring.userData.effectOpacityAmp = 0.03 + sev * 0.03;
+  ring.userData.effectPhase = 1.2;
+  parent.add(ring);
+  addEvalPulseMarker(parent, parent && parent.isMesh ? [0, 0, 0] : meta.center, 0x9ce6ff, {
+    radius: Math.max(0.12, Math.min(0.22, 0.06 * maxSize + sev * 0.05)),
+    opacity: 0.14 + sev * 0.08,
     baseScale: 1,
-    scaleAmp: 0.18 + sev * 0.4,
-    opacityAmp: 0.06 + sev * 0.08,
-    phase: 1.2,
-  });
-  addEvalLightPillar(parent, meta.center, Math.max(1.5, maxSize * (0.85 + sev)), 0x8fc8ff, {
-    radius: 0.06 + sev * 0.12,
-    opacity: 0.05 + sev * 0.08,
-    scaleAmp: 0.06 + sev * 0.12,
-    opacityAmp: 0.03 + sev * 0.05,
+    scaleAmp: 0.12 + sev * 0.12,
+    opacityAmp: 0.05 + sev * 0.05,
     phase: 1.8,
   });
 }
@@ -2629,14 +2709,18 @@ function addEstEvalWireframe(group, box, layerId){
   if (isFp) {
     const meta = getInspectableBoxMeta(box, layerId);
     if (meta && meta.center && fxEnabled("fxFpPulse")) {
+      if (selectedInspectState && selectedInspectState.current && selectionRelationForMeta(meta.meta || meta, selectedInspectState.current) === "none") {
+        // Keep focus scenes cleaner when one object is selected.
+      } else {
       addEvalPulseMarker(seg, meta.center, col, {
-        radius: Math.max(0.14, Math.min(0.28, 0.08 * Math.max(...(meta.size || [1, 1, 1])))),
-        opacity: 0.26,
+        radius: Math.max(0.2, Math.min(0.42, 0.12 * Math.max(...(meta.size || [1, 1, 1])))),
+        opacity: 0.34,
         baseScale: 1,
-        scaleAmp: 0.42,
-        opacityAmp: 0.24,
+        scaleAmp: 0.56,
+        opacityAmp: 0.28,
         phase: 1.6,
       });
+      }
     }
   }
   addTpQualityAura(seg, box, layerId);
@@ -2708,6 +2792,19 @@ function cameraRowSelectionRelation(row, sel){
   return "none";
 }
 
+function selectionRelationForMeta(meta, sel){
+  if (!meta || !sel) return "none";
+  const metaUuid = String(meta.uuid ?? meta.trackId ?? "");
+  const metaPair = String(meta.pair_uuid ?? meta.pairId ?? "");
+  const selUuid = String(sel.trackId || sel.uuid || "");
+  const selPair = String(sel.pairId || "");
+  const metaSource = String(meta.source || "").toLowerCase();
+  const selSource = String(sel.source || "").toLowerCase();
+  if (metaUuid && selUuid && metaUuid === selUuid && metaSource === selSource) return "self";
+  if (metaPair && selPair && metaPair === selPair) return "pair";
+  return "none";
+}
+
 function findBestCandidateForSelection(candidates, sel){
   let best = null;
   let bestScore = Infinity;
@@ -2746,27 +2843,80 @@ function renderInspectSelection(){
   if (!selectedInspectState || !selectedInspectState.current || !selectedInspectState.current.corners) return;
   const current = selectedInspectState.current;
   const corners = current.corners;
-  const edges = [[0,1],[1,2],[2,3],[3,0],[4,5],[5,6],[6,7],[7,4],[0,4],[1,5],[2,6],[3,7]];
-  const edgePts = [];
-  for (const [a, b] of edges) {
-    const a0 = a * 3;
-    const b0 = b * 3;
-    edgePts.push(
-      corners[a0], corners[a0 + 1], corners[a0 + 2],
-      corners[b0], corners[b0 + 1], corners[b0 + 2]
-    );
+  const upAxis = new THREE.Vector3(0, 1, 0);
+  const bracketMat = new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.98, depthWrite: false });
+  const edgeMap = {
+    0: [1, 3, 4], 1: [0, 2, 5], 2: [1, 3, 6], 3: [0, 2, 7],
+    4: [0, 5, 7], 5: [1, 4, 6], 6: [2, 5, 7], 7: [3, 4, 6],
+  };
+  for (let i = 0; i < 8; i++) {
+    const p0 = new THREE.Vector3(corners[i * 3], corners[i * 3 + 1], corners[i * 3 + 2]);
+    for (const ni of edgeMap[i] || []) {
+      if (ni < i) continue;
+      const p1 = new THREE.Vector3(corners[ni * 3], corners[ni * 3 + 1], corners[ni * 3 + 2]);
+      const dir = p1.clone().sub(p0);
+      const len = dir.length();
+      if (!(len > 1e-5)) continue;
+      dir.normalize();
+      const segLen = Math.min(len * 0.38, 0.62);
+      const segments = [
+        [p0, p0.clone().add(dir.clone().multiplyScalar(segLen))],
+        [p1, p1.clone().add(dir.clone().multiplyScalar(-segLen))],
+      ];
+      for (const [a, b] of segments) {
+        const delta = b.clone().sub(a);
+        const segMid = a.clone().addScaledVector(delta, 0.5);
+        const segLenActual = delta.length();
+        const geom = new THREE.CylinderGeometry(0.028, 0.028, segLenActual, 10);
+        const rod = new THREE.Mesh(geom, bracketMat);
+        rod.position.copy(segMid);
+        rod.quaternion.setFromUnitVectors(upAxis, delta.normalize());
+        inspectOverlayGroup.add(rod);
+      }
+    }
   }
-  const g = new THREE.BufferGeometry();
-  g.setAttribute("position", new THREE.Float32BufferAttribute(edgePts, 3));
-  const glow = new THREE.LineSegments(g, new THREE.LineBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.95 }));
-  inspectOverlayGroup.add(glow);
   const c = current.center;
+  const color = current.status === "FP" ? 0xff8f74 : (current.status === "FN" ? 0xffcf82 : 0x97e6ff);
   const pulse = new THREE.Mesh(
-    new THREE.SphereGeometry(0.26, 18, 14),
-    new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.85 })
+    new THREE.SphereGeometry(0.34, 20, 16),
+    new THREE.MeshBasicMaterial({ color, transparent: true, opacity: 0.92, depthWrite: false })
   );
   pulse.position.set(c[0], c[1], c[2]);
+  pulse.userData.focusPulse = true;
   inspectOverlayGroup.add(pulse);
+  const halo = new THREE.Mesh(
+    new THREE.RingGeometry(0.44, 0.66, 44),
+    new THREE.MeshBasicMaterial({ color, transparent: true, opacity: 0.44, side: THREE.DoubleSide, depthWrite: false })
+  );
+  halo.position.set(c[0], c[1], c[2] - Math.max(0.08, 0.5 * Number(current.size && current.size[2] || 0.8)) + 0.06);
+  halo.userData.focusHalo = true;
+  inspectOverlayGroup.add(halo);
+  const spriteCanvas = document.createElement("canvas");
+  spriteCanvas.width = 320;
+  spriteCanvas.height = 62;
+  const sctx = spriteCanvas.getContext("2d");
+  if (sctx) {
+    sctx.fillStyle = "rgba(6,10,20,0.84)";
+    sctx.strokeStyle = current.status === "FP" ? "rgba(255,142,113,0.76)" : (current.status === "FN" ? "rgba(255,201,120,0.72)" : "rgba(146,224,255,0.76)");
+    sctx.lineWidth = 2;
+    sctx.beginPath();
+    sctx.roundRect(1, 1, 318, 60, 12);
+    sctx.fill();
+    sctx.stroke();
+    sctx.fillStyle = "#f4f8ff";
+    sctx.font = "700 18px DM Sans";
+    sctx.fillText(`${String(current.kind || "BOX")} · ${String(current.status || current.source || "").toUpperCase()}`, 14, 26);
+    sctx.fillStyle = "#b7cbff";
+    sctx.font = "600 15px JetBrains Mono";
+    const conf = safeNum(current.meta && current.meta.confidence);
+    const confText = conf != null ? `conf ${Number(conf).toFixed(3)}` : "conf —";
+    sctx.fillText(`${String(current.label || "object")}  |  ${confText}`, 14, 47);
+  }
+  const tex = new THREE.CanvasTexture(spriteCanvas);
+  const sprite = new THREE.Sprite(new THREE.SpriteMaterial({ map: tex, transparent: true, depthWrite: false }));
+  sprite.position.set(c[0], c[1], c[2] + Math.max(1.15, 0.76 * Math.max(...(current.size || [1, 1, 1]))));
+  sprite.scale.set(4.2, 0.82, 1);
+  inspectOverlayGroup.add(sprite);
 }
 
 function renderInspectTrail(points){
@@ -2832,6 +2982,7 @@ function setSelectedInspectCandidate(candidate, opts){
     renderInspectSelection();
     renderInspectTrail([]);
     updateInspectHud();
+    applyPanelVisibility();
     if (cameraViewportEnabled && lastCameraPayload) renderCameraViewport(lastCameraPayload, cameraOverlayGeneration).catch(() => {});
     return;
   }
@@ -2842,6 +2993,7 @@ function setSelectedInspectCandidate(candidate, opts){
   renderInspectSelection();
   if (!opts || opts.focus !== false) focusCameraOnCandidate(candidate, false);
   updateInspectHud();
+  applyPanelVisibility();
   rebuildInspectTrack().catch(() => {});
   if (cameraViewportEnabled && lastCameraPayload) renderCameraViewport(lastCameraPayload, cameraOverlayGeneration).catch(() => {});
 }
@@ -2854,6 +3006,7 @@ function updateSelectedCandidateForFrame(){
     selectedInspectState.current.frameIndex = frame;
     renderInspectSelection();
     updateInspectHud();
+    applyPanelVisibility();
     if (cameraViewportEnabled && lastCameraPayload) renderCameraViewport(lastCameraPayload, cameraOverlayGeneration).catch(() => {});
     return;
   }
@@ -2861,6 +3014,7 @@ function updateSelectedCandidateForFrame(){
   renderInspectSelection();
   if (inspectLockFocus) focusCameraOnCandidate(hit, true);
   updateInspectHud();
+  applyPanelVisibility();
   rebuildInspectTrack().catch(() => {});
   if (cameraViewportEnabled && lastCameraPayload) renderCameraViewport(lastCameraPayload, cameraOverlayGeneration).catch(() => {});
 }
@@ -2870,6 +3024,15 @@ function renderInspectErrorGlyph(sel){
   if (!canvas) return;
   const ctx = canvas.getContext("2d");
   if (!ctx) return;
+  const dpr = Math.max(1, Math.min(2, window.devicePixelRatio || 1));
+  const displayW = Math.max(620, Math.round(canvas.clientWidth || 680));
+  const displayH = Math.max(320, Math.round(displayW * 0.5));
+  if (canvas.width !== Math.round(displayW * dpr) || canvas.height !== Math.round(displayH * dpr)) {
+    canvas.width = Math.round(displayW * dpr);
+    canvas.height = Math.round(displayH * dpr);
+    canvas.style.height = `${displayH}px`;
+  }
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
   const labelTag = (text, x, y, opts) => {
     const padX = 8;
     const padY = 5;
@@ -2892,63 +3055,161 @@ function renderInspectErrorGlyph(sel){
     ctx.fillText(text, bx + padX, by + bh * 0.52);
     ctx.restore();
   };
-  const w = canvas.width;
-  const h = canvas.height;
+  const w = displayW;
+  const h = displayH;
+  const stat = String(sel && sel.status || "");
+  const theme = stat === "FP"
+    ? { bg0: "#160909", bg1: "#3b1412", grid: "rgba(255,141,108,0.18)", accent: "#ff916f", accent2: "#ffd19b", text: "#fff2eb", soft: "#ffb29a" }
+    : stat === "FN"
+      ? { bg0: "#171005", bg1: "#412707", grid: "rgba(255,198,108,0.18)", accent: "#ffc76f", accent2: "#fff0b6", text: "#fff7eb", soft: "#ffd495" }
+      : { bg0: "#09111d", bg1: "#0c2b3b", grid: "rgba(115,196,255,0.18)", accent: "#78deff", accent2: "#ffd89b", text: "#eef7ff", soft: "#a5dfff" };
   ctx.clearRect(0, 0, w, h);
-  ctx.fillStyle = "#09101f";
+  const bg = ctx.createLinearGradient(0, 0, w, h);
+  bg.addColorStop(0, theme.bg1);
+  bg.addColorStop(0.55, theme.bg0);
+  bg.addColorStop(1, "#050814");
+  ctx.fillStyle = bg;
   ctx.fillRect(0, 0, w, h);
-  const grad = ctx.createRadialGradient(w * 0.52, h * 0.46, 12, w * 0.5, h * 0.5, Math.max(w, h) * 0.62);
-  grad.addColorStop(0, "rgba(48,76,132,0.15)");
-  grad.addColorStop(1, "rgba(5,8,18,0)");
+  const grad = ctx.createRadialGradient(w * 0.24, h * 0.22, 12, w * 0.34, h * 0.42, Math.max(w, h) * 0.76);
+  grad.addColorStop(0, "rgba(255,255,255,0.08)");
+  grad.addColorStop(1, "rgba(255,255,255,0)");
   ctx.fillStyle = grad;
   ctx.fillRect(0, 0, w, h);
-  ctx.strokeStyle = "rgba(120,150,220,0.22)";
+  ctx.strokeStyle = theme.grid;
   ctx.lineWidth = 1;
-  ctx.beginPath();
-  ctx.moveTo(w * 0.5, 18); ctx.lineTo(w * 0.5, h - 18);
-  ctx.moveTo(18, h * 0.5); ctx.lineTo(w - 18, h * 0.5);
-  ctx.stroke();
+  for (let x = 30; x < w - 24; x += 44) {
+    ctx.beginPath();
+    ctx.moveTo(x, 34);
+    ctx.lineTo(x, h - 26);
+    ctx.stroke();
+  }
+  for (let y = 36; y < h - 22; y += 42) {
+    ctx.beginPath();
+    ctx.moveTo(22, y);
+    ctx.lineTo(w - 22, y);
+    ctx.stroke();
+  }
   if (!sel || !sel.meta) {
-    labelTag("No pair error data", w * 0.5 - 72, h * 0.5 - 12, { color: "#d9e4ff", bg: "rgba(10,16,32,0.9)" });
+    labelTag("No pair error data", w * 0.5 - 72, h * 0.5 - 12, { color: theme.text, bg: "rgba(10,16,32,0.9)" });
     return;
   }
   const meta = sel.meta;
   const xErr = safeNum(meta.x_error) || 0;
   const yErr = safeNum(meta.y_error) || 0;
   const yawErr = safeNum(meta.yaw_error) || 0;
-  const cx = w * 0.5;
-  const cy = h * 0.5;
-  const scale = 42;
+  const speed = safeNum(meta.speed_mps);
+  const vx = safeNum(meta.vx);
+  const vy = safeNum(meta.vy);
+  const conf = safeNum(meta.confidence);
+  const ctr = safeNum(meta.center_distance);
+  const plane = safeNum(meta.plane_distance);
+  const yaw = safeNum(meta.yaw);
+  const drift = safeNum(meta.xy_error_mag);
+  const hasPair = ctr != null || plane != null || drift != null || safeNum(meta.x_error) != null || safeNum(meta.y_error) != null || safeNum(meta.yaw_error) != null;
+  const leftX = 26;
+  const leftW = 154;
+  const mapX = 204;
+  const mapY = 56;
+  const mapW = 270;
+  const mapH = 160;
+  const rightX = w - 182;
+  const cx = mapX + mapW * 0.5;
+  const cy = mapY + mapH * 0.5;
+  const scale = 44;
   const tx = cx + xErr * scale;
   const ty = cy - yErr * scale;
-  labelTag("GT ref", 14, 12, { color: "#dce8ff", bg: "rgba(8,14,28,0.88)" });
-  labelTag("EST", w - 72, h - 34, { color: "#ffd9b0", bg: "rgba(36,18,8,0.88)", stroke: "rgba(255,186,126,0.28)" });
-  ctx.strokeStyle = "rgba(255,211,143,0.9)";
-  ctx.fillStyle = "rgba(255,211,143,0.95)";
-  ctx.lineWidth = 3;
+  ctx.fillStyle = "rgba(7,11,22,0.34)";
+  ctx.strokeStyle = "rgba(255,255,255,0.06)";
   ctx.beginPath();
-  ctx.moveTo(cx, cy);
-  ctx.lineTo(tx, ty);
-  ctx.stroke();
-  const ang = Math.atan2(ty - cy, tx - cx);
-  ctx.beginPath();
-  ctx.moveTo(tx, ty);
-  ctx.lineTo(tx - 8 * Math.cos(ang - 0.4), ty - 8 * Math.sin(ang - 0.4));
-  ctx.lineTo(tx - 8 * Math.cos(ang + 0.4), ty - 8 * Math.sin(ang + 0.4));
-  ctx.closePath();
+  ctx.roundRect(leftX - 8, 18, leftW + 16, h - 36, 18);
   ctx.fill();
-  ctx.strokeStyle = "rgba(110,208,255,0.85)";
+  ctx.stroke();
+  ctx.beginPath();
+  ctx.roundRect(mapX - 20, 18, mapW + 40, h - 36, 18);
+  ctx.fill();
+  ctx.stroke();
+  ctx.beginPath();
+  ctx.roundRect(rightX - 8, 18, 160, h - 36, 18);
+  ctx.fill();
+  ctx.stroke();
+  ctx.fillStyle = theme.soft;
+  ctx.font = "700 13px DM Sans";
+  ctx.fillText("SYSTEMS", leftX, 40);
+  ctx.fillText("XY OFFSET MAP", mapX, 40);
+  ctx.fillText("DYAW / MATCH", rightX, 40);
+  const writeLeft = (label, value, y, accent) => {
+    ctx.fillStyle = theme.soft;
+    ctx.font = "700 11px DM Sans";
+    ctx.fillText(label, leftX, y);
+    ctx.fillStyle = accent || theme.text;
+    ctx.font = "700 16px JetBrains Mono";
+    ctx.fillText(value, leftX, y + 18);
+  };
+  writeLeft("CONFIDENCE", fmtMaybe(conf, "", 3), 78);
+  writeLeft("SPEED", fmtMaybe(speed, " m/s", 2), 132);
+  writeLeft("VELOCITY", `${fmtMaybe(vx, " m/s", 2)} / ${fmtMaybe(vy, " m/s", 2)}`, 186);
+  writeLeft("YAW", fmtMaybe(yaw, " rad", 2), 240);
+  if (!hasPair && sel.status !== "TP") {
+    labelTag(sel.status === "FP" ? "Unmatched estimate" : "Missed ground truth", mapX + 40, 100, { color: theme.text, bg: "rgba(10,16,32,0.88)", stroke: theme.grid });
+    labelTag("Pair metrics unavailable", mapX + 58, 136, { color: theme.soft, bg: "rgba(10,16,32,0.88)", stroke: theme.grid });
+  } else {
+    ctx.strokeStyle = "rgba(255,255,255,0.12)";
+    ctx.beginPath();
+    ctx.moveTo(cx, mapY + 4); ctx.lineTo(cx, mapY + mapH - 4);
+    ctx.moveTo(mapX + 6, cy); ctx.lineTo(mapX + mapW - 6, cy);
+    ctx.stroke();
+    labelTag("GT REF", mapX + 2, mapY + 4, { color: theme.text, bg: "rgba(8,14,28,0.88)" });
+    labelTag("EST", mapX + 94, mapY + 4, { color: theme.accent2, bg: "rgba(32,18,8,0.9)", stroke: "rgba(255,186,126,0.28)" });
+    ctx.strokeStyle = theme.accent2;
+    ctx.fillStyle = theme.accent2;
+    ctx.lineWidth = 4;
+    ctx.beginPath();
+    ctx.moveTo(cx, cy);
+    ctx.lineTo(tx, ty);
+    ctx.stroke();
+    const ang = Math.atan2(ty - cy, tx - cx);
+    ctx.beginPath();
+    ctx.moveTo(tx, ty);
+    ctx.lineTo(tx - 10 * Math.cos(ang - 0.42), ty - 10 * Math.sin(ang - 0.42));
+    ctx.lineTo(tx - 10 * Math.cos(ang + 0.42), ty - 10 * Math.sin(ang + 0.42));
+    ctx.closePath();
+    ctx.fill();
+    ctx.fillStyle = theme.text;
+    ctx.beginPath(); ctx.arc(cx, cy, 6, 0, Math.PI * 2); ctx.fill();
+    ctx.fillStyle = theme.accent2;
+    ctx.beginPath(); ctx.arc(tx, ty, 6.5, 0, Math.PI * 2); ctx.fill();
+  }
+  ctx.strokeStyle = theme.accent;
+  ctx.lineWidth = 5;
+  ctx.beginPath();
+  ctx.arc(rightX + 60, 126, 54, -Math.PI / 2, -Math.PI / 2 + yawErr, yawErr < 0);
+  ctx.stroke();
+  ctx.strokeStyle = "rgba(255,255,255,0.12)";
   ctx.lineWidth = 2;
   ctx.beginPath();
-  ctx.arc(cx, cy, 30, -Math.PI / 2, -Math.PI / 2 + yawErr, yawErr < 0);
+  ctx.arc(rightX + 60, 126, 54, 0, Math.PI * 2);
   ctx.stroke();
-  ctx.fillStyle = "#e9f0ff";
-  ctx.beginPath(); ctx.arc(cx, cy, 5, 0, Math.PI * 2); ctx.fill();
-  ctx.fillStyle = "#ffd38f";
-  ctx.beginPath(); ctx.arc(tx, ty, 5.5, 0, Math.PI * 2); ctx.fill();
-  labelTag(`dx ${fmtSigned(xErr, 2)} m`, 16, h - 68, { color: "#dce8ff" });
-  labelTag(`dy ${fmtSigned(yErr, 2)} m`, 16, h - 38, { color: "#dce8ff" });
-  labelTag(`dyaw ${fmtSigned(yawErr, 2)} rad`, w - 154, 12, { color: "#d8f6ff", bg: "rgba(8,26,34,0.9)", stroke: "rgba(110,208,255,0.28)" });
+  ctx.fillStyle = theme.text;
+  ctx.font = "700 12px JetBrains Mono";
+  ctx.fillText("dyaw", rightX + 28, 112);
+  ctx.font = "700 22px JetBrains Mono";
+  ctx.fillText(fmtSigned(yawErr, 2), rightX + 10, 140);
+  ctx.font = "600 11px DM Sans";
+  ctx.fillStyle = theme.soft;
+  ctx.fillText("rad", rightX + 116, 140);
+  const writeRight = (label, value, y) => {
+    ctx.fillStyle = theme.soft;
+    ctx.font = "700 11px DM Sans";
+    ctx.fillText(label, rightX, y);
+    ctx.fillStyle = theme.text;
+    ctx.font = "700 15px JetBrains Mono";
+    ctx.fillText(value, rightX, y + 18);
+  };
+  writeRight("CENTER", fmtMaybe(ctr, " m", 3), 198);
+  writeRight("PLANE", fmtMaybe(plane, " m", 3), 236);
+  writeRight("XY DRIFT", fmtMaybe(drift, " m", 3), 274);
+  labelTag(`dx ${fmtSigned(xErr, 2)} m`, mapX + 6, h - 42, { color: theme.text, bg: "rgba(10,16,32,0.88)", stroke: theme.grid });
+  labelTag(`dy ${fmtSigned(yErr, 2)} m`, mapX + 132, h - 42, { color: theme.text, bg: "rgba(10,16,32,0.88)", stroke: theme.grid });
 }
 
 function updateInspectHud(){
@@ -2961,9 +3222,12 @@ function updateInspectHud(){
   const sel = selectedInspectState && selectedInspectState.current ? selectedInspectState.current : null;
   if (!sel) {
     chip.textContent = "none";
+    wrap.dataset.status = "";
     empty.hidden = false;
     body.hidden = true;
     renderInspectErrorGlyph(null);
+    const panel = document.getElementById("inspectPanel");
+    if (panel) panel.hidden = true;
     return;
   }
   const meta = sel.meta || {};
@@ -2974,6 +3238,7 @@ function updateInspectHud(){
   };
   empty.hidden = true;
   body.hidden = false;
+  wrap.dataset.status = String(sel.status || sel.kind || "");
   chip.textContent = `${sel.kind || "BOX"} · ${sel.status || sel.source}`;
   setText("inspectLabel", sel.label || "box");
   setText("inspectFrame", `${sel.frameIndex}/${Math.max(0, totalFrames - 1)}`);
@@ -2998,9 +3263,16 @@ function updateInspectHud(){
   setText("inspectKpiYaw", fmtMaybe(safeNum(meta.yaw_error) != null ? Math.abs(Number(meta.yaw_error)) : null, " rad", 3));
   setText("inspectKpiXY", fmtMaybe(safeNum(meta.xy_error_mag), " m", 3));
   setText("inspectStatusChip", `${sel.status || "status"}${meta.pair_uuid ? ` · pair ${String(meta.pair_uuid).slice(0, 8)}` : ""}`);
-  setText("inspectConfidenceChip", `conf ${fmtMaybe(safeNum(meta.confidence), "", 3)}`);
-  setText("inspectSeverityChip", `${String(meta.severity_bucket || "low")} · ${fmtMaybe(safeNum(meta.severity_score), "", 3)}`);
+  setText("inspectConfidenceChip", `confidence ${fmtMaybe(safeNum(meta.confidence), "", 3)}`);
+  setText("inspectSeverityChip", `score ${fmtMaybe(safeNum(meta.severity_score), "", 3)}`);
+  setText("inspectFocusChip", inspectLockFocus ? "focus locked" : "focus free");
   setText("inspectSourceChip", String(sel.source || "scene"));
+  setText("inspectConfidenceHero", fmtMaybe(safeNum(meta.confidence), "", 3));
+  setText("inspectConfidenceNote", meta.confidence != null ? `${sel.status || sel.kind} confidence signal` : "No confidence data");
+  setText("inspectSeverityBucket", `Severity ${String(meta.severity_bucket || "low")}`);
+  setText("inspectSeverityScore", `Score ${fmtMaybe(safeNum(meta.severity_score), "", 3)}`);
+  const confFill = document.getElementById("inspectConfidenceFill");
+  if (confFill) confFill.style.width = `${Math.max(0, Math.min(100, (safeNum(meta.confidence) || 0) * 100))}%`;
   let motionText = "stationary";
   if (track.length >= 2) {
     const first = track[0].center;
@@ -3010,15 +3282,18 @@ function updateInspectHud(){
   setText("inspectMotion", motionText);
   const summaryEl = document.getElementById("inspectSummary");
   if (summaryEl) {
-    if (sel.status === "FP") summaryEl.textContent = `Unmatched estimate with ${fmtMaybe(safeNum(meta.confidence), "", 3)} confidence. Severity is driven by detection confidence and scene clutter.`;
+    if (sel.status === "FP") summaryEl.textContent = `Confidence is ${fmtMaybe(safeNum(meta.confidence), "", 3)} for this unmatched estimate. Severity reflects false-positive confidence, clutter, and any available motion cues.`;
     else if (sel.status === "FN") summaryEl.textContent = `Missed ground truth near ${fmtVec3(sel.center, 1)}. Severity stays high because the object was not recovered by the estimate layer.`;
-    else summaryEl.textContent = `Matched object with dominant issue: ${String(meta.severity_reason || "low TP error")}. Pair quality stays linked in 3D and camera overlays when metadata is present.`;
+    else summaryEl.textContent = `Matched object with dominant issue: ${String(meta.severity_reason || "low TP error")}. Confidence remains primary, while dyaw, drift, and pair distances explain why this TP still deserves attention.`;
   }
   renderInspectErrorGlyph(sel);
   const noteEl = document.getElementById("inspectTrailNote");
   if (noteEl) noteEl.textContent = track.length > 1
     ? `Trail frames ${track[0].frameIndex} → ${track[track.length - 1].frameIndex} (${track.length} matched)`
     : "Trail is building from nearby frames.";
+  const panel = document.getElementById("inspectPanel");
+  const showInspector = !!(document.getElementById("uiShowInspector") && document.getElementById("uiShowInspector").checked);
+  if (panel) panel.hidden = !showInspector;
 }
 
 function animatePulseMarkers(root, tsMs){
@@ -4427,15 +4702,19 @@ function animate(ts){
   controls.update();
   animatePulseMarkers(gtLayerGroup, ts);
   animatePulseMarkers(predLayerGroup, ts);
-  if (inspectOverlayGroup.children.length > 1) {
-    const pulse = inspectOverlayGroup.children[2];
-    if (pulse) {
-      const u = 0.5 + 0.5 * Math.sin((ts || 0) * 0.006);
-      const s = 0.92 + 0.22 * u;
-      pulse.scale.setScalar(s);
-      if (pulse.material) pulse.material.opacity = 0.45 + 0.4 * u;
+  inspectOverlayGroup.traverse((obj) => {
+    if (!obj || !obj.userData) return;
+    const u = 0.5 + 0.5 * Math.sin((ts || 0) * 0.006);
+    if (obj.userData.focusPulse) {
+      const s = 0.92 + 0.24 * u;
+      obj.scale.setScalar(s);
+      if (obj.material) obj.material.opacity = 0.5 + 0.34 * u;
+    } else if (obj.userData.focusHalo) {
+      const s = 1 + 0.06 * u;
+      obj.scale.setScalar(s);
+      if (obj.material) obj.material.opacity = 0.22 + 0.18 * u;
     }
-  }
+  });
   renderer.render(scene, camera);
   const cntOn = document.getElementById("uiShowMetricsCounts") && document.getElementById("uiShowMetricsCounts").checked;
   const rateOn = document.getElementById("uiShowMetricsRates") && document.getElementById("uiShowMetricsRates").checked;
