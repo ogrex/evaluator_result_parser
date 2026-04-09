@@ -139,6 +139,7 @@ flowchart TD
 ```
 
 - **GT** is drawn with filled/glass styling; **EST** as wireframe on top (`predLayerGroup.renderOrder` > `gtLayerGroup`).
+- External bbox rows may now include optional rich metadata such as `pair_uuid`, `vx`, `vy`, `confidence`, `x_error`, `y_error`, `z_error`, `yaw_error`, `center_distance`, `plane_distance`, `pair_dt_sec`, and dataset/scenario context fields. The viewer treats these as optional and derives inspector chips, spotlight severity, and camera fusion behavior when present.
 - **`bbox_layers_clear`** clears external layers and metrics overrides.
 
 Programmatic control from the same page: `window.T4ViewerAPI.setLayers`, `clearLayers`, etc. (see template).
@@ -151,12 +152,14 @@ When the camera panel is visible, the client requests **`/viewer/three/camera-ov
 
 - **No external layers:** `GET` — server projects **dataset** 3D boxes to 2D (`boxes_2d`), and can draw **external** layers only if you use POST.
 - **With GT/EST in memory:** `POST` with JSON body `{ "gt": [...], "pred": [...] }` — server runs `project_external_eval_box_to_image_roi` per box and returns **`boxes_2d_eval_gt`** and **`boxes_2d_pred`** (plus dataset `boxes_2d` when annotations are on).
+- Projected eval rows now preserve selection/linking metadata when available, including `uuid`, `pair_uuid`, `confidence`, `severity_score`, `center_distance`, `plane_distance`, `label`, `status`, and `kind`, so the browser can cross-highlight the same object between 3D and 2D.
 
 Client draws, on the scaled canvas:
 
 1. Dataset projections — magenta stroke (`boxes_2d`).
-2. Eval GT — green (`boxes_2d_eval_gt`).
-3. Eval EST — blue (`boxes_2d_pred`).
+2. Eval GT — green/orange depending on TP/FN (`boxes_2d_eval_gt`).
+3. Eval EST — blue/red depending on TP/FP (`boxes_2d_pred`).
+4. When an object is selected in 3D, the camera overlay can fade unrelated boxes and highlight only the selected object plus its paired mate.
 
 ```mermaid
 sequenceDiagram
@@ -195,7 +198,12 @@ Example:
 
 ## 9. Metrics charts
 
-The parent can send **`postMessage` `eval_metrics_series`** with per-frame series (e.g. TP/FN/FP counts). The viewer updates small orthographic charts (`metricsCanvas`, `metricsRatesCanvas`) and a playhead synced with `frame_index`. This path is **orthogonal** to `frame.bin` (no server round-trip for the series data itself).
+The parent can send **`postMessage` `eval_metrics_series`** with per-frame series. Supported inputs now include both:
+
+- Count/rate inputs: `gt_tp`, `gt_fn`, `est_tp`, `est_fp`, plus legacy `gt` / `pred` / `tpr`
+- Optional TP-quality inputs: `tp_center_distance_mean`, `tp_plane_distance_mean`, `tp_yaw_error_abs_mean`, `frame_severity_max`
+
+The viewer updates three orthographic charts (`metricsCanvas`, `metricsRatesCanvas`, `metricsErrorCanvas`) plus spotlight ranking. If the TP-quality series are not provided, the viewer derives them from `bbox_layers_by_frame` when the richer bbox metadata is available. This path is **orthogonal** to `frame.bin` (no server round-trip for the series data itself).
 
 ---
 

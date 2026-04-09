@@ -51,21 +51,67 @@
   .hud-panel__section-title{font-size:.62rem;font-weight:700;letter-spacing:.12em;text-transform:uppercase;color:#7d8db8;margin-bottom:.45rem}
   .hud-panel__hint{font-size:.62rem;color:#7d8caf;line-height:1.35;margin:-.15rem 0 .4rem;opacity:.92}
   .hud-panel .hud-grid{display:grid;gap:.38rem;font-size:.8rem}
+  .inspect-panel{
+    position:absolute;left:14px;top:14px;bottom:14px;min-width:min(48vw,460px);width:min(52vw,720px);max-width:min(94vw,980px);
+    background:linear-gradient(165deg,rgba(16,20,42,.96) 0%,rgba(7,10,22,.96) 52%,rgba(11,16,34,.97) 100%);
+    backdrop-filter:blur(18px) saturate(1.18);
+    border:1px solid rgba(124,146,212,.26);border-radius:16px;
+    box-shadow:0 12px 56px rgba(0,0,0,.48),0 0 0 1px rgba(255,255,255,.05) inset,0 1px 0 rgba(255,255,255,.06) inset;
+    overflow:hidden;z-index:6;display:flex;flex-direction:column;
+  }
+  .inspect-panel[hidden]{display:none !important}
+  .inspect-panel__body{padding:.9rem .95rem .95rem;overflow:visible;flex:1;min-height:0}
+  .inspect-panel .inspect-panel-hide{
+    flex-shrink:0;width:34px;border:none;background:rgba(26,32,58,.9);color:#a8b8e0;cursor:pointer;font-size:1.05rem;line-height:1;padding:0;
+    border-left:1px solid rgba(80,100,160,.28);transition:background .15s,color .15s;
+  }
+  .inspect-panel .inspect-panel-hide:hover{background:rgba(55,65,110,.55);color:#fff}
+  .inspect-panel-resize{
+    position:absolute;right:0;bottom:0;width:18px;height:18px;z-index:8;cursor:nwse-resize;
+    background:linear-gradient(135deg,transparent 50%,rgba(120,150,220,.45) 50%);
+    border-radius:0 0 14px 0;
+  }
+  .inspect-panel-resize:hover{background:linear-gradient(135deg,transparent 45%,rgba(150,180,245,.68) 55%)}
   #evalHud{margin-top:.4rem;padding-top:.4rem;border-top:1px solid rgba(60,80,140,.25);font-size:.68rem;line-height:1.2}
   #evalHud .eval-hud-head{font-weight:700;font-size:.58rem;letter-spacing:.08em;text-transform:uppercase;color:#8b9cc4;margin-bottom:.2rem}
   #evalHud .eval-rp{margin-top:.28rem;font-family:var(--font-mono);font-size:.62rem;opacity:.92;color:#aab6d4}
-  #inspectHud{margin-top:.55rem;padding-top:.55rem;border-top:1px solid rgba(60,80,140,.25);font-size:.7rem;line-height:1.35}
+  #inspectHud{font-size:.82rem;line-height:1.45}
   #inspectHud[hidden]{display:none !important}
-  #inspectHud .inspect-head{display:flex;justify-content:space-between;align-items:center;gap:.5rem;margin-bottom:.35rem}
-  #inspectHud .inspect-head strong{font-size:.58rem;letter-spacing:.1em;text-transform:uppercase;color:#8b9cc4}
-  #inspectHud .inspect-chip{padding:.1rem .38rem;border-radius:999px;border:1px solid rgba(120,160,255,.25);background:rgba(25,33,60,.72);color:#cdd9fb;font-family:var(--font-mono);font-size:.6rem}
-  #inspectHud .inspect-meta{display:grid;gap:.2rem;margin-top:.22rem}
-  #inspectHud .inspect-row{display:flex;justify-content:space-between;align-items:center;gap:.55rem}
-  #inspectHud .inspect-row span:first-child{color:#91a0c3}
-  #inspectHud .inspect-row code{color:#dce7ff}
-  #inspectHud .inspect-actions{display:flex;gap:.38rem;flex-wrap:wrap;margin-top:.45rem}
-  #inspectHud .inspect-actions button{font-size:.68rem;padding:.25rem .45rem}
-  #inspectHud .inspect-note{margin-top:.35rem;color:#8d9bbd;font-size:.62rem;line-height:1.35}
+  #inspectHud .inspect-head{display:flex;justify-content:space-between;align-items:center;gap:.65rem;margin-bottom:.45rem}
+  #inspectHud .inspect-head strong{font-size:.72rem;letter-spacing:.12em;text-transform:uppercase;color:#d3e0ff}
+  #inspectHud .inspect-chip{padding:.18rem .5rem;border-radius:999px;border:1px solid rgba(120,160,255,.25);background:rgba(25,33,60,.72);color:#cdd9fb;font-family:var(--font-mono);font-size:.7rem}
+  #inspectHud .inspect-chip-row{display:flex;flex-wrap:wrap;gap:.36rem;margin:.14rem 0 .46rem}
+  #inspectHud .inspect-meta{display:grid;gap:.26rem;margin-top:.16rem}
+  #inspectHud .inspect-row{display:flex;justify-content:space-between;align-items:center;gap:1rem}
+  #inspectHud .inspect-row span:first-child{color:#91a0c3;flex:0 0 auto}
+  #inspectHud .inspect-row code{color:#dce7ff;font-size:.78rem;white-space:nowrap;text-align:right;overflow:hidden;text-overflow:ellipsis;max-width:65%}
+  #inspectHud .inspect-row.inspect-row--context{align-items:flex-start;gap:.9rem}
+  #inspectHud .inspect-row.inspect-row--context span:first-child{flex:0 0 5rem;padding-top:.08rem}
+  #inspectHud .inspect-row.inspect-row--context code{
+    flex:1;
+    max-width:none;
+    white-space:normal;
+    text-align:left;
+    overflow:visible;
+    text-overflow:clip;
+    overflow-wrap:anywhere;
+    word-break:break-word;
+    line-height:1.34;
+  }
+  #inspectHud .inspect-actions{display:flex;gap:.42rem;flex-wrap:wrap;margin-top:.52rem}
+  #inspectHud .inspect-actions button{font-size:.76rem;padding:.34rem .58rem}
+  #inspectHud .inspect-note{margin-top:.36rem;color:#8d9bbd;font-size:.7rem;line-height:1.4}
+  #inspectHud .inspect-main-grid{display:grid;grid-template-columns:minmax(0,1fr);gap:.58rem}
+  #inspectHud .inspect-info-grid{display:grid;grid-template-columns:minmax(0,1fr);gap:.5rem}
+  #inspectHud .inspect-card{padding:.58rem .66rem;border-radius:12px;background:rgba(12,18,36,.78);border:1px solid rgba(88,110,175,.24)}
+  #inspectHud .inspect-card strong{display:block;margin-bottom:.32rem;font-size:.6rem;letter-spacing:.12em;text-transform:uppercase;color:#8ca0cf}
+  #inspectHud .inspect-card canvas{width:100%;height:auto;display:block;background:radial-gradient(circle at 50% 50%,rgba(64,84,132,.16),rgba(8,12,28,.72));border-radius:10px;border:1px solid rgba(88,110,175,.22)}
+  #inspectHud .inspect-card.inspect-hero-card canvas{min-height:220px}
+  #inspectHud .inspect-summary{margin-top:.38rem;color:#cad6f6;font-size:.72rem;line-height:1.46}
+  #inspectHud .inspect-kpi-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:.4rem}
+  #inspectHud .inspect-kpi{padding:.42rem .5rem;border-radius:10px;background:rgba(19,27,50,.82);border:1px solid rgba(88,110,175,.2)}
+  #inspectHud .inspect-kpi-label{display:block;font-size:.58rem;letter-spacing:.12em;text-transform:uppercase;color:#8ea1cf;margin-bottom:.16rem}
+  #inspectHud .inspect-kpi code{display:block;color:#eef4ff;font-size:.82rem}
   #spotlightHud{margin-top:.55rem;padding-top:.55rem;border-top:1px solid rgba(60,80,140,.25);font-size:.7rem;line-height:1.35}
   #spotlightHud[hidden]{display:none !important}
   #spotlightHud .spotlight-head{display:flex;justify-content:space-between;align-items:center;gap:.5rem;margin-bottom:.35rem}
@@ -76,6 +122,7 @@
   #spotlightHud .spotlight-actions{display:flex;gap:.38rem;flex-wrap:wrap;margin-top:.45rem}
   #spotlightHud .spotlight-actions button{font-size:.68rem;padding:.25rem .45rem}
   #spotlightHud .spotlight-note{margin-top:.35rem;color:#8d9bbd;font-size:.62rem;line-height:1.35}
+  #spotlightHud select{font-size:.68rem;min-width:8rem;padding:.2rem .35rem}
   .layer-eval-grid .layer-count{font-family:var(--font-mono);font-size:.7rem;opacity:.9;margin-left:.25rem;color:#aab6d4}
   #evalHud .row{display:flex;justify-content:space-between;align-items:center;gap:.6rem}
   #evalHud .row span:first-child{color:#9aa6c8;font-size:.76rem}
@@ -101,12 +148,14 @@
     position:static;font-size:9px;font-weight:700;letter-spacing:.14em;text-transform:uppercase;
     color:#7a8bbf;pointer-events:none;text-shadow:0 0 12px rgba(110,168,255,.35);
   }
+  .metrics-wrap.metrics-error-wrap .panel-drag-handle .metrics-title{color:#ffd38f}
   .metrics-caption{position:absolute;left:8px;right:8px;top:30px;z-index:1;font-size:9px;line-height:1.35;color:#9aa6c8;pointer-events:none;font-family:var(--font-mono)}
   .metrics-legend{position:absolute;left:8px;right:8px;bottom:5px;z-index:1;font-size:8px;letter-spacing:.03em;color:#8a9bc4;pointer-events:none;display:flex;flex-wrap:wrap;gap:6px 10px;justify-content:flex-end}
   .metrics-legend span{white-space:nowrap}
   .metrics-legend .c1{color:#00cc66}.metrics-legend .c2{color:#ff9933}.metrics-legend .c3{color:#66b3ff}.metrics-legend .c4{color:#ff6666}
   .metrics-legend.rates-legend .r1{color:#5ee4a8}.metrics-legend.rates-legend .r2{color:#66b3ff}.metrics-legend.rates-legend .r3{color:#ffcc66}.metrics-legend.rates-legend .r4{color:#ff7799}
-  #metricsCanvas,#metricsRatesCanvas{position:relative;z-index:0;width:100%;height:100%;display:block}
+  .metrics-legend.error-legend .e1{color:#6fe2ff}.metrics-legend.error-legend .e2{color:#8fb1ff}.metrics-legend.error-legend .e3{color:#ffbe78}.metrics-legend.error-legend .e4{color:#ff739d}
+  #metricsCanvas,#metricsRatesCanvas,#metricsErrorCanvas{position:relative;z-index:0;width:100%;height:100%;display:block}
   .metrics-wrap .metrics-caption,.metrics-wrap .metrics-legend{z-index:2}
   .view-panels{position:relative;z-index:4}
   .view-panels>summary{cursor:pointer;list-style:none;font-size:.78rem;font-weight:600;letter-spacing:.06em;text-transform:uppercase;color:var(--muted);padding:.28rem .5rem;border-radius:8px;border:1px solid rgba(90,110,180,.35);background:rgba(18,24,48,.75)}
@@ -182,6 +231,9 @@
   .cam-slot{position:relative;min-height:100px;background:#0a0e18;display:flex;align-items:center;justify-content:center}
   .cam-slot canvas{width:100%;height:auto;display:block}
   .cam-slot-label{position:absolute;left:3px;bottom:3px;font-size:9px;font-weight:600;color:#d0dcf0;text-shadow:0 0 6px #000;padding:2px 5px;background:rgba(0,0,0,.45);border-radius:4px;pointer-events:none;max-width:calc(100% - 8px);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  @media (min-width:960px){
+    #inspectHud .inspect-info-grid{grid-template-columns:repeat(2,minmax(0,1fr))}
+  }
 </style>
 </head><body><div id="app" class="app-root">
   <div class="top">
@@ -202,8 +254,10 @@
           <summary>Panels</summary>
           <div class="view-panels__body">
             <label title="Scene, layers, and point controls"><input type="checkbox" id="uiShowHud" checked> Settings panel</label>
+            <label title="Large floating inspector for selected boxes"><input type="checkbox" id="uiShowInspector" checked> Inspector panel</label>
             <label title="GT/EST per-frame counts"><input type="checkbox" id="uiShowMetricsCounts" checked> Count chart</label>
             <label title="TPR, precision, F1, FDR (from counts)"><input type="checkbox" id="uiShowMetricsRates" checked> Rate chart</label>
+            <label title="TP quality and frame severity trends"><input type="checkbox" id="uiShowMetricsError" checked> Error chart</label>
             <label title="Dataset camera images (bottom-left)"><input type="checkbox" id="uiShowCameraViewport"> Camera images</label>
           </div>
         </details>
@@ -229,6 +283,7 @@
         </select></label>
         <label>camera <select id="overlayCamera"></select></label>
         <label title="Dataset 3D boxes + optional GT/EST from parent (postMessage)"><input type="checkbox" id="showOverlayAnnotations" checked> Overlays</label>
+        <label title="Only draw the currently selected object and its paired mate when selection exists"><input type="checkbox" id="cameraSelectionOnly"> Selection only</label>
         <label title="Ego xy radius [m]">r≤<input type="number" id="cameraOverlayMaxRange" min="5" max="500" step="5" value="120" style="width:3.25rem"></label>
         <label title="Max boxes to draw (nearest first)">max <input type="number" id="cameraOverlayMaxBoxes" min="1" max="500" step="1" value="128" style="width:3rem"></label>
         <button type="button" id="cameraViewportHideBtn" title="Hide camera panel">✕</button>
@@ -246,6 +301,12 @@
       <div id="metricsRatesCaption" class="metrics-caption"></div>
       <canvas id="metricsRatesCanvas"></canvas>
       <div class="metrics-legend rates-legend" aria-hidden="true"><span class="r1">●</span>TPR <span class="r2">●</span>Prec <span class="r3">●</span>F1 <span class="r4">●</span>FDR</div>
+    </div>
+    <div id="metricsErrorWrap" class="metrics-wrap metrics-error-wrap" hidden title="TP quality and composite severity trend">
+      <div class="panel-drag-handle metrics-drag-head" title="Drag to move · double-click to snap back to default"><span class="metrics-title">Error Trend · TP quality / severity</span></div>
+      <div id="metricsErrorCaption" class="metrics-caption"></div>
+      <canvas id="metricsErrorCanvas"></canvas>
+      <div class="metrics-legend error-legend" aria-hidden="true"><span class="e1">●</span>TP ctr <span class="e2">●</span>TP plane <span class="e3">●</span>|yaw| <span class="e4">●</span>severity</div>
     </div>
     <div id="metricsWrap" class="metrics-wrap" hidden>
       <div class="panel-drag-handle metrics-drag-head" title="Drag to move · double-click to snap back to default"><span class="metrics-title">Counts · GT/EST buckets</span></div>
@@ -297,38 +358,19 @@
           <strong>Error spotlight</strong>
           <span class="spotlight-chip" id="spotlightChip">idle</span>
         </div>
+        <div class="spotlight-row"><span>Mode</span><select id="spotlightMode"><option value="composite" selected>Composite</option><option value="fn">FN hotspots</option></select></div>
         <div class="spotlight-row"><span>Current</span><code id="spotlightCurrent">No hotspot selected</code></div>
         <div class="spotlight-row"><span>Rank</span><code id="spotlightRank">—</code></div>
-        <div class="spotlight-row"><span>FN rate</span><code id="spotlightRate">—</code></div>
-        <div class="spotlight-row"><span>FN count</span><code id="spotlightCount">—</code></div>
+        <div class="spotlight-row"><span>Severity</span><code id="spotlightRate">—</code></div>
+        <div class="spotlight-row"><span>Counts</span><code id="spotlightCount">—</code></div>
+        <div class="spotlight-row"><span>Worst object</span><code id="spotlightWorst">—</code></div>
+        <div class="spotlight-row"><span>Reason</span><code id="spotlightReason">—</code></div>
         <div class="spotlight-actions">
           <button type="button" id="spotlightPrevBtn">Prev hotspot</button>
           <button type="button" id="spotlightNextBtn">Next hotspot</button>
           <button type="button" id="spotlightPlayBtn">Tour hotspots</button>
         </div>
-        <div id="spotlightNote" class="spotlight-note">Uses per-frame GT/FN counts from eval layers to rank the hardest moments.</div>
-      </div>
-      <div id="inspectHud" hidden>
-        <div class="inspect-head">
-          <strong>Inspector</strong>
-          <span class="inspect-chip" id="inspectTypeChip">none</span>
-        </div>
-        <div id="inspectEmpty" class="inspect-note">Click any 3D dataset or eval box to inspect it, lock focus, and draw a short temporal trail.</div>
-        <div id="inspectBody" hidden>
-          <div class="inspect-meta">
-            <div class="inspect-row"><span>Label</span><code id="inspectLabel">-</code></div>
-            <div class="inspect-row"><span>Frame</span><code id="inspectFrame">-</code></div>
-            <div class="inspect-row"><span>Position</span><code id="inspectPos">-</code></div>
-            <div class="inspect-row"><span>Size</span><code id="inspectSize">-</code></div>
-            <div class="inspect-row"><span>Motion</span><code id="inspectMotion">-</code></div>
-          </div>
-          <div class="inspect-actions">
-            <button type="button" id="inspectFocusBtn">Focus</button>
-            <button type="button" id="inspectLockBtn" aria-pressed="true">Lock focus: on</button>
-            <button type="button" id="inspectClearBtn">Clear</button>
-          </div>
-          <div id="inspectTrailNote" class="inspect-note"></div>
-        </div>
+        <div id="spotlightNote" class="spotlight-note">Ranks hard moments using composite severity by default, with FN-only mode still available.</div>
       </div>
       <details class="hud-advanced" id="hudAdvanced">
         <summary>Advanced</summary>
@@ -341,8 +383,102 @@
           <label title="Master toggle for animated emphasis markers"><input type="checkbox" id="fxEnableEmphasis" checked> Emphasis effects</label>
           <label title="False negatives: expanding ring under the box"><input type="checkbox" id="fxFnRing" checked> FN shockwave ring</label>
           <label title="False positives: pulsing beacon at the box center"><input type="checkbox" id="fxFpPulse" checked> FP pulse beacon</label>
+          <label title="High-severity true positives: subtle error aura"><input type="checkbox" id="fxTpQuality" checked> TP quality overlay</label>
+          <label title="Only emphasize objects above the severe threshold"><input type="checkbox" id="highlightSevereOnly"> Highlight severe only</label>
         </div>
       </details>
+    </div>
+    <div id="inspectPanel" class="inspect-panel">
+      <div class="hud-header-bar">
+        <div class="hud-drag-handle panel-drag-handle" id="inspectDragHandle" title="Drag to move · double-click to reset position">Inspector</div>
+        <button type="button" class="inspect-panel-hide" id="inspectHideBtn" title="Hide inspector panel">✕</button>
+      </div>
+      <div class="inspect-panel__body">
+        <div id="inspectHud" hidden>
+          <div class="inspect-head">
+            <strong>Inspector</strong>
+            <span class="inspect-chip" id="inspectTypeChip">none</span>
+          </div>
+          <div id="inspectEmpty" class="inspect-note">Click any 3D dataset or eval box to inspect it, lock focus, and draw a short temporal trail.</div>
+          <div id="inspectBody" hidden>
+            <div class="inspect-chip-row">
+              <span class="inspect-chip" id="inspectStatusChip">status</span>
+              <span class="inspect-chip" id="inspectConfidenceChip">conf</span>
+              <span class="inspect-chip" id="inspectSeverityChip">severity</span>
+              <span class="inspect-chip" id="inspectSourceChip">source</span>
+            </div>
+            <div class="inspect-main-grid">
+              <div class="inspect-card inspect-hero-card">
+                <strong>Error focus</strong>
+                <canvas id="inspectErrorGlyph" width="520" height="300"></canvas>
+                <div id="inspectSummary" class="inspect-summary"></div>
+              </div>
+              <div class="inspect-info-grid">
+                <div class="inspect-card">
+                  <strong>Pose</strong>
+                  <div class="inspect-meta">
+                    <div class="inspect-row"><span>Label</span><code id="inspectLabel">-</code></div>
+                    <div class="inspect-row"><span>Frame</span><code id="inspectFrame">-</code></div>
+                    <div class="inspect-row"><span>Position</span><code id="inspectPos">-</code></div>
+                    <div class="inspect-row"><span>Size</span><code id="inspectSize">-</code></div>
+                    <div class="inspect-row"><span>Yaw</span><code id="inspectYaw">-</code></div>
+                  </div>
+                </div>
+                <div class="inspect-card">
+                  <strong>Motion</strong>
+                  <div class="inspect-meta">
+                    <div class="inspect-row"><span>Velocity</span><code id="inspectVelocity">-</code></div>
+                    <div class="inspect-row"><span>Speed</span><code id="inspectSpeed">-</code></div>
+                    <div class="inspect-row"><span>Trail</span><code id="inspectMotion">-</code></div>
+                  </div>
+                </div>
+                <div class="inspect-card">
+                  <strong>Match quality</strong>
+                  <div class="inspect-meta">
+                    <div class="inspect-row"><span>Center dist</span><code id="inspectCenterDistance">-</code></div>
+                    <div class="inspect-row"><span>Plane dist</span><code id="inspectPlaneDistance">-</code></div>
+                    <div class="inspect-row"><span>Pair dt</span><code id="inspectPairDt">-</code></div>
+                  </div>
+                </div>
+                <div class="inspect-card">
+                  <strong>Error decomposition</strong>
+                  <div class="inspect-meta">
+                    <div class="inspect-row"><span>x / y</span><code id="inspectErrorXY">-</code></div>
+                    <div class="inspect-row"><span>z / yaw</span><code id="inspectErrorZYaw">-</code></div>
+                    <div class="inspect-row"><span>XY mag</span><code id="inspectErrorMag">-</code></div>
+                  </div>
+                </div>
+                <div class="inspect-card">
+                  <strong>Context</strong>
+                  <div class="inspect-meta">
+                    <div class="inspect-row inspect-row--context"><span>Topic</span><code id="inspectTopic">-</code></div>
+                    <div class="inspect-row inspect-row--context"><span>Frame id</span><code id="inspectFrameId">-</code></div>
+                    <div class="inspect-row inspect-row--context"><span>Run</span><code id="inspectRun">-</code></div>
+                    <div class="inspect-row inspect-row--context"><span>Dataset</span><code id="inspectDataset">-</code></div>
+                    <div class="inspect-row inspect-row--context"><span>Scenario</span><code id="inspectScenario">-</code></div>
+                  </div>
+                </div>
+                <div class="inspect-card">
+                  <strong>Pair snapshot</strong>
+                  <div class="inspect-kpi-grid">
+                    <div class="inspect-kpi"><span class="inspect-kpi-label">Center</span><code id="inspectKpiCenter">-</code></div>
+                    <div class="inspect-kpi"><span class="inspect-kpi-label">Plane</span><code id="inspectKpiPlane">-</code></div>
+                    <div class="inspect-kpi"><span class="inspect-kpi-label">|Yaw|</span><code id="inspectKpiYaw">-</code></div>
+                    <div class="inspect-kpi"><span class="inspect-kpi-label">XY drift</span><code id="inspectKpiXY">-</code></div>
+                  </div>
+                </div>
+              </div>
+            </div>
+            <div class="inspect-actions">
+              <button type="button" id="inspectFocusBtn">Focus</button>
+              <button type="button" id="inspectLockBtn" aria-pressed="true">Lock focus: on</button>
+              <button type="button" id="inspectClearBtn">Clear</button>
+            </div>
+            <div id="inspectTrailNote" class="inspect-note"></div>
+          </div>
+        </div>
+      </div>
+      <div id="inspectPanelResize" class="inspect-panel-resize" title="Drag corner to resize · double-click to reset size"></div>
     </div>
   </div>
 </div>
@@ -531,6 +667,7 @@ let lastCameraPayload = null;
 let lastCameraPanelCheckbox = false;
 /** Bumped when the user turns the camera panel off or starts a new overlay fetch (drops stale async work). */
 let cameraOverlayGeneration = 0;
+const cameraCanvasHitRegions = new WeakMap();
 const inspectRaycaster = new THREE.Raycaster();
 inspectRaycaster.params.Line = { threshold: 0.5 };
 const inspectPointer = new THREE.Vector2();
@@ -665,6 +802,21 @@ let metricsRatesChartGroup = new THREE.Group();
 metricsRatesScene.add(metricsRatesChartGroup);
 let metricsRatesPlayhead = null;
 
+const metricsErrorCanvas = document.getElementById("metricsErrorCanvas");
+const metricsErrorWrapEl = document.getElementById("metricsErrorWrap");
+const metricsErrorScene = new THREE.Scene();
+metricsErrorScene.background = null;
+const metricsErrorCamera = new THREE.OrthographicCamera(-1, 1, 1, -1, 0.1, 20);
+metricsErrorCamera.position.set(0, 0, 3);
+const metricsErrorRenderer = new THREE.WebGLRenderer({ canvas: metricsErrorCanvas, antialias: true, alpha: true });
+metricsErrorRenderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
+metricsErrorRenderer.setClearColor(0x000000, 0);
+metricsErrorRenderer.outputColorSpace = THREE.SRGBColorSpace;
+metricsErrorRenderer.toneMapping = THREE.NoToneMapping;
+let metricsErrorChartGroup = new THREE.Group();
+metricsErrorScene.add(metricsErrorChartGroup);
+let metricsErrorPlayhead = null;
+
 const slider = document.getElementById("slider");
 const frameTxt = document.getElementById("frameTxt");
 const statusEl = document.getElementById("status");
@@ -675,6 +827,19 @@ function setStatus(t){ statusEl.textContent = t; }
 function setFrameText(){ frameTxt.textContent = `frame ${frame}/${Math.max(0,totalFrames-1)}`; slider.value = String(frame); }
 function fmtNum(v, d){
   return Number.isFinite(v) ? Number(v).toFixed(d) : "—";
+}
+function fmtSigned(v, d){
+  return Number.isFinite(v) ? `${Number(v) >= 0 ? "+" : ""}${Number(v).toFixed(d)}` : "—";
+}
+function safeNum(v){
+  const n = Number(v);
+  return Number.isFinite(n) ? n : null;
+}
+function clip01(v){
+  return Math.max(0, Math.min(1, Number(v) || 0));
+}
+function fmtMaybe(v, suffix, digits){
+  return Number.isFinite(v) ? `${Number(v).toFixed(digits != null ? digits : 2)}${suffix || ""}` : "—";
 }
 function fmtVec3(v, d){
   if (!v || v.length < 3) return "—";
@@ -698,8 +863,153 @@ function boxSizeFromCornersArray(arr){
   const p4 = new THREE.Vector3(arr[12], arr[13], arr[14]);
   return [p0.distanceTo(p4), p0.distanceTo(p3), p0.distanceTo(p1)];
 }
+function wrapAngleRad(v){
+  if (!Number.isFinite(v)) return null;
+  let out = Number(v);
+  while (out > Math.PI) out -= Math.PI * 2;
+  while (out < -Math.PI) out += Math.PI * 2;
+  return out;
+}
+function severityBucket(score){
+  if (!Number.isFinite(score)) return "unknown";
+  if (score >= 0.82) return "critical";
+  if (score >= 0.62) return "high";
+  if (score >= 0.35) return "medium";
+  return "low";
+}
+function deriveEvalSeverity(kind, status, metrics){
+  const preset = safeNum(metrics && metrics.severity_score);
+  if (preset != null) {
+    return {
+      score: clip01(preset),
+      bucket: severityBucket(preset),
+      reason: String((metrics && (metrics.severity_reason || metrics.severity_label)) || "provided"),
+    };
+  }
+  const st = String(status || "TP").toUpperCase();
+  if (st === "FN") return { score: 0.96, bucket: "critical", reason: "missed ground truth" };
+  if (st === "FP") {
+    const conf = safeNum(metrics && metrics.confidence);
+    const fpScore = 0.66 + 0.18 * (conf != null ? conf : 0.35);
+    return { score: clip01(fpScore), bucket: severityBucket(fpScore), reason: "false positive" };
+  }
+  const parts = [];
+  const xyMag = safeNum(metrics && metrics.xy_error_mag);
+  const zErr = safeNum(metrics && metrics.z_error);
+  const yawErr = safeNum(metrics && metrics.yaw_error_abs);
+  const centerD = safeNum(metrics && metrics.center_distance);
+  const planeD = safeNum(metrics && metrics.plane_distance);
+  const dt = safeNum(metrics && metrics.pair_dt_sec_abs);
+  if (xyMag != null) parts.push(["xy error", Math.min(1, xyMag / 1.8) * 0.34]);
+  if (zErr != null) parts.push(["z error", Math.min(1, Math.abs(zErr) / 1.0) * 0.16]);
+  if (yawErr != null) parts.push(["yaw error", Math.min(1, yawErr / 0.8) * 0.24]);
+  if (centerD != null) parts.push(["center distance", Math.min(1, centerD / 1.8) * 0.16]);
+  if (planeD != null) parts.push(["plane distance", Math.min(1, planeD / 1.8) * 0.12]);
+  if (dt != null) parts.push(["pair dt", Math.min(1, dt / 0.1) * 0.08]);
+  if (!parts.length) return { score: kind === "GT" ? 0.08 : 0.12, bucket: "low", reason: "low TP error" };
+  parts.sort((a, b) => b[1] - a[1]);
+  const score = clip01(0.1 + parts.reduce((sum, p) => sum + p[1], 0));
+  return { score, bucket: severityBucket(score), reason: String(parts[0][0]) };
+}
+function normalizeEvalBox(box, layerId, frameIndexOverride){
+  if (!box || typeof box !== "object") return null;
+  const kind = normalizeEvalKind(box, layerId);
+  const status = normalizeEvalStatus(box);
+  const pose = readEvalBoxPose(box);
+  const rawCorners = Array.isArray(box.corners) && box.corners.length === 24
+    ? box.corners.slice(0, 24).map((v) => Number(v || 0))
+    : null;
+  const derivedCenter = rawCorners ? boxCenterFromCornersArray(rawCorners) : null;
+  const derivedSize = rawCorners ? boxSizeFromCornersArray(rawCorners) : null;
+  const vx = safeNum(box.vx);
+  const vy = safeNum(box.vy);
+  const xErr = safeNum(box.x_error);
+  const yErr = safeNum(box.y_error);
+  const zErr = safeNum(box.z_error);
+  const yawErr = wrapAngleRad(safeNum(box.yaw_error));
+  const centerDistance = safeNum(box.center_distance);
+  const planeDistance = safeNum(box.plane_distance);
+  const pairDtSec = safeNum(box.pair_dt_sec);
+  const xyErrorMag = (xErr != null || yErr != null) ? Math.hypot(xErr || 0, yErr || 0) : null;
+  const speedMps = (vx != null || vy != null) ? Math.hypot(vx || 0, vy || 0) : null;
+  const severity = deriveEvalSeverity(kind, status, {
+    severity_score: box.severity_score,
+    severity_reason: box.severity_reason,
+    severity_label: box.severity_label,
+    confidence: box.confidence,
+    xy_error_mag: xyErrorMag,
+    z_error: zErr,
+    yaw_error_abs: yawErr != null ? Math.abs(yawErr) : null,
+    center_distance: centerDistance,
+    plane_distance: planeDistance,
+    pair_dt_sec_abs: pairDtSec != null ? Math.abs(pairDtSec) : null,
+  });
+  const corners = rawCorners || boxCornersFromPose(pose.cx, pose.cy, pose.cz, pose.l, pose.w, pose.h, pose.yaw);
+  return {
+    ...box,
+    _normalized_eval: true,
+    label: String(box.label ?? box.name ?? kind),
+    kind,
+    status,
+    source: String(layerId === "pred" ? "eval-pred" : "eval-gt"),
+    layerId,
+    uuid: String(box.uuid ?? box.id ?? box.track_id ?? box.object_id ?? box.instance_token ?? ""),
+    pair_uuid: String(box.pair_uuid ?? ""),
+    trackId: String(box.uuid ?? box.id ?? box.track_id ?? box.object_id ?? box.instance_token ?? ""),
+    frameIndex: Number.isFinite(Number(box.frame_index)) ? Number(box.frame_index) : frameIndexOverride,
+    frame_id: String(box.frame_id ?? ""),
+    topic_name: String(box.topic_name ?? ""),
+    suite_name: String(box.suite_name ?? ""),
+    scenario_name: String(box.scenario_name ?? ""),
+    run: String(box.run ?? ""),
+    t4dataset_id: String(box.t4dataset_id ?? ""),
+    t4dataset_name: String(box.t4dataset_name ?? ""),
+    unix_time: safeNum(box.unix_time),
+    confidence: safeNum(box.confidence),
+    vx,
+    vy,
+    speed_mps: speedMps,
+    x_error: xErr,
+    y_error: yErr,
+    z_error: zErr,
+    yaw_error: yawErr,
+    xy_error_mag: xyErrorMag,
+    center_distance: centerDistance,
+    plane_distance: planeDistance,
+    pair_dt_sec: pairDtSec,
+    severity_score: severity.score,
+    severity_bucket: severity.bucket,
+    severity_reason: severity.reason,
+    center: derivedCenter || [pose.cx, pose.cy, pose.cz],
+    size: derivedSize || [pose.l, pose.w, pose.h],
+    yaw: pose.yaw,
+    corners,
+  };
+}
+function normalizeEvalEntry(entry, frameIndexOverride){
+  const raw = entry && typeof entry === "object" ? entry : {};
+  return {
+    ...raw,
+    gt: Array.isArray(raw.gt) ? raw.gt.map((box) => normalizeEvalBox(box, "gt", frameIndexOverride)).filter(Boolean) : [],
+    pred: Array.isArray(raw.pred) ? raw.pred.map((box) => normalizeEvalBox(box, "pred", frameIndexOverride)).filter(Boolean) : [],
+  };
+}
 function getInspectableBoxMeta(box, layerId){
   if (!box || typeof box !== "object") return null;
+  if (box.center && box.size && box.corners) {
+    return {
+      center: Array.isArray(box.center) ? box.center.slice(0, 3) : null,
+      size: Array.isArray(box.size) ? box.size.slice(0, 3) : null,
+      corners: Array.isArray(box.corners) ? box.corners.slice(0, 24) : null,
+      label: String(box.label ?? box.name ?? "box"),
+      kind: normalizeEvalKind(box, layerId),
+      status: normalizeEvalStatus(box),
+      source: String(box.source || (layerId === "pred" ? "eval-pred" : "eval-gt")),
+      trackId: String(box.uuid ?? box.id ?? box.track_id ?? box.object_id ?? box.instance_token ?? ""),
+      pairId: String(box.pair_uuid ?? ""),
+      meta: box,
+    };
+  }
   if (Array.isArray(box.corners) && box.corners.length === 24) {
     const center = boxCenterFromCornersArray(box.corners);
     const size = boxSizeFromCornersArray(box.corners);
@@ -712,6 +1022,8 @@ function getInspectableBoxMeta(box, layerId){
       status: normalizeEvalStatus(box),
       source: layerId === "pred" ? "eval-pred" : "eval-gt",
       trackId: String(box.uuid ?? box.id ?? box.track_id ?? box.object_id ?? box.instance_token ?? ""),
+      pairId: String(box.pair_uuid ?? ""),
+      meta: box,
     };
   }
   if (layerId === "gt" || layerId === "pred") {
@@ -726,6 +1038,8 @@ function getInspectableBoxMeta(box, layerId){
       status: normalizeEvalStatus(box),
       source: layerId === "pred" ? "eval-pred" : "eval-gt",
       trackId: String(box.uuid ?? box.id ?? box.track_id ?? box.object_id ?? box.instance_token ?? ""),
+      pairId: String(box.pair_uuid ?? ""),
+      meta: box,
     };
   }
   return null;
@@ -743,8 +1057,10 @@ function buildInspectCandidate(meta, extra){
     status: String(meta.status || ""),
     source: String(meta.source || "scene"),
     trackId: String(meta.trackId || ""),
+    pairId: String(meta.pairId || ""),
     frameIndex: frame,
     sampleToken: extra && extra.sampleToken ? String(extra.sampleToken) : "",
+    meta: meta.meta || null,
   };
 }
 function clearGroupDeep(g){
@@ -872,43 +1188,6 @@ function addEvalLightPillar(parent, center, height, colorHex, opts){
   return pillar;
 }
 
-function addEvalGhostEchoes(parent, pose, colorHex, opts){
-  if (!parent || !pose) return [];
-  const count = Math.max(2, Math.min(5, Math.floor(Number(opts && opts.count) || 3)));
-  const spacing = Math.max(0.35, Number(opts && opts.spacing) || 0.85);
-  const rise = Number(opts && opts.rise) || 0.06;
-  const c = Math.cos(Number(pose.yaw || 0));
-  const s = Math.sin(Number(pose.yaw || 0));
-  const dirX = c;
-  const dirY = s;
-  const cornersBase = boxCornersFromPose(0, 0, 0, pose.l, pose.w, pose.h, pose.yaw);
-  const edgePts = boxEdgeSegmentsFromCorners(cornersBase);
-  const made = [];
-  for (let i = 1; i <= count; i++) {
-    const g = new THREE.BufferGeometry();
-    g.setAttribute("position", new THREE.Float32BufferAttribute(edgePts, 3));
-    const alpha = Math.max(0.08, 0.34 - i * 0.07);
-    const echo = new THREE.LineSegments(g, new THREE.LineBasicMaterial({
-      color: colorHex,
-      transparent: true,
-      opacity: alpha,
-      depthWrite: false,
-    }));
-    echo.position.set(
-      Number(pose.cx || 0) - dirX * spacing * i,
-      Number(pose.cy || 0) - dirY * spacing * i,
-      Number(pose.cz || 0) + rise * i
-    );
-    echo.userData.effectKind = "ghost";
-    echo.userData.effectOpacityBase = alpha;
-    echo.userData.effectOpacityAmp = 0.045;
-    echo.userData.effectPhase = Number(opts && opts.phase) || 0;
-    parent.add(echo);
-    made.push(echo);
-  }
-  return made;
-}
-
 /** Per-frame eval bucket counts for HUD and metrics (GT×TP|FN, EST×TP|FP). */
 function countEvalBucketsFromBoxes(gtBoxes, predBoxes){
   const o = { gt_tp: 0, gt_fn: 0, est_tp: 0, est_fp: 0 };
@@ -965,19 +1244,42 @@ function metricsFromEntry(entry){
 function buildSpotlightFrames(){
   const series = computeMetricsSeries();
   if (!series || series.n <= 0) return [];
+  const err = computeErrorSeries();
+  const modeEl = document.getElementById("spotlightMode");
+  const mode = modeEl && modeEl.value ? modeEl.value : "composite";
   const ranked = [];
   for (let i = 0; i < series.n; i++) {
     const fn = Number(series.gt_fn[i] || 0);
     const tp = Number(series.gt_tp[i] || 0);
     const gt = fn + tp;
-    if (fn <= 0 || gt <= 0) continue;
-    const rate = fn / gt;
-    const score = rate * 1000 + fn * 10 + Math.min(20, gt);
+    const fp = Number(series.est_fp[i] || 0);
+    if (mode === "fn") {
+      if (fn <= 0 || gt <= 0) continue;
+      const rate = fn / gt;
+      ranked.push({
+        frameIndex: i,
+        fnCount: fn,
+        gtCount: gt,
+        fnRate: rate,
+        compositeSeverity: rate,
+        score: rate * 1000 + fn * 10 + Math.min(20, gt),
+      });
+      continue;
+    }
+    const ctr = err ? Number(err.tp_center_distance_mean[i] || 0) : 0;
+    const plane = err ? Number(err.tp_plane_distance_mean[i] || 0) : 0;
+    const yaw = err ? Number(err.tp_yaw_error_abs_mean[i] || 0) : 0;
+    const sev = err ? Number(err.frame_severity_max[i] || 0) : 0;
+    const fnRate = gt > 0 ? fn / gt : 0;
+    const score = sev * 1000 + fn * 95 + fp * 36 + ctr * 110 + plane * 80 + yaw * 65 + fnRate * 180;
+    if (score <= 0.01) continue;
     ranked.push({
       frameIndex: i,
       fnCount: fn,
       gtCount: gt,
-      fnRate: rate,
+      fpCount: fp,
+      fnRate,
+      compositeSeverity: sev,
       score,
     });
   }
@@ -1017,10 +1319,21 @@ function currentFrameIsSpotlightHot(){
 }
 
 function focusFirstFnBoxInFrame(){
-  const fnCandidate = externalSelectionCandidates.find((cand) => cand && cand.source === "eval-gt" && cand.status === "FN");
-  if (fnCandidate) {
-    focusCameraOnCandidate(fnCandidate, false, false);
-    return fnCandidate;
+  let best = null;
+  let bestScore = -Infinity;
+  for (const cand of externalSelectionCandidates || []) {
+    if (!cand) continue;
+    const meta = cand.meta || {};
+    const sev = safeNum(meta.severity_score) || 0;
+    const score = cand.status === "FN" ? 1 + sev : sev;
+    if (score > bestScore) {
+      best = cand;
+      bestScore = score;
+    }
+  }
+  if (best) {
+    focusCameraOnCandidate(best, false, false);
+    return best;
   }
   return null;
 }
@@ -1048,15 +1361,19 @@ function updateSpotlightHud(){
   const rank = document.getElementById("spotlightRank");
   const rate = document.getElementById("spotlightRate");
   const count = document.getElementById("spotlightCount");
+  const worst = document.getElementById("spotlightWorst");
+  const reason = document.getElementById("spotlightReason");
   const note = document.getElementById("spotlightNote");
   const playBtn = document.getElementById("spotlightPlayBtn");
-  if (!wrap || !chip || !cur || !rank || !rate || !count || !note || !playBtn) return;
+  if (!wrap || !chip || !cur || !rank || !rate || !count || !worst || !reason || !note || !playBtn) return;
   const hasAny = spotlightFrames.length > 0;
   wrap.hidden = !hasAny;
   if (!hasAny) return;
   const current = spotlightEntryForCurrentFrame();
   const idx = current ? spotlightFrames.findIndex((row) => row.frameIndex === current.frameIndex) : spotlightIndex;
   const row = current || (idx >= 0 ? spotlightFrames[idx] : null);
+  const modeEl = document.getElementById("spotlightMode");
+  const mode = modeEl && modeEl.value ? modeEl.value : "composite";
   chip.textContent = spotlightTouring ? "touring" : (current ? "live hotspot" : "ready");
   playBtn.textContent = spotlightTouring ? "Stop tour" : "Tour hotspots";
   if (!row) {
@@ -1064,16 +1381,25 @@ function updateSpotlightHud(){
     rank.textContent = "—";
     rate.textContent = "—";
     count.textContent = "—";
-    note.textContent = "Uses per-frame GT/FN counts from eval layers to rank the hardest moments.";
+    worst.textContent = "—";
+    reason.textContent = "—";
+    note.textContent = "Uses per-frame severity and eval counts to rank the hardest moments.";
     return;
   }
+  const summary = spotlightSummaryForFrame(row.frameIndex);
   cur.textContent = `frame ${row.frameIndex}`;
   rank.textContent = `${Math.max(1, (idx >= 0 ? idx : 0) + 1)} / ${spotlightFrames.length}`;
-  rate.textContent = `${(100 * row.fnRate).toFixed(1)}%`;
-  count.textContent = `${row.fnCount} / ${row.gtCount}`;
+  rate.textContent = mode === "fn"
+    ? `${(100 * row.fnRate).toFixed(1)}% FN`
+    : `${(100 * (row.compositeSeverity || 0)).toFixed(1)}% severity`;
+  count.textContent = mode === "fn"
+    ? `${row.fnCount} / ${row.gtCount}`
+    : `FN ${row.fnCount} · FP ${row.fpCount || 0}`;
+  worst.textContent = summary ? summary.worstLabel : "—";
+  reason.textContent = summary ? summary.worstReason : "—";
   note.textContent = current
-    ? "Current frame is a ranked FN hotspot. Spotlight keeps camera centering, but does not take over selection."
-    : "Use Prev/Next or Tour to move through ranked FN hotspots in frame order.";
+    ? "Current frame is a ranked hotspot. Spotlight keeps camera centering, but does not take over selection."
+    : "Use Prev/Next or Tour to move through ranked hotspots in frame order.";
 }
 
 /** Update HUD for eval buckets when postMessage or per-frame eval data is present. */
@@ -1142,12 +1468,20 @@ function resizeMainRenderer(){
 function layoutMetricsStacks(){
   const countOn = document.getElementById("uiShowMetricsCounts") && document.getElementById("uiShowMetricsCounts").checked;
   const ratesOn = document.getElementById("uiShowMetricsRates") && document.getElementById("uiShowMetricsRates").checked;
+  const errorOn = document.getElementById("uiShowMetricsError") && document.getElementById("uiShowMetricsError").checked;
   const gap = 8;
   const chartH = 168;
+  let nextBottom = 12;
+  if (metricsWrapEl && !metricsWrapEl.dataset.userPos) {
+    metricsWrapEl.style.bottom = countOn ? `${nextBottom}px` : "";
+  }
+  if (countOn) nextBottom += chartH + gap;
   if (metricsRatesWrapEl && !metricsRatesWrapEl.dataset.userPos) {
-    if (ratesOn && countOn) metricsRatesWrapEl.style.bottom = `${12 + chartH + gap}px`;
-    else if (ratesOn) metricsRatesWrapEl.style.bottom = "12px";
-    else metricsRatesWrapEl.style.bottom = "";
+    metricsRatesWrapEl.style.bottom = ratesOn ? `${nextBottom}px` : "";
+  }
+  if (ratesOn) nextBottom += chartH + gap;
+  if (metricsErrorWrapEl && !metricsErrorWrapEl.dataset.userPos) {
+    metricsErrorWrapEl.style.bottom = errorOn ? `${nextBottom}px` : "";
   }
 }
 
@@ -1168,7 +1502,7 @@ function clampPanelToParent(panelEl, parentEl){
 
 function clampAllMovablePanels(){
   const parent = document.getElementById("canvasWrap");
-  ["hud", "metricsWrap", "metricsRatesWrap", "cameraViewportWrap"].forEach((id) => {
+  ["hud", "inspectPanel", "metricsWrap", "metricsRatesWrap", "metricsErrorWrap", "cameraViewportWrap"].forEach((id) => {
     const el = document.getElementById(id);
     if (el) clampPanelToParent(el, parent);
   });
@@ -1186,7 +1520,7 @@ function resetPanelPosition(panelEl){
 
 /** Clear drag offsets on all overlay panels; one layoutMetricsStacks at end. */
 function resetAllPanelPositions(){
-  ["hud", "metricsWrap", "metricsRatesWrap", "cameraViewportWrap"].forEach((id) => {
+  ["hud", "inspectPanel", "metricsWrap", "metricsRatesWrap", "metricsErrorWrap", "cameraViewportWrap"].forEach((id) => {
     const el = document.getElementById(id);
     if (!el) return;
     delete el.dataset.userPos;
@@ -1273,6 +1607,11 @@ function resizeMetricsRenderer(){
     const w = Math.max(120, metricsRatesWrapEl.clientWidth || 280);
     const h = Math.max(80, metricsRatesWrapEl.clientHeight || 120);
     metricsRatesRenderer.setSize(w, h, false);
+  }
+  if (metricsErrorWrapEl && metricsErrorCanvas && !metricsErrorWrapEl.hidden) {
+    const w = Math.max(120, metricsErrorWrapEl.clientWidth || 280);
+    const h = Math.max(80, metricsErrorWrapEl.clientHeight || 120);
+    metricsErrorRenderer.setSize(w, h, false);
   }
 }
 
@@ -1367,6 +1706,76 @@ function computeRateSeries(){
     fdr.push(FDR);
   }
   return { tpr, prec, f1, fdr, n };
+}
+
+function computeErrorSeries(){
+  const mo = metricsSeriesOverride;
+  const hasOverride =
+    mo && (
+      Array.isArray(mo.tp_center_distance_mean) ||
+      Array.isArray(mo.tp_plane_distance_mean) ||
+      Array.isArray(mo.tp_yaw_error_abs_mean) ||
+      Array.isArray(mo.frame_severity_max)
+    );
+  if (hasOverride) {
+    const ctr = [];
+    const plane = [];
+    const yaw = [];
+    const sev = [];
+    for (let i = 0; i < totalFrames; i++) {
+      ctr.push(Math.max(0, safeNum(mo.tp_center_distance_mean && mo.tp_center_distance_mean[i]) || 0));
+      plane.push(Math.max(0, safeNum(mo.tp_plane_distance_mean && mo.tp_plane_distance_mean[i]) || 0));
+      yaw.push(Math.max(0, safeNum(mo.tp_yaw_error_abs_mean && mo.tp_yaw_error_abs_mean[i]) || 0));
+      sev.push(clip01(safeNum(mo.frame_severity_max && mo.frame_severity_max[i]) || 0));
+    }
+    return { tp_center_distance_mean: ctr, tp_plane_distance_mean: plane, tp_yaw_error_abs_mean: yaw, frame_severity_max: sev, n: totalFrames };
+  }
+  if (!bboxLayersByFrame || totalFrames <= 0) return null;
+  const ctr = [];
+  const plane = [];
+  const yaw = [];
+  const sev = [];
+  for (let fi = 0; fi < totalFrames; fi++) {
+    const sk = String(fi);
+    const entry = Object.prototype.hasOwnProperty.call(bboxLayersByFrame, sk) ? bboxLayersByFrame[sk] : bboxLayersByFrame[fi];
+    const norm = normalizeEvalEntry(entry, fi);
+    const tp = [];
+    for (const box of [...(norm.gt || []), ...(norm.pred || [])]) {
+      if (!box || box.status !== "TP") continue;
+      tp.push(box);
+    }
+    const ctrVals = tp.map((b) => safeNum(b.center_distance)).filter((v) => v != null);
+    const planeVals = tp.map((b) => safeNum(b.plane_distance)).filter((v) => v != null);
+    const yawVals = tp.map((b) => safeNum(b.yaw_error) != null ? Math.abs(Number(b.yaw_error)) : null).filter((v) => v != null);
+    ctr.push(ctrVals.length ? ctrVals.reduce((a, b) => a + b, 0) / ctrVals.length : 0);
+    plane.push(planeVals.length ? planeVals.reduce((a, b) => a + b, 0) / planeVals.length : 0);
+    yaw.push(yawVals.length ? yawVals.reduce((a, b) => a + b, 0) / yawVals.length : 0);
+    const sevVals = [...(norm.gt || []), ...(norm.pred || [])].map((b) => safeNum(b.severity_score)).filter((v) => v != null);
+    sev.push(sevVals.length ? Math.max(...sevVals) : 0);
+  }
+  return { tp_center_distance_mean: ctr, tp_plane_distance_mean: plane, tp_yaw_error_abs_mean: yaw, frame_severity_max: sev, n: totalFrames };
+}
+
+function spotlightSummaryForFrame(frameIndex){
+  if (!bboxLayersByFrame || totalFrames <= 0) return null;
+  const sk = String(frameIndex);
+  const entry = Object.prototype.hasOwnProperty.call(bboxLayersByFrame, sk) ? bboxLayersByFrame[sk] : bboxLayersByFrame[frameIndex];
+  const norm = normalizeEvalEntry(entry, frameIndex);
+  const all = [...(norm.gt || []), ...(norm.pred || [])];
+  if (!all.length) return null;
+  let worst = all[0];
+  for (const box of all) {
+    const a = safeNum(box && box.severity_score) || 0;
+    const b = safeNum(worst && worst.severity_score) || 0;
+    if (a > b) worst = box;
+  }
+  const counts = countEvalBucketsFromBoxes(norm.gt, norm.pred);
+  return {
+    worstLabel: `${String(worst.label || worst.kind || "box")} · ${String(worst.status || "TP")}`,
+    worstReason: String(worst.severity_reason || "severity"),
+    worstSeverity: safeNum(worst.severity_score) || 0,
+    counts,
+  };
 }
 
 function rebuildMetricsPlot(){
@@ -1548,9 +1957,86 @@ function rebuildMetricsRatesPlot(){
   updateMetricsRatesCaption();
 }
 
+function rebuildMetricsErrorPlot(){
+  while (metricsErrorChartGroup.children.length) metricsErrorChartGroup.remove(metricsErrorChartGroup.children[0]);
+  metricsErrorPlayhead = null;
+  const want = document.getElementById("uiShowMetricsError") && document.getElementById("uiShowMetricsError").checked;
+  if (!metricsErrorWrapEl || !want) {
+    if (metricsErrorWrapEl) metricsErrorWrapEl.hidden = true;
+    const c0 = document.getElementById("metricsErrorCaption");
+    if (c0) c0.textContent = "";
+    layoutMetricsStacks();
+    return;
+  }
+  const es = computeErrorSeries();
+  if (!es || es.n <= 0) {
+    metricsErrorWrapEl.hidden = true;
+    const c1 = document.getElementById("metricsErrorCaption");
+    if (c1) c1.textContent = "";
+    layoutMetricsStacks();
+    return;
+  }
+  const { tp_center_distance_mean: ctr, tp_plane_distance_mean: plane, tp_yaw_error_abs_mean: yaw, frame_severity_max: sev, n } = es;
+  const x0 = -0.9;
+  const x1 = 0.9;
+  const y0 = -0.78;
+  const y1 = 0.78;
+  const span = x1 - x0;
+  const yMax = Math.max(1e-6, ...ctr, ...plane, ...yaw, 1);
+  const bg = new THREE.Mesh(
+    new THREE.PlaneGeometry(2.05, 1.85),
+    new THREE.MeshBasicMaterial({ color: 0x090b1f, transparent: true, opacity: 0.92 })
+  );
+  bg.position.z = -0.02;
+  metricsErrorChartGroup.add(bg);
+  for (let g = 0; g <= 4; g++) {
+    const t = g / 4;
+    const yy = y0 + (y1 - y0) * t;
+    const gg = new THREE.BufferGeometry();
+    gg.setAttribute("position", new THREE.Float32BufferAttribute([x0, yy, 0, x1, yy, 0], 3));
+    metricsErrorChartGroup.add(new THREE.Line(gg, new THREE.LineBasicMaterial({ color: 0x31425f, transparent: true, opacity: 0.55 })));
+  }
+  function lineStripScaled(vals, color, denom, z){
+    const pts = [];
+    for (let i = 0; i < n; i++) {
+      const xf = n <= 1 ? 0.5 : i / (n - 1);
+      const x = x0 + span * xf;
+      const vn = Math.max(0, Math.min(1, (vals[i] || 0) / Math.max(denom, 1e-6)));
+      const yy = y0 + (y1 - y0) * vn;
+      pts.push(x, yy, z || 0.02);
+    }
+    if (pts.length === 3) pts.push(pts[0], pts[1], pts[2]);
+    const geom = new THREE.BufferGeometry();
+    geom.setAttribute("position", new THREE.Float32BufferAttribute(pts, 3));
+    return new THREE.Line(geom, new THREE.LineBasicMaterial({ color, transparent: true, opacity: 0.95 }));
+  }
+  metricsErrorChartGroup.add(lineStripScaled(ctr, 0x6fe2ff, yMax, 0.02));
+  metricsErrorChartGroup.add(lineStripScaled(plane, 0x8fb1ff, yMax, 0.02));
+  metricsErrorChartGroup.add(lineStripScaled(yaw, 0xffbe78, yMax, 0.02));
+  metricsErrorChartGroup.add(lineStripScaled(sev, 0xff739d, 1, 0.02));
+  const phGeom = new THREE.BufferGeometry();
+  const phPos = new Float32Array([-0.9, -0.78, 0.04, -0.9, 0.78, 0.04]);
+  phGeom.setAttribute("position", new THREE.BufferAttribute(phPos, 3));
+  metricsErrorPlayhead = new THREE.Group();
+  metricsErrorPlayhead.userData.geom = phGeom;
+  metricsErrorPlayhead.add(new THREE.Line(phGeom, new THREE.LineBasicMaterial({ color: 0xffffff, transparent: true, opacity: 1 })));
+  const phGeom2 = new THREE.BufferGeometry();
+  const phPos2 = new Float32Array(phPos);
+  phGeom2.setAttribute("position", new THREE.BufferAttribute(phPos2, 3));
+  metricsErrorPlayhead.userData.geomGlow = phGeom2;
+  metricsErrorPlayhead.add(new THREE.Line(phGeom2, new THREE.LineBasicMaterial({ color: 0xffbe78, transparent: true, opacity: 0.45 })));
+  metricsErrorChartGroup.add(metricsErrorPlayhead);
+  metricsErrorWrapEl.hidden = false;
+  layoutMetricsStacks();
+  resizeMetricsRenderer();
+  updateMetricsErrorPlayhead();
+  updateMetricsErrorCaption();
+}
+
 function rebuildAllMetricsPlots(){
   rebuildMetricsPlot();
   rebuildMetricsRatesPlot();
+  rebuildMetricsErrorPlot();
   syncSpotlightFrames();
 }
 
@@ -1587,6 +2073,46 @@ function updateMetricsRatesCaption(){
   const i = Math.min(Math.max(0, frame), rs.n - 1);
   cap.textContent =
     `f${i}: TPR=${rs.tpr[i].toFixed(3)} P=${rs.prec[i].toFixed(3)} F1=${rs.f1[i].toFixed(3)} FDR=${rs.fdr[i].toFixed(3)}`;
+}
+
+function updateMetricsErrorCaption(){
+  const cap = document.getElementById("metricsErrorCaption");
+  if (!cap) return;
+  const es = computeErrorSeries();
+  if (!es || es.n <= 0) {
+    cap.textContent = "";
+    return;
+  }
+  const i = Math.min(Math.max(0, frame), es.n - 1);
+  cap.textContent =
+    `f${i}: ctr=${es.tp_center_distance_mean[i].toFixed(3)} plane=${es.tp_plane_distance_mean[i].toFixed(3)}` +
+    ` |yaw|=${es.tp_yaw_error_abs_mean[i].toFixed(3)} sev=${es.frame_severity_max[i].toFixed(3)}`;
+}
+
+function updateMetricsErrorPlayhead(){
+  if (!metricsErrorPlayhead || !metricsErrorPlayhead.userData || !metricsErrorWrapEl || metricsErrorWrapEl.hidden) return;
+  const es = computeErrorSeries();
+  if (!es || es.n <= 0) return;
+  const n = es.n;
+  const xf = n <= 1 ? 0.5 : frame / Math.max(n - 1, 1);
+  const x0 = -0.9;
+  const x1 = 0.9;
+  const x = x0 + (x1 - x0) * xf;
+  const y0 = -0.78;
+  const y1 = 0.78;
+  const g0 = metricsErrorPlayhead.userData.geom;
+  const g1 = metricsErrorPlayhead.userData.geomGlow;
+  if (g0 && g0.attributes.position) {
+    const a = g0.attributes.position.array;
+    a[0] = x; a[1] = y0; a[3] = x; a[4] = y1;
+    g0.attributes.position.needsUpdate = true;
+  }
+  if (g1 && g1.attributes.position) {
+    const b = g1.attributes.position.array;
+    b[0] = x; b[1] = y0; b[3] = x; b[4] = y1;
+    g1.attributes.position.needsUpdate = true;
+  }
+  updateMetricsErrorCaption();
 }
 
 function updateMetricsRatesPlayhead(){
@@ -1640,6 +2166,7 @@ function updateMetricsPlayhead(){
   }
   updateMetricsFrameCaption();
   updateMetricsRatesPlayhead();
+  updateMetricsErrorPlayhead();
 }
 
 function syncMetricsPlotVisibility(){
@@ -1668,12 +2195,28 @@ function syncMetricsRatesPlotVisibility(){
   rebuildMetricsRatesPlot();
 }
 
+function syncMetricsErrorPlotVisibility(){
+  const chk = document.getElementById("uiShowMetricsError");
+  if (!chk || !chk.checked) {
+    if (metricsErrorWrapEl) metricsErrorWrapEl.hidden = true;
+    const cap = document.getElementById("metricsErrorCaption");
+    if (cap) cap.textContent = "";
+    layoutMetricsStacks();
+    resizeMetricsRenderer();
+    return;
+  }
+  rebuildMetricsErrorPlot();
+}
+
 function applyPanelVisibility(){
   const hudEl = document.getElementById("hud");
   const hudOn = document.getElementById("uiShowHud") && document.getElementById("uiShowHud").checked;
   const fab = document.getElementById("hudRevealBtn");
   if (hudEl) hudEl.hidden = !hudOn;
   if (fab) fab.hidden = hudOn;
+  const inspectEl = document.getElementById("inspectPanel");
+  const inspectOn = document.getElementById("uiShowInspector") && document.getElementById("uiShowInspector").checked;
+  if (inspectEl) inspectEl.hidden = !inspectOn;
   const camWrap = document.getElementById("cameraViewportWrap");
   const camOn = document.getElementById("uiShowCameraViewport") && document.getElementById("uiShowCameraViewport").checked;
   if (camWrap) camWrap.hidden = !camOn;
@@ -1697,6 +2240,7 @@ function applyPanelVisibility(){
   }
   syncMetricsPlotVisibility();
   syncMetricsRatesPlotVisibility();
+  syncMetricsErrorPlotVisibility();
 }
 
 (function wireHudHideAndAdvanced(){
@@ -1724,6 +2268,13 @@ function applyPanelVisibility(){
     if (c) c.checked = false;
     applyPanelVisibility();
   });
+  document.getElementById("inspectHideBtn")?.addEventListener("click", (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    const c = document.getElementById("uiShowInspector");
+    if (c) c.checked = false;
+    applyPanelVisibility();
+  });
 })();
 updateInspectHud();
 
@@ -1746,7 +2297,12 @@ function wireInspectPicking(){
     inspectPointer.x = ((ev.clientX - rect.left) / rect.width) * 2 - 1;
     inspectPointer.y = -((ev.clientY - rect.top) / rect.height) * 2 + 1;
     inspectRaycaster.setFromCamera(inspectPointer, camera);
-    const hits = inspectRaycaster.intersectObjects([boxesGroup, gtLayerGroup, predLayerGroup], true);
+    const pickRoots = [];
+    if (boxesGroup.visible) pickRoots.push(boxesGroup);
+    if (gtLayerGroup.visible) pickRoots.push(gtLayerGroup);
+    if (predLayerGroup.visible) pickRoots.push(predLayerGroup);
+    if (!pickRoots.length) return;
+    const hits = inspectRaycaster.intersectObjects(pickRoots, true);
     const hit = hits.find((row) => !!getInspectCandidateFromObject(row.object));
     if (!hit) return;
     const cand = getInspectCandidateFromObject(hit.object);
@@ -1906,6 +2462,17 @@ function evalLineColor(box, layerId){
 
 /** Same pose math as wireframe path; used for GT solid boxes. */
 function readEvalBoxPose(box){
+  if (box && box._normalized_eval && Array.isArray(box.center) && Array.isArray(box.size)) {
+    return {
+      cx: Number(box.center[0] || 0),
+      cy: Number(box.center[1] || 0),
+      cz: Number(box.center[2] || 0),
+      l: Math.max(0.01, Number(box.size[0] || 1.0)),
+      w: Math.max(0.01, Number(box.size[1] || 1.0)),
+      h: Math.max(0.01, Number(box.size[2] || 1.0)),
+      yaw: Number(box.yaw || 0),
+    };
+  }
   const yawOff = getExternalBboxYawOffset();
   const swapLW = getExternalBboxSwapLW();
   const cx = Number(box.x ?? box.cx ?? 0);
@@ -1925,12 +2492,54 @@ function readEvalBoxPose(box){
 
 /** Mesh GT boxes need center+size; pure 24-float corners use wireframe fallback. */
 function canBuildGtMeshFromBox(box){
+  if (box && box._normalized_eval && Array.isArray(box.center) && Array.isArray(box.size)) {
+    const l0 = Number(box.size[0] || 0);
+    const w0 = Number(box.size[1] || 0);
+    const h0 = Number(box.size[2] || 0);
+    return l0 > 0 && w0 > 0 && h0 > 0;
+  }
   if (Array.isArray(box.corners) && box.corners.length === 24) return false;
   const l = Number(box.length ?? box.l ?? 0);
   const wi = Number(box.width ?? box.w ?? 0);
   const hi = Number(box.height ?? box.h ?? 0);
   if (!(l > 0 && wi > 0 && hi > 0)) return false;
   return true;
+}
+
+function shouldRenderSeverityEffects(box){
+  const severeOnly = !!(document.getElementById("highlightSevereOnly") && document.getElementById("highlightSevereOnly").checked);
+  const sev = safeNum(box && box.severity_score);
+  if (sev == null) return !severeOnly;
+  if (!severeOnly) return true;
+  return sev >= 0.62;
+}
+
+function addTpQualityAura(parent, box, layerId){
+  if (!box || normalizeEvalStatus(box) !== "TP") return;
+  if (!fxEnabled("fxTpQuality")) return;
+  if (!shouldRenderSeverityEffects(box)) return;
+  const sev = clip01(safeNum(box.severity_score) || 0);
+  if (sev < 0.22) return;
+  const meta = getInspectableBoxMeta(box, layerId);
+  if (!meta || !meta.center || !meta.size) return;
+  const maxSize = Math.max(...(meta.size || [1, 1, 1]));
+  const floorZ = Number(meta.center[2] || 0) - Math.max(0.08, 0.5 * Number(meta.size[2] || 0.8)) + 0.04;
+  addEvalShockwaveRing(parent, [meta.center[0], meta.center[1], floorZ], 0x7fe3ff, {
+    radius: Math.max(0.68, 0.36 * maxSize),
+    width: 0.11,
+    opacity: 0.12 + sev * 0.14,
+    baseScale: 1,
+    scaleAmp: 0.18 + sev * 0.4,
+    opacityAmp: 0.06 + sev * 0.08,
+    phase: 1.2,
+  });
+  addEvalLightPillar(parent, meta.center, Math.max(1.5, maxSize * (0.85 + sev)), 0x8fc8ff, {
+    radius: 0.06 + sev * 0.12,
+    opacity: 0.05 + sev * 0.08,
+    scaleAmp: 0.06 + sev * 0.12,
+    opacityAmp: 0.03 + sev * 0.05,
+    phase: 1.8,
+  });
 }
 
 /**
@@ -1943,8 +2552,9 @@ function addGtEvalBoxMesh(group, box, layerId){
   const st = normalizeEvalStatus(box);
   const isFn = st === "FN";
   const v = Number(document.getElementById("boxOpacity").value || "0.9");
-  const faceMul = isFn ? 0.08 : 0.19;
-  const edgeMul = isFn ? 0.82 : 1.0;
+  const sev = clip01(safeNum(box && box.severity_score) || 0);
+  const faceMul = isFn ? 0.08 : (0.16 + 0.08 * sev);
+  const edgeMul = isFn ? 0.82 : Math.min(1.18, 0.92 + 0.26 * sev);
   const geom = new THREE.BoxGeometry(pose.l, pose.w, pose.h);
   const faceMat = new THREE.MeshBasicMaterial({
     color: col,
@@ -1993,6 +2603,7 @@ function addGtEvalBoxMesh(group, box, layerId){
       });
     }
   }
+  addTpQualityAura(mesh, box, layerId);
   group.add(mesh);
   return mesh;
 }
@@ -2006,7 +2617,8 @@ function addEstEvalWireframe(group, box, layerId){
   const st = normalizeEvalStatus(box);
   const isFp = st === "FP";
   const v = Number(document.getElementById("boxOpacity").value || "0.9");
-  const edgeMul = isFp ? 0.5 : 1.0;
+  const sev = clip01(safeNum(box && box.severity_score) || 0);
+  const edgeMul = isFp ? (0.42 + 0.4 * sev) : Math.min(1.2, 0.9 + 0.28 * sev);
   const m = new THREE.LineBasicMaterial({
     color: col,
     transparent: true,
@@ -2027,6 +2639,7 @@ function addEstEvalWireframe(group, box, layerId){
       });
     }
   }
+  addTpQualityAura(seg, box, layerId);
   group.add(seg);
   return seg;
 }
@@ -2068,12 +2681,31 @@ function scoreCandidateMatch(sel, cand){
   const sid = String(sel.trackId || "");
   const cid = String(cand.trackId || "");
   if (sid && cid && sid === cid && sel.source === cand.source) return 0;
+  const sp = String(sel.pairId || "");
+  const cp = String(cand.pairId || "");
+  if (sp && cp && sp === cp && sel.source === cand.source) return 0.02;
   if (sel.source !== cand.source) return Infinity;
   if (sel.kind && cand.kind && sel.kind !== cand.kind) return Infinity;
   const selLabel = String(sel.label || "").toLowerCase();
   const candLabel = String(cand.label || "").toLowerCase();
   if (selLabel && candLabel && selLabel !== candLabel) return Infinity;
   return candidateDistance(sel, cand) + (0.35 * candidateSizeDelta(sel, cand));
+}
+
+function cameraRowSelectionRelation(row, sel){
+  if (!row || !sel) return "none";
+  const rowUuid = String(row.uuid || "");
+  const rowPair = String(row.pair_uuid || "");
+  const selUuid = String(sel.trackId || sel.uuid || "");
+  const selPair = String(sel.pairId || "");
+  const rowLayer = String(row.layer || row.kind || "").toLowerCase();
+  const selLayer = String(sel.source || "").toLowerCase();
+  if (rowUuid && selUuid && rowUuid === selUuid) return "self";
+  if (rowPair && selPair && rowPair === selPair) {
+    if ((rowLayer === "pred" && selLayer === "eval-pred") || (rowLayer === "gt" && selLayer === "eval-gt")) return "self";
+    return "pair";
+  }
+  return "none";
 }
 
 function findBestCandidateForSelection(candidates, sel){
@@ -2112,7 +2744,8 @@ function focusCameraOnCandidate(candidate, smooth, preserveOffset){
 function renderInspectSelection(){
   clearGroupDeep(inspectOverlayGroup);
   if (!selectedInspectState || !selectedInspectState.current || !selectedInspectState.current.corners) return;
-  const corners = selectedInspectState.current.corners;
+  const current = selectedInspectState.current;
+  const corners = current.corners;
   const edges = [[0,1],[1,2],[2,3],[3,0],[4,5],[5,6],[6,7],[7,4],[0,4],[1,5],[2,6],[3,7]];
   const edgePts = [];
   for (const [a, b] of edges) {
@@ -2127,12 +2760,7 @@ function renderInspectSelection(){
   g.setAttribute("position", new THREE.Float32BufferAttribute(edgePts, 3));
   const glow = new THREE.LineSegments(g, new THREE.LineBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.95 }));
   inspectOverlayGroup.add(glow);
-  const g2 = new THREE.BufferGeometry();
-  g2.setAttribute("position", new THREE.Float32BufferAttribute(edgePts, 3));
-  const accent = new THREE.LineSegments(g2, new THREE.LineBasicMaterial({ color: 0x7cb3ff, transparent: true, opacity: 0.42 }));
-  accent.scale.setScalar(1.03);
-  inspectOverlayGroup.add(accent);
-  const c = selectedInspectState.current.center;
+  const c = current.center;
   const pulse = new THREE.Mesh(
     new THREE.SphereGeometry(0.26, 18, 14),
     new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.85 })
@@ -2204,6 +2832,7 @@ function setSelectedInspectCandidate(candidate, opts){
     renderInspectSelection();
     renderInspectTrail([]);
     updateInspectHud();
+    if (cameraViewportEnabled && lastCameraPayload) renderCameraViewport(lastCameraPayload, cameraOverlayGeneration).catch(() => {});
     return;
   }
   selectedInspectState = {
@@ -2214,6 +2843,7 @@ function setSelectedInspectCandidate(candidate, opts){
   if (!opts || opts.focus !== false) focusCameraOnCandidate(candidate, false);
   updateInspectHud();
   rebuildInspectTrack().catch(() => {});
+  if (cameraViewportEnabled && lastCameraPayload) renderCameraViewport(lastCameraPayload, cameraOverlayGeneration).catch(() => {});
 }
 
 function updateSelectedCandidateForFrame(){
@@ -2224,6 +2854,7 @@ function updateSelectedCandidateForFrame(){
     selectedInspectState.current.frameIndex = frame;
     renderInspectSelection();
     updateInspectHud();
+    if (cameraViewportEnabled && lastCameraPayload) renderCameraViewport(lastCameraPayload, cameraOverlayGeneration).catch(() => {});
     return;
   }
   selectedInspectState.current = hit;
@@ -2231,6 +2862,93 @@ function updateSelectedCandidateForFrame(){
   if (inspectLockFocus) focusCameraOnCandidate(hit, true);
   updateInspectHud();
   rebuildInspectTrack().catch(() => {});
+  if (cameraViewportEnabled && lastCameraPayload) renderCameraViewport(lastCameraPayload, cameraOverlayGeneration).catch(() => {});
+}
+
+function renderInspectErrorGlyph(sel){
+  const canvas = document.getElementById("inspectErrorGlyph");
+  if (!canvas) return;
+  const ctx = canvas.getContext("2d");
+  if (!ctx) return;
+  const labelTag = (text, x, y, opts) => {
+    const padX = 8;
+    const padY = 5;
+    ctx.save();
+    ctx.font = `${opts && opts.bold ? "700 " : "600 "}13px ${'JetBrains Mono'}, monospace`;
+    const tw = ctx.measureText(text).width;
+    const bw = tw + padX * 2;
+    const bh = 22;
+    const bx = Math.max(6, Math.min(w - bw - 6, x));
+    const by = Math.max(6, Math.min(h - bh - 6, y));
+    ctx.fillStyle = (opts && opts.bg) || "rgba(7,12,24,0.86)";
+    ctx.strokeStyle = (opts && opts.stroke) || "rgba(146,168,228,0.32)";
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.roundRect(bx, by, bw, bh, 8);
+    ctx.fill();
+    ctx.stroke();
+    ctx.fillStyle = (opts && opts.color) || "#eef4ff";
+    ctx.textBaseline = "middle";
+    ctx.fillText(text, bx + padX, by + bh * 0.52);
+    ctx.restore();
+  };
+  const w = canvas.width;
+  const h = canvas.height;
+  ctx.clearRect(0, 0, w, h);
+  ctx.fillStyle = "#09101f";
+  ctx.fillRect(0, 0, w, h);
+  const grad = ctx.createRadialGradient(w * 0.52, h * 0.46, 12, w * 0.5, h * 0.5, Math.max(w, h) * 0.62);
+  grad.addColorStop(0, "rgba(48,76,132,0.15)");
+  grad.addColorStop(1, "rgba(5,8,18,0)");
+  ctx.fillStyle = grad;
+  ctx.fillRect(0, 0, w, h);
+  ctx.strokeStyle = "rgba(120,150,220,0.22)";
+  ctx.lineWidth = 1;
+  ctx.beginPath();
+  ctx.moveTo(w * 0.5, 18); ctx.lineTo(w * 0.5, h - 18);
+  ctx.moveTo(18, h * 0.5); ctx.lineTo(w - 18, h * 0.5);
+  ctx.stroke();
+  if (!sel || !sel.meta) {
+    labelTag("No pair error data", w * 0.5 - 72, h * 0.5 - 12, { color: "#d9e4ff", bg: "rgba(10,16,32,0.9)" });
+    return;
+  }
+  const meta = sel.meta;
+  const xErr = safeNum(meta.x_error) || 0;
+  const yErr = safeNum(meta.y_error) || 0;
+  const yawErr = safeNum(meta.yaw_error) || 0;
+  const cx = w * 0.5;
+  const cy = h * 0.5;
+  const scale = 42;
+  const tx = cx + xErr * scale;
+  const ty = cy - yErr * scale;
+  labelTag("GT ref", 14, 12, { color: "#dce8ff", bg: "rgba(8,14,28,0.88)" });
+  labelTag("EST", w - 72, h - 34, { color: "#ffd9b0", bg: "rgba(36,18,8,0.88)", stroke: "rgba(255,186,126,0.28)" });
+  ctx.strokeStyle = "rgba(255,211,143,0.9)";
+  ctx.fillStyle = "rgba(255,211,143,0.95)";
+  ctx.lineWidth = 3;
+  ctx.beginPath();
+  ctx.moveTo(cx, cy);
+  ctx.lineTo(tx, ty);
+  ctx.stroke();
+  const ang = Math.atan2(ty - cy, tx - cx);
+  ctx.beginPath();
+  ctx.moveTo(tx, ty);
+  ctx.lineTo(tx - 8 * Math.cos(ang - 0.4), ty - 8 * Math.sin(ang - 0.4));
+  ctx.lineTo(tx - 8 * Math.cos(ang + 0.4), ty - 8 * Math.sin(ang + 0.4));
+  ctx.closePath();
+  ctx.fill();
+  ctx.strokeStyle = "rgba(110,208,255,0.85)";
+  ctx.lineWidth = 2;
+  ctx.beginPath();
+  ctx.arc(cx, cy, 30, -Math.PI / 2, -Math.PI / 2 + yawErr, yawErr < 0);
+  ctx.stroke();
+  ctx.fillStyle = "#e9f0ff";
+  ctx.beginPath(); ctx.arc(cx, cy, 5, 0, Math.PI * 2); ctx.fill();
+  ctx.fillStyle = "#ffd38f";
+  ctx.beginPath(); ctx.arc(tx, ty, 5.5, 0, Math.PI * 2); ctx.fill();
+  labelTag(`dx ${fmtSigned(xErr, 2)} m`, 16, h - 68, { color: "#dce8ff" });
+  labelTag(`dy ${fmtSigned(yErr, 2)} m`, 16, h - 38, { color: "#dce8ff" });
+  labelTag(`dyaw ${fmtSigned(yawErr, 2)} rad`, w - 154, 12, { color: "#d8f6ff", bg: "rgba(8,26,34,0.9)", stroke: "rgba(110,208,255,0.28)" });
 }
 
 function updateInspectHud(){
@@ -2245,29 +2963,59 @@ function updateInspectHud(){
     chip.textContent = "none";
     empty.hidden = false;
     body.hidden = true;
+    renderInspectErrorGlyph(null);
     return;
   }
+  const meta = sel.meta || {};
   const track = Array.isArray(selectedInspectState.track) ? selectedInspectState.track : [];
+  const setText = (id, text) => {
+    const el = document.getElementById(id);
+    if (el) el.textContent = text;
+  };
   empty.hidden = true;
   body.hidden = false;
   chip.textContent = `${sel.kind || "BOX"} · ${sel.status || sel.source}`;
-  const posEl = document.getElementById("inspectPos");
-  const sizeEl = document.getElementById("inspectSize");
-  const labelEl = document.getElementById("inspectLabel");
-  const frameEl = document.getElementById("inspectFrame");
-  const motionEl = document.getElementById("inspectMotion");
-  const noteEl = document.getElementById("inspectTrailNote");
-  if (labelEl) labelEl.textContent = sel.label || "box";
-  if (frameEl) frameEl.textContent = `${sel.frameIndex}/${Math.max(0, totalFrames - 1)}`;
-  if (posEl) posEl.textContent = fmtVec3(sel.center, 2);
-  if (sizeEl) sizeEl.textContent = fmtVec3(sel.size, 2);
+  setText("inspectLabel", sel.label || "box");
+  setText("inspectFrame", `${sel.frameIndex}/${Math.max(0, totalFrames - 1)}`);
+  setText("inspectPos", fmtVec3(sel.center, 2));
+  setText("inspectSize", fmtVec3(sel.size, 2));
+  setText("inspectYaw", fmtMaybe(safeNum(meta.yaw), " rad", 2));
+  setText("inspectVelocity", `${fmtMaybe(safeNum(meta.vx), " m/s", 2)} · ${fmtMaybe(safeNum(meta.vy), " m/s", 2)}`);
+  setText("inspectSpeed", fmtMaybe(safeNum(meta.speed_mps), " m/s", 2));
+  setText("inspectCenterDistance", fmtMaybe(safeNum(meta.center_distance), " m", 3));
+  setText("inspectPlaneDistance", fmtMaybe(safeNum(meta.plane_distance), " m", 3));
+  setText("inspectPairDt", fmtMaybe(safeNum(meta.pair_dt_sec), " s", 4));
+  setText("inspectErrorXY", `${fmtSigned(safeNum(meta.x_error), 2)} / ${fmtSigned(safeNum(meta.y_error), 2)}`);
+  setText("inspectErrorZYaw", `${fmtSigned(safeNum(meta.z_error), 2)} / ${fmtSigned(safeNum(meta.yaw_error), 2)}`);
+  setText("inspectErrorMag", fmtMaybe(safeNum(meta.xy_error_mag), " m", 3));
+  setText("inspectTopic", meta.topic_name ? String(meta.topic_name) : "—");
+  setText("inspectFrameId", meta.frame_id ? String(meta.frame_id) : "—");
+  setText("inspectRun", meta.run ? String(meta.run) : "—");
+  setText("inspectDataset", meta.t4dataset_name ? String(meta.t4dataset_name) : (meta.t4dataset_id ? String(meta.t4dataset_id) : "—"));
+  setText("inspectScenario", meta.scenario_name ? String(meta.scenario_name) : "—");
+  setText("inspectKpiCenter", fmtMaybe(safeNum(meta.center_distance), " m", 3));
+  setText("inspectKpiPlane", fmtMaybe(safeNum(meta.plane_distance), " m", 3));
+  setText("inspectKpiYaw", fmtMaybe(safeNum(meta.yaw_error) != null ? Math.abs(Number(meta.yaw_error)) : null, " rad", 3));
+  setText("inspectKpiXY", fmtMaybe(safeNum(meta.xy_error_mag), " m", 3));
+  setText("inspectStatusChip", `${sel.status || "status"}${meta.pair_uuid ? ` · pair ${String(meta.pair_uuid).slice(0, 8)}` : ""}`);
+  setText("inspectConfidenceChip", `conf ${fmtMaybe(safeNum(meta.confidence), "", 3)}`);
+  setText("inspectSeverityChip", `${String(meta.severity_bucket || "low")} · ${fmtMaybe(safeNum(meta.severity_score), "", 3)}`);
+  setText("inspectSourceChip", String(sel.source || "scene"));
   let motionText = "stationary";
   if (track.length >= 2) {
     const first = track[0].center;
     const last = track[track.length - 1].center;
     motionText = `${fmtNum(last[0] - first[0], 2)}m x, ${fmtNum(last[1] - first[1], 2)}m y`;
   }
-  if (motionEl) motionEl.textContent = motionText;
+  setText("inspectMotion", motionText);
+  const summaryEl = document.getElementById("inspectSummary");
+  if (summaryEl) {
+    if (sel.status === "FP") summaryEl.textContent = `Unmatched estimate with ${fmtMaybe(safeNum(meta.confidence), "", 3)} confidence. Severity is driven by detection confidence and scene clutter.`;
+    else if (sel.status === "FN") summaryEl.textContent = `Missed ground truth near ${fmtVec3(sel.center, 1)}. Severity stays high because the object was not recovered by the estimate layer.`;
+    else summaryEl.textContent = `Matched object with dominant issue: ${String(meta.severity_reason || "low TP error")}. Pair quality stays linked in 3D and camera overlays when metadata is present.`;
+  }
+  renderInspectErrorGlyph(sel);
+  const noteEl = document.getElementById("inspectTrailNote");
   if (noteEl) noteEl.textContent = track.length > 1
     ? `Trail frames ${track[0].frameIndex} → ${track[track.length - 1].frameIndex} (${track.length} matched)`
     : "Trail is building from nearby frames.";
@@ -2338,6 +3086,7 @@ function addEvalWireframeLinesOnly(group, box, layerId){
       }
     }
   }
+  addTpQualityAura(seg, box, layerId);
   group.add(seg);
   return seg;
 }
@@ -2418,21 +3167,31 @@ function buildExternalCandidatesForFrameIndex(i){
   const sk = String(i);
   const entry = Object.prototype.hasOwnProperty.call(bboxLayersByFrame, sk) ? bboxLayersByFrame[sk] : bboxLayersByFrame[i];
   if (!entry || typeof entry !== "object") return out;
-  pushFrom(entry.gt, "gt");
-  pushFrom(entry.pred, "pred");
+  const norm = normalizeEvalEntry(entry, i);
+  pushFrom(norm.gt, "gt");
+  pushFrom(norm.pred, "pred");
   return out;
+}
+
+function normalizeExternalLayerPayload(payload, frameIndexOverride){
+  const raw = payload && typeof payload === "object" ? payload : {};
+  const norm = normalizeEvalEntry(raw, frameIndexOverride != null ? frameIndexOverride : frame);
+  return { ...raw, gt: norm.gt, pred: norm.pred };
 }
 
 function setExternalLayerPayload(payload, opts){
   const doAck = !opts || opts.ack !== false;
-  const gt = Array.isArray(payload.gt) ? payload.gt : [];
-  const pred = Array.isArray(payload.pred) ? payload.pred : [];
+  const doCameraRefresh = !opts || opts.refreshCamera !== false;
+  const norm = normalizeExternalLayerPayload(payload, frame);
+  const gt = Array.isArray(norm.gt) ? norm.gt : [];
+  const pred = Array.isArray(norm.pred) ? norm.pred : [];
   externalLayers = { gt, pred };
   renderExternalLayers();
   updateEvalHud();
   syncSpotlightFrames();
   const b = countEvalBucketsFromBoxes(gt, pred);
   setStatus(`ready · cached=${cache.size} · ext(GT·TP=${b.gt_tp},GT·FN=${b.gt_fn},EST·TP=${b.est_tp},EST·FP=${b.est_fp})`);
+  if (doCameraRefresh && cameraViewportEnabled) refreshCameraOverlay().catch(() => {});
   if (!doAck) return;
   const ack = `/viewer/three/debug/message-received?t4dataset_id=${encodeURIComponent(dataset)}&scenario_name=${encodeURIComponent(scenario)}&frame_index=${frame}&gt_count=${gt.length}&pred_count=${pred.length}&matched_count=0`;
   fetch(ack)
@@ -2456,7 +3215,7 @@ function applyEvalLayersForFrame(i){
     ? bboxLayersByFrame[sk]
     : bboxLayersByFrame[i];
   if (entry && typeof entry === "object"){
-    setExternalLayerPayload(entry, { ack: false });
+    setExternalLayerPayload(entry, { ack: false, refreshCamera: false });
   } else {
     externalLayers = { gt: [], pred: [] };
     renderExternalLayers();
@@ -2746,6 +3505,14 @@ function strokeBoxes2dOnCanvas(ctx, bxs, iw, ih, cw, ch, strokeStyle, lineWidth)
   }
 }
 
+function cameraOverlayStyleForRow(row, kind){
+  const st = normalizeCameraOverlayStatus(row);
+  if (kind === "GT" && st === "FN") return { stroke: "rgba(255, 153, 51, 0.95)", fill: "rgba(255, 153, 51, 0.10)" };
+  if (kind === "GT") return { stroke: "rgba(75, 208, 141, 0.95)", fill: "rgba(75, 208, 141, 0.10)" };
+  if (kind === "EST" && st === "FP") return { stroke: "rgba(255, 102, 102, 0.82)", fill: "rgba(255, 102, 102, 0.09)" };
+  return { stroke: "rgba(102, 179, 255, 0.96)", fill: "rgba(102, 179, 255, 0.08)" };
+}
+
 function normalizeCameraOverlayStatus(b){
   if (!b || typeof b !== "object") return "TP";
   const raw = (b.status != null ? String(b.status) : "").trim().toUpperCase();
@@ -2770,30 +3537,64 @@ function isCameraOverlayEvalVisible(kind, status){
   return showEstTp || showEstFp;
 }
 
-function filterCameraOverlayEvalRows(rows, kind){
-  if (!Array.isArray(rows) || !rows.length) return [];
-  const out = [];
+function drawCameraOverlayEvalRows(ctx, canvas, rows, kind, iw, ih, cw, ch){
+  if (!ctx || !canvas || !Array.isArray(rows) || !rows.length) {
+    if (canvas && !cameraCanvasHitRegions.has(canvas)) cameraCanvasHitRegions.set(canvas, []);
+    return;
+  }
+  const sel = selectedInspectState && selectedInspectState.current ? selectedInspectState.current : null;
+  const selectionOnly = !!(document.getElementById("cameraSelectionOnly") && document.getElementById("cameraSelectionOnly").checked && sel);
+  const hitRegions = Array.isArray(cameraCanvasHitRegions.get(canvas)) ? cameraCanvasHitRegions.get(canvas).slice() : [];
   for (const r of rows) {
     const st = normalizeCameraOverlayStatus(r);
     if (!isCameraOverlayEvalVisible(kind, st)) continue;
-    out.push(r);
+    const relation = cameraRowSelectionRelation(r, sel);
+    if (selectionOnly && relation === "none") continue;
+    const style = cameraOverlayStyleForRow(r, kind);
+    const x0 = (Number(r.x0) / iw) * cw;
+    const y0 = (Number(r.y0) / ih) * ch;
+    const x1 = (Number(r.x1) / iw) * cw;
+    const y1 = (Number(r.y1) / ih) * ch;
+    const w = x1 - x0;
+    const h = y1 - y0;
+    const sev = clip01(safeNum(r.severity_score) || 0);
+    let alpha = relation === "self" ? 1 : (relation === "pair" ? 0.92 : 0.68);
+    if (sel && relation === "none") alpha = selectionOnly ? 0 : 0.2;
+    if (alpha <= 0) continue;
+    ctx.save();
+    ctx.globalAlpha = alpha;
+    ctx.fillStyle = style.fill;
+    ctx.fillRect(x0, y0, w, h);
+    ctx.strokeStyle = relation === "self" ? "#ffffff" : (relation === "pair" ? "#ffd38f" : style.stroke);
+    ctx.lineWidth = relation === "self" ? 3 : (1.6 + sev * 1.3);
+    ctx.strokeRect(x0, y0, w, h);
+    if (w > 54 && h > 18) {
+      const label = `${st}${r.confidence != null ? ` ${Number(r.confidence).toFixed(2)}` : ""}`;
+      ctx.font = "10px JetBrains Mono, monospace";
+      const tw = ctx.measureText(label).width;
+      ctx.fillStyle = "rgba(0,0,0,0.55)";
+      ctx.fillRect(x0, Math.max(0, y0 - 13), tw + 8, 12);
+      ctx.fillStyle = relation === "self" ? "#ffffff" : "#dce7ff";
+      ctx.fillText(label, x0 + 4, Math.max(9, y0 - 3));
+    }
+    ctx.restore();
+    hitRegions.push({ x0, y0, x1, y1, row: { ...r, kind } });
   }
-  return out;
+  cameraCanvasHitRegions.set(canvas, hitRegions);
 }
 
-function splitCameraOverlayEvalRowsByStatus(rows, kind){
-  const tp = [];
-  const fn = [];
-  const fp = [];
-  const other = [];
-  for (const r of filterCameraOverlayEvalRows(rows, kind)) {
-    const st = normalizeCameraOverlayStatus(r);
-    if (st === "TP") tp.push(r);
-    else if (st === "FN") fn.push(r);
-    else if (st === "FP") fp.push(r);
-    else other.push(r);
+function candidateFromCameraRow(row){
+  if (!row) return null;
+  const merged = [...externalSelectionCandidates, ...(sceneSelectionCandidates || [])];
+  const rowUuid = String(row.uuid || "");
+  const rowPair = String(row.pair_uuid || "");
+  let best = null;
+  for (const cand of merged) {
+    if (!cand) continue;
+    if (rowUuid && String(cand.trackId || "") === rowUuid) return cand;
+    if (!best && rowPair && String(cand.pairId || "") === rowPair) best = cand;
   }
-  return { tp, fn, fp, other };
+  return best;
 }
 
 function clearCameraViewportCanvases(){
@@ -2803,12 +3604,40 @@ function clearCameraViewportCanvases(){
     c.height = 1;
     const ctx = c.getContext("2d");
     if (ctx) ctx.clearRect(0, 0, 1, 1);
+    cameraCanvasHitRegions.set(c, []);
   }
   const grid = document.getElementById("cameraGridWrap");
   if (grid) {
     grid.querySelectorAll("canvas").forEach((cv) => {
       cv.width = 1;
       cv.height = 1;
+      cameraCanvasHitRegions.set(cv, []);
+    });
+  }
+}
+
+function wireCameraOverlayPicking(){
+  function handleCanvasPick(canvas, ev){
+    if (!canvas) return;
+    const rect = canvas.getBoundingClientRect();
+    if (!(rect.width > 0 && rect.height > 0)) return;
+    const x = ev.clientX - rect.left;
+    const y = ev.clientY - rect.top;
+    const hits = Array.isArray(cameraCanvasHitRegions.get(canvas)) ? cameraCanvasHitRegions.get(canvas) : [];
+    const hit = hits.find((r) => x >= r.x0 && x <= r.x1 && y >= r.y0 && y <= r.y1);
+    if (!hit) return;
+    const cand = candidateFromCameraRow(hit.row);
+    if (cand) setSelectedInspectCandidate(cand, { focus: true });
+  }
+  const single = document.getElementById("overlayCanvasSingle");
+  if (single) {
+    single.addEventListener("pointerup", (ev) => handleCanvasPick(single, ev));
+  }
+  const grid = document.getElementById("cameraGridWrap");
+  if (grid) {
+    grid.addEventListener("pointerup", (ev) => {
+      const canvas = ev.target && ev.target.closest ? ev.target.closest("canvas") : null;
+      if (canvas) handleCanvasPick(canvas, ev);
     });
   }
 }
@@ -2844,6 +3673,7 @@ function drawPayloadOnCanvas(canvas, payload, labelEl, gen){
       ctx.fillStyle = "#5a6a8a";
       ctx.font = "12px sans-serif";
       ctx.fillText("No image", 8, 22);
+      cameraCanvasHitRegions.set(canvas, []);
       if (labelEl) labelEl.textContent = "";
       resolve();
       return;
@@ -2860,6 +3690,7 @@ function drawPayloadOnCanvas(canvas, payload, labelEl, gen){
       canvas.height = ch;
       const ctx = canvas.getContext("2d");
       ctx.drawImage(img, 0, 0, cw, ch);
+      cameraCanvasHitRegions.set(canvas, []);
       const ann = document.getElementById("showOverlayAnnotations");
       if (ann && ann.checked) {
         const ann3d = document.getElementById("show3dAnnotations");
@@ -2874,22 +3705,28 @@ function drawPayloadOnCanvas(canvas, payload, labelEl, gen){
           "rgba(255, 94, 200, 0.95)",
           2,
         );
-        const gtSplit = splitCameraOverlayEvalRowsByStatus(
+        drawCameraOverlayEvalRows(
+          ctx,
+          canvas,
           Array.isArray(payload.boxes_2d_eval_gt) ? payload.boxes_2d_eval_gt : [],
           "GT",
+          iw,
+          ih,
+          cw,
+          ch,
         );
-        strokeBoxes2dOnCanvas(ctx, gtSplit.tp, iw, ih, cw, ch, "rgba(75, 208, 141, 0.92)", 2);
-        strokeBoxes2dOnCanvas(ctx, gtSplit.fn, iw, ih, cw, ch, "rgba(255, 153, 51, 0.92)", 2);
-        // Unknown statuses: keep visible with the GT color so they don't silently disappear.
-        strokeBoxes2dOnCanvas(ctx, gtSplit.other, iw, ih, cw, ch, "rgba(75, 208, 141, 0.92)", 2);
-
-        const estSplit = splitCameraOverlayEvalRowsByStatus(
+        drawCameraOverlayEvalRows(
+          ctx,
+          canvas,
           Array.isArray(payload.boxes_2d_pred) ? payload.boxes_2d_pred : [],
           "EST",
+          iw,
+          ih,
+          cw,
+          ch,
         );
-        strokeBoxes2dOnCanvas(ctx, estSplit.tp, iw, ih, cw, ch, "rgba(102, 179, 255, 0.95)", 2);
-        strokeBoxes2dOnCanvas(ctx, estSplit.fp, iw, ih, cw, ch, "rgba(255, 102, 102, 0.75)", 2);
-        strokeBoxes2dOnCanvas(ctx, estSplit.other, iw, ih, cw, ch, "rgba(102, 179, 255, 0.95)", 2);
+      } else {
+        cameraCanvasHitRegions.set(canvas, []);
       }
       if (labelEl) labelEl.textContent = shortCamLabel(payload.camera || "");
       resolve();
@@ -2907,6 +3744,7 @@ function drawPayloadOnCanvas(canvas, payload, labelEl, gen){
       ctx.fillStyle = "#8a5a7a";
       ctx.font = "12px sans-serif";
       ctx.fillText("Load error", 8, 22);
+      cameraCanvasHitRegions.set(canvas, []);
       resolve();
     };
     img.src = `data:${mime};base64,${b64}`;
@@ -2942,6 +3780,7 @@ async function renderCameraViewport(payload, gen){
           ctx.fillStyle = "#5a6a8a";
           ctx.font = "11px sans-serif";
           ctx.fillText("—", 72, 52);
+          cameraCanvasHitRegions.set(c, []);
         }
         if (lbl) lbl.textContent = "";
         continue;
@@ -2978,6 +3817,7 @@ function resizeCameraViewport(){
 }
 
 const CAM_VP_SIZE_STORAGE_KEY = "t4viewer.cameraViewportSize";
+const INSPECT_PANEL_SIZE_STORAGE_KEY = "t4viewer.inspectPanelSize";
 
 function wireCameraViewportResize(){
   const wrap = document.getElementById("cameraViewportWrap");
@@ -3059,6 +3899,87 @@ function wireCameraViewportResize(){
       localStorage.removeItem(CAM_VP_SIZE_STORAGE_KEY);
     } catch (_) {}
     resizeCameraViewport();
+  });
+}
+
+function wireInspectPanelResize(){
+  const wrap = document.getElementById("inspectPanel");
+  const handle = document.getElementById("inspectPanelResize");
+  if (!wrap || !handle) return;
+  try {
+    const raw = localStorage.getItem(INSPECT_PANEL_SIZE_STORAGE_KEY);
+    if (raw) {
+      const o = JSON.parse(raw);
+      const w = Number(o.w);
+      const h = Number(o.h);
+      if (Number.isFinite(w) && Number.isFinite(h)) {
+        wrap.style.width = `${Math.round(w)}px`;
+        wrap.style.height = `${Math.round(h)}px`;
+        wrap.dataset.userSize = "1";
+      }
+    }
+  } catch (_) {}
+
+  let active = false;
+  let startX = 0;
+  let startY = 0;
+  let startW = 0;
+  let startH = 0;
+
+  handle.addEventListener("pointerdown", (ev) => {
+    if (ev.button !== 0) return;
+    ev.preventDefault();
+    ev.stopPropagation();
+    active = true;
+    startX = ev.clientX;
+    startY = ev.clientY;
+    const r = wrap.getBoundingClientRect();
+    startW = r.width;
+    startH = r.height;
+    try {
+      handle.setPointerCapture(ev.pointerId);
+    } catch (_) {}
+  });
+
+  handle.addEventListener("pointermove", (ev) => {
+    if (!active) return;
+    const dx = ev.clientX - startX;
+    const dy = ev.clientY - startY;
+    let nw = Math.round(startW + dx);
+    let nh = Math.round(startH + dy);
+    nw = Math.max(460, Math.min(nw, window.innerWidth - 12));
+    nh = Math.max(340, Math.min(nh, window.innerHeight - 20));
+    wrap.style.width = `${nw}px`;
+    wrap.style.height = `${nh}px`;
+    wrap.dataset.userSize = "1";
+    clampPanelToParent(wrap);
+  });
+
+  function endResize(ev){
+    if (!active) return;
+    active = false;
+    try {
+      if (ev && ev.pointerId != null) handle.releasePointerCapture(ev.pointerId);
+    } catch (_) {}
+    const r = wrap.getBoundingClientRect();
+    try {
+      localStorage.setItem(INSPECT_PANEL_SIZE_STORAGE_KEY, JSON.stringify({ w: r.width, h: r.height }));
+    } catch (_) {}
+  }
+
+  handle.addEventListener("pointerup", endResize);
+  handle.addEventListener("pointercancel", endResize);
+
+  handle.addEventListener("dblclick", (ev) => {
+    ev.preventDefault();
+    ev.stopPropagation();
+    wrap.style.width = "";
+    wrap.style.height = "";
+    delete wrap.dataset.userSize;
+    try {
+      localStorage.removeItem(INSPECT_PANEL_SIZE_STORAGE_KEY);
+    } catch (_) {}
+    clampPanelToParent(wrap);
   });
 }
 
@@ -3176,6 +4097,8 @@ async function showFrame(i){
     await refreshCameraOverlay();
   }
   updateMetricsPlayhead();
+  updateMetricsRatesPlayhead();
+  updateMetricsErrorPlayhead();
 }
 
 document.getElementById("playBtn").addEventListener("click", () => {
@@ -3254,7 +4177,7 @@ document.getElementById("show3dAnnotations").addEventListener("change", (e) => {
   boxesGroup.visible = !!e.target.checked;
   refreshCameraOverlay().catch(() => {});
 });
-["uiShowHud", "uiShowMetricsCounts", "uiShowMetricsRates", "uiShowCameraViewport"].forEach((id) => {
+["uiShowHud", "uiShowInspector", "uiShowMetricsCounts", "uiShowMetricsRates", "uiShowMetricsError", "uiShowCameraViewport"].forEach((id) => {
   const el = document.getElementById(id);
   if (el) el.addEventListener("change", () => applyPanelVisibility());
 });
@@ -3318,12 +4241,20 @@ document.getElementById("boxOpacity").addEventListener("input", () => {
     refreshCameraOverlay().catch(() => {});
   });
 });
-["fxEnableEmphasis", "fxFnRing", "fxFpPulse"].forEach((id) => {
+["fxEnableEmphasis", "fxFnRing", "fxFpPulse", "fxTpQuality", "highlightSevereOnly"].forEach((id) => {
   const el = document.getElementById(id);
   if (el) el.addEventListener("change", () => {
     renderExternalLayers();
     renderInspectSelection();
+    if (cameraViewportEnabled && lastCameraPayload) renderCameraViewport(lastCameraPayload, cameraOverlayGeneration).catch(() => {});
   });
+});
+document.getElementById("cameraSelectionOnly")?.addEventListener("change", () => {
+  if (cameraViewportEnabled && lastCameraPayload) renderCameraViewport(lastCameraPayload, cameraOverlayGeneration).catch(() => {});
+});
+document.getElementById("spotlightMode")?.addEventListener("change", () => {
+  syncSpotlightFrames();
+  rebuildMetricsErrorPlot();
 });
 document.getElementById("projMode").addEventListener("click", () => {
   const wasPersp = camera === perspCamera;
@@ -3363,6 +4294,7 @@ window.addEventListener("message", (ev) => {
         .catch((err) => console.warn("[viewer-debug] bbox_layers_by_frame ack failed", err));
       applyEvalLayersForFrame(frame);
       rebuildAllMetricsPlots();
+      if (cameraViewportEnabled) refreshCameraOverlay().catch(() => {});
     }
   } else if (d.type === "eval_metrics_series") {
     metricsSeriesOverride = {
@@ -3370,6 +4302,10 @@ window.addEventListener("message", (ev) => {
       gt_fn: Array.isArray(d.gt_fn) ? d.gt_fn : null,
       est_tp: Array.isArray(d.est_tp) ? d.est_tp : null,
       est_fp: Array.isArray(d.est_fp) ? d.est_fp : null,
+      tp_center_distance_mean: Array.isArray(d.tp_center_distance_mean) ? d.tp_center_distance_mean : null,
+      tp_plane_distance_mean: Array.isArray(d.tp_plane_distance_mean) ? d.tp_plane_distance_mean : null,
+      tp_yaw_error_abs_mean: Array.isArray(d.tp_yaw_error_abs_mean) ? d.tp_yaw_error_abs_mean : null,
+      frame_severity_max: Array.isArray(d.frame_severity_max) ? d.frame_severity_max : null,
       gt: Array.isArray(d.gt) ? d.gt : [],
       pred: Array.isArray(d.pred) ? d.pred : [],
       tpr: Array.isArray(d.tpr) ? d.tpr : null,
@@ -3382,11 +4318,12 @@ window.addEventListener("message", (ev) => {
     renderExternalLayers();
     updateEvalHud();
     rebuildAllMetricsPlots();
+    if (cameraViewportEnabled) refreshCameraOverlay().catch(() => {});
   }
 });
 window.T4ViewerAPI = {
   setLayers(payload){ bboxLayersByFrame = null; setExternalLayerPayload(payload || {}); },
-  clearLayers(){ bboxLayersByFrame = null; externalLayers = { gt: [], pred: [] }; renderExternalLayers(); updateEvalHud(); rebuildAllMetricsPlots(); },
+  clearLayers(){ bboxLayersByFrame = null; externalLayers = { gt: [], pred: [] }; renderExternalLayers(); updateEvalHud(); rebuildAllMetricsPlots(); if (cameraViewportEnabled) refreshCameraOverlay().catch(() => {}); },
   setMetricsSeries(obj){
     if (!obj || typeof obj !== "object") return;
     metricsSeriesOverride = {
@@ -3394,6 +4331,10 @@ window.T4ViewerAPI = {
       gt_fn: Array.isArray(obj.gt_fn) ? obj.gt_fn : null,
       est_tp: Array.isArray(obj.est_tp) ? obj.est_tp : null,
       est_fp: Array.isArray(obj.est_fp) ? obj.est_fp : null,
+      tp_center_distance_mean: Array.isArray(obj.tp_center_distance_mean) ? obj.tp_center_distance_mean : null,
+      tp_plane_distance_mean: Array.isArray(obj.tp_plane_distance_mean) ? obj.tp_plane_distance_mean : null,
+      tp_yaw_error_abs_mean: Array.isArray(obj.tp_yaw_error_abs_mean) ? obj.tp_yaw_error_abs_mean : null,
+      frame_severity_max: Array.isArray(obj.frame_severity_max) ? obj.frame_severity_max : null,
       gt: Array.isArray(obj.gt) ? obj.gt : [],
       pred: Array.isArray(obj.pred) ? obj.pred : [],
       tpr: Array.isArray(obj.tpr) ? obj.tpr : null,
@@ -3498,17 +4439,23 @@ function animate(ts){
   renderer.render(scene, camera);
   const cntOn = document.getElementById("uiShowMetricsCounts") && document.getElementById("uiShowMetricsCounts").checked;
   const rateOn = document.getElementById("uiShowMetricsRates") && document.getElementById("uiShowMetricsRates").checked;
+  const errOn = document.getElementById("uiShowMetricsError") && document.getElementById("uiShowMetricsError").checked;
   if (cntOn && metricsWrapEl && !metricsWrapEl.hidden && metricsChartGroup.children.length) {
     metricsRenderer.render(metricsScene, metricsCamera);
   }
   if (rateOn && metricsRatesWrapEl && !metricsRatesWrapEl.hidden && metricsRatesChartGroup.children.length) {
     metricsRatesRenderer.render(metricsRatesScene, metricsRatesCamera);
   }
+  if (errOn && metricsErrorWrapEl && !metricsErrorWrapEl.hidden && metricsErrorChartGroup.children.length) {
+    metricsErrorRenderer.render(metricsErrorScene, metricsErrorCamera);
+  }
 }
 
 (async function boot(){
   setStatus("bootstrapping...");
   wireCameraViewportResize();
+  wireInspectPanelResize();
+  wireCameraOverlayPicking();
   wireInspectPicking();
   const egoMeshPromise = loadEgoVehicleMesh().catch((err) => {
     console.warn("[viewer] ego vehicle mesh unavailable, using box fallback", err);
@@ -3532,6 +4479,9 @@ function animate(ts){
   const hudEl = document.getElementById("hud");
   const hudHandle = document.getElementById("hudDragHandle");
   if (hudEl && hudHandle) makePanelDraggable(hudEl, hudHandle);
+  const inspectPanelEl = document.getElementById("inspectPanel");
+  const inspectHandle = document.getElementById("inspectDragHandle");
+  if (inspectPanelEl && inspectHandle) makePanelDraggable(inspectPanelEl, inspectHandle);
   if (metricsWrapEl) {
     const h = metricsWrapEl.querySelector(".panel-drag-handle");
     if (h) makePanelDraggable(metricsWrapEl, h);
@@ -3539,6 +4489,10 @@ function animate(ts){
   if (metricsRatesWrapEl) {
     const h = metricsRatesWrapEl.querySelector(".panel-drag-handle");
     if (h) makePanelDraggable(metricsRatesWrapEl, h);
+  }
+  if (metricsErrorWrapEl) {
+    const h = metricsErrorWrapEl.querySelector(".panel-drag-handle");
+    if (h) makePanelDraggable(metricsErrorWrapEl, h);
   }
   const camVp = document.getElementById("cameraViewportWrap");
   const camHandle = document.getElementById("cameraViewportDragHandle");

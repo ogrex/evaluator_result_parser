@@ -829,10 +829,107 @@ def _build_app(
         except (TypeError, ValueError):
             return None
 
+    def _safe_float_or_none(v: Any) -> Optional[float]:
+        try:
+            out = float(v)
+        except (TypeError, ValueError):
+            return None
+        if not math.isfinite(out):
+            return None
+        return out
+
+    def _clip01(v: float) -> float:
+        return max(0.0, min(1.0, float(v)))
+
+    def _derive_eval_box_severity(box: Dict[str, Any], kind: str, status: str) -> Tuple[float, str]:
+        preset = _safe_float_or_none(box.get("severity_score"))
+        if preset is not None:
+            return _clip01(preset), str(box.get("severity_reason", box.get("severity_label", "provided"))) or "provided"
+
+        st = str(status or "TP").upper()
+        if st == "FN":
+            return 0.96, "missed ground truth"
+        if st == "FP":
+            conf = _safe_float_or_none(box.get("confidence"))
+            base = 0.66 + 0.18 * (conf if conf is not None else 0.35)
+            return _clip01(base), "false positive"
+
+        components: List[Tuple[str, float]] = []
+        x_err = _safe_float_or_none(box.get("x_error"))
+        y_err = _safe_float_or_none(box.get("y_error"))
+        z_err = _safe_float_or_none(box.get("z_error"))
+        yaw_err = _safe_float_or_none(box.get("yaw_error"))
+        center_d = _safe_float_or_none(box.get("center_distance"))
+        plane_d = _safe_float_or_none(box.get("plane_distance"))
+        dt_sec = _safe_float_or_none(box.get("pair_dt_sec"))
+        if x_err is not None or y_err is not None:
+            xy_mag = math.hypot(x_err or 0.0, y_err or 0.0)
+            components.append(("xy error", min(1.0, xy_mag / 1.8) * 0.34))
+        if z_err is not None:
+            components.append(("z error", min(1.0, abs(z_err) / 1.0) * 0.16))
+        if yaw_err is not None:
+            components.append(("yaw error", min(1.0, abs(yaw_err) / 0.8) * 0.24))
+        if center_d is not None:
+            components.append(("center distance", min(1.0, center_d / 1.8) * 0.16))
+        if plane_d is not None:
+            components.append(("plane distance", min(1.0, plane_d / 1.8) * 0.12))
+        if dt_sec is not None:
+            components.append(("pair dt", min(1.0, abs(dt_sec) / 0.1) * 0.08))
+        if not components:
+            return 0.08 if kind == "GT" else 0.12, "low TP error"
+        components.sort(key=lambda t: t[1], reverse=True)
+        score = 0.1 + sum(v for _k, v in components)
+        return _clip01(score), components[0][0]
+
+    def _camera_overlay_eval_row(box: Dict[str, Any], *, kind: str, status: str, roi, layer_name: str) -> Dict[str, object]:
+        u_min, v_min, u_max, v_max, _vis = roi
+        sev, sev_reason = _derive_eval_box_severity(box, kind, status)
+        row: Dict[str, object] = {
+            "x0": u_min,
+            "y0": v_min,
+            "x1": u_max,
+            "y1": v_max,
+            "label": str(box.get("label", box.get("class", "")) or ""),
+            "status": status,
+            "kind": kind,
+            "layer": layer_name,
+            "uuid": str(box.get("uuid", box.get("id", box.get("track_id", box.get("object_id", "")))) or ""),
+            "pair_uuid": str(box.get("pair_uuid", "") or ""),
+            "severity_score": sev,
+            "severity_reason": sev_reason,
+        }
+        passthrough_fields = [
+            "confidence",
+            "center_distance",
+            "plane_distance",
+            "pair_dt_sec",
+            "x_error",
+            "y_error",
+            "z_error",
+            "yaw_error",
+            "vx",
+            "vy",
+            "frame_index",
+            "unix_time",
+            "frame_id",
+            "topic_name",
+            "run",
+            "suite_name",
+            "scenario_name",
+            "t4dataset_id",
+            "t4dataset_name",
+            "source",
+        ]
+        for key in passthrough_fields:
+            if key in box and box.get(key) is not None:
+                row[key] = box.get(key)
+        return row
+
     def _external_eval_boxes_to_2d_rows(
         t4,
         camera_token: str,
         boxes: Optional[List[Dict[str, Any]]],
+        layer_name: str,
         width: int,
         height: int,
         yaw_off: float,
@@ -871,17 +968,9 @@ def _build_app(
                 )
                 if roi is None:
                     continue
-                u_min, v_min, u_max, v_max, _vis = roi
-                rows.append(
-                    {
-                        "x0": u_min,
-                        "y0": v_min,
-                        "x1": u_max,
-                        "y1": v_max,
-                        "label": str(b.get("label", b.get("class", "")) or ""),
-                        "status": str(b.get("status", "TP") or "TP").upper(),
-                    }
-                )
+                status = str(b.get("status", "TP") or "TP").upper()
+                kind = "EST" if layer_name == "pred" else "GT"
+                rows.append(_camera_overlay_eval_row(b, kind=kind, status=status, roi=roi, layer_name=layer_name))
             except Exception:
                 continue
         return rows
@@ -996,6 +1085,7 @@ def _build_app(
                 t4,
                 str(token),
                 extra_pred_boxes,
+                "pred",
                 width,
                 height,
                 external_yaw_offset,
@@ -1007,6 +1097,7 @@ def _build_app(
                 t4,
                 str(token),
                 extra_gt_boxes,
+                "gt",
                 width,
                 height,
                 external_yaw_offset,
