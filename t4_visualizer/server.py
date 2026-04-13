@@ -97,10 +97,12 @@ import datetime
 import html
 import json
 import math
+import os
 import struct
 import sys
 import threading
 import time
+import uuid
 import xml.etree.ElementTree as ET
 from functools import lru_cache
 from pathlib import Path
@@ -346,6 +348,16 @@ try:
         pred: List[Dict[str, Any]] = _Field(default_factory=list)
         gt: List[Dict[str, Any]] = _Field(default_factory=list)
 
+    class ViewerSessionSaveBody(BaseModel):
+        """Persisted viewer overlay payload used by upload/share links."""
+
+        payload: Dict[str, Any] = _Field(default_factory=dict)
+        source_name: Optional[str] = None
+        t4dataset_id: Optional[str] = None
+        scenario_name: Optional[str] = None
+        frame_index: int = 0
+        version: Optional[str] = None
+
 except ImportError:
     pass  # Proper error is raised inside _build_app when fastapi is missing
 
@@ -392,6 +404,23 @@ def _build_app(
     _path_cache = _DatasetPathCache(ttl_s=dataset_path_cache_ttl_s)
     _debug_visibility = str(visibility_mode).strip().lower() == "debug"
     _templates_dir = Path(__file__).resolve().parent / "templates"
+    _viewer_session_dir: Optional[Path] = None
+    _viewer_session_candidates = []
+    env_session_dir = os.environ.get("T4_VIEWER_SESSION_DIR", "").strip()
+    if env_session_dir:
+        _viewer_session_candidates.append(Path(env_session_dir).expanduser())
+    _viewer_session_candidates.append(data_dir / ".viewer_sessions")
+    _viewer_session_candidates.append(Path("/tmp/t4_viewer_sessions"))
+    for cand in _viewer_session_candidates:
+        try:
+            cand.mkdir(parents=True, exist_ok=True)
+            probe = cand / ".write_test"
+            probe.write_text("", encoding="utf-8")
+            probe.unlink()
+            _viewer_session_dir = cand
+            break
+        except OSError:
+            continue
 
     def _public_error(status_code: int, code: str, message: str, hint: Optional[str] = None):
         detail: Dict[str, object] = {"code": code, "message": message}
@@ -404,6 +433,49 @@ def _build_app(
         if _debug_visibility and exc is not None:
             detail["debug"] = str(exc)
         raise HTTPException(status_code=status_code, detail=detail)
+
+    def _normalize_viewer_session_id(raw: str) -> str:
+        try:
+            return str(uuid.UUID(str(raw)))
+        except (ValueError, AttributeError, TypeError):
+            _public_error(400, "invalid_session_id", "Viewer session id must be a valid UUID.")
+
+    def _viewer_session_file(session_id: str) -> Path:
+        if _viewer_session_dir is None:
+            _safe_error(
+                500,
+                "viewer_session_store_unavailable",
+                "Viewer session storage is unavailable on this server.",
+            )
+        return _viewer_session_dir / f"{_normalize_viewer_session_id(session_id)}.json"
+
+    def _validate_viewer_session_payload(payload: Any) -> Dict[str, Any]:
+        if not isinstance(payload, dict):
+            _public_error(400, "invalid_viewer_payload", "Viewer session payload must be a JSON object.")
+        has_any = False
+        if "bbox_layers_by_frame" in payload:
+            if payload["bbox_layers_by_frame"] is not None and not isinstance(payload["bbox_layers_by_frame"], dict):
+                _public_error(
+                    400,
+                    "invalid_viewer_payload",
+                    "'bbox_layers_by_frame' must be an object keyed by frame index.",
+                )
+            has_any = True
+        if "bbox_layers" in payload:
+            if payload["bbox_layers"] is not None and not isinstance(payload["bbox_layers"], dict):
+                _public_error(400, "invalid_viewer_payload", "'bbox_layers' must be an object.")
+            has_any = True
+        if "eval_metrics_series" in payload:
+            if payload["eval_metrics_series"] is not None and not isinstance(payload["eval_metrics_series"], dict):
+                _public_error(400, "invalid_viewer_payload", "'eval_metrics_series' must be an object.")
+            has_any = True
+        if not has_any:
+            _public_error(
+                400,
+                "invalid_viewer_payload",
+                "Viewer session payload must include bbox_layers_by_frame, bbox_layers, or eval_metrics_series.",
+            )
+        return jsonable_encoder(payload)
 
     @lru_cache(maxsize=16)
     def _load_template(filename: str) -> str:
@@ -1912,6 +1984,78 @@ def _build_app(
         }
 
     @app.get(
+        "/viewer/three/session/{session_id}",
+        tags=["viewer"],
+        summary="Load a persisted viewer overlay session by UUID",
+    )
+    def viewer_three_session_get(session_id: str):
+        path = _viewer_session_file(session_id)
+        try:
+            if not path.is_file():
+                _public_error(404, "viewer_session_not_found", f"Viewer session '{session_id}' was not found.")
+            return json.loads(path.read_text(encoding="utf-8"))
+        except HTTPException:
+            raise
+        except Exception as exc:
+            _safe_error(
+                500,
+                "viewer_session_load_failed",
+                "Failed to load the requested viewer session.",
+                exc=exc,
+            )
+
+    @app.post(
+        "/viewer/three/session",
+        tags=["viewer"],
+        summary="Persist viewer overlay payload and return a shareable UUID link",
+    )
+    def viewer_three_session_create(body: ViewerSessionSaveBody):
+        payload = _validate_viewer_session_payload(body.payload)
+        session_id = str(uuid.uuid4())
+        path = _viewer_session_file(session_id)
+        record = {
+            "session_id": session_id,
+            "created_at": datetime.datetime.now(datetime.timezone.utc).isoformat(),
+            "source_name": str(body.source_name).strip() if body.source_name else None,
+            "viewer_context": {
+                "t4dataset_id": body.t4dataset_id,
+                "scenario_name": body.scenario_name,
+                "frame_index": int(body.frame_index or 0),
+                "version": body.version,
+            },
+            "payload": payload,
+        }
+        try:
+            path.write_text(json.dumps(record, ensure_ascii=False, separators=(",", ":")), encoding="utf-8")
+        except Exception as exc:
+            _safe_error(
+                500,
+                "viewer_session_save_failed",
+                "Failed to persist the viewer session payload.",
+                exc=exc,
+            )
+
+        share_url = None
+        if body.t4dataset_id:
+            share_params = {
+                "t4dataset_id": body.t4dataset_id,
+                "frame_index": int(body.frame_index or 0),
+                "session_id": session_id,
+            }
+            if body.scenario_name:
+                share_params["scenario_name"] = body.scenario_name
+            if body.version:
+                share_params["version"] = body.version
+            share_url = f"/viewer/three?{urlencode(share_params)}"
+        return {
+            "ok": True,
+            "session_id": session_id,
+            "storage_path": str(path),
+            "payload_url": f"/viewer/three/session/{session_id}",
+            "share_url": share_url,
+        }
+
+    @app.get(
         "/viewer/three/schema",
         tags=["viewer"],
         summary="Binary schema for Three.js frame payload",
@@ -2420,6 +2564,7 @@ def _build_app(
         scenario_name: Optional[str] = Query(None),
         frame_index: int = Query(0, ge=0),
         version: Optional[str] = Query(None),
+        session_id: Optional[str] = Query(None),
     ):
         esc = html.escape
         qs_params = {
@@ -2430,6 +2575,8 @@ def _build_app(
             qs_params["scenario_name"] = scenario_name
         if version:
             qs_params["version"] = version
+        if session_id:
+            qs_params["session_id"] = session_id
         qs = urlencode(qs_params)
         scenario_label = scenario_name or "(auto)"
         tmpl = _load_template("viewer_three.html")

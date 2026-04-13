@@ -288,6 +288,10 @@
         <button id="toggleLanelet">Lanelet OFF</button>
         <button type="button" id="toggleCameraViewport" aria-pressed="false" title="Camera images overlay (off)">Cameras: off</button>
         <button id="toggleFullscreen" type="button" title="Fullscreen viewer">Fullscreen</button>
+        <button id="importSessionBtn" type="button" title="Load evaluation overlay data from a local file">Load Eval</button>
+        <button id="exportSessionBtn" type="button" title="Download the current evaluation overlay data as a local file">Export Eval</button>
+        <button id="shareSessionBtn" type="button" title="Persist current imported layers and copy a shareable link">Save Share Link</button>
+        <input id="viewerSessionFileInput" type="file" accept="application/json,.json" hidden>
         <details class="view-panels" id="viewPanels">
           <summary>Panels</summary>
           <div class="view-panels__body">
@@ -305,6 +309,7 @@
       <span class="scrubberLabel">Frame</span>
       <input id="slider" type="range" min="0" max="0" value="0" />
       <span id="frameTxt" class="pill" style="min-width:7.5rem;text-align:right">frame 0/0</span>
+      <span id="shareSessionState" class="pill" title="Imported/shared overlay session state">session local-only</span>
       <div class="frameNav">
         <button id="framePrev" type="button" title="Previous frame">◀</button>
         <button id="frameNext" type="button" title="Next frame">▶</button>
@@ -551,6 +556,7 @@ const dataset = params.get("t4dataset_id");
 const scenario = params.get("scenario_name");
 const startFrame = Number(params.get("frame_index") || "0");
 const version = params.get("version");
+const initialSessionId = params.get("session_id") || "";
 const qv = version ? `&version=${encodeURIComponent(version)}` : "";
 const metaUrl = `/viewer/three/meta?t4dataset_id=${encodeURIComponent(dataset)}&scenario_name=${encodeURIComponent(scenario)}${qv}`;
 
@@ -830,6 +836,179 @@ let externalLayers = { gt: [], pred: [] };
 let bboxLayersByFrame = null;
 /** Optional per-frame series from parent: `{ gt_tp, gt_fn, est_tp, est_fp }` or legacy `{ gt, pred, tpr }`. */
 let metricsSeriesOverride = null;
+let activeViewerSessionId = initialSessionId || "";
+let activeViewerSessionSource = "";
+
+function normalizeMetricsSeriesPayload(obj){
+  const d = obj && typeof obj === "object" ? obj : {};
+  return {
+    gt_tp: Array.isArray(d.gt_tp) ? d.gt_tp : null,
+    gt_fn: Array.isArray(d.gt_fn) ? d.gt_fn : null,
+    est_tp: Array.isArray(d.est_tp) ? d.est_tp : null,
+    est_fp: Array.isArray(d.est_fp) ? d.est_fp : null,
+    tp_center_distance_mean: Array.isArray(d.tp_center_distance_mean) ? d.tp_center_distance_mean : null,
+    tp_plane_distance_mean: Array.isArray(d.tp_plane_distance_mean) ? d.tp_plane_distance_mean : null,
+    tp_yaw_error_abs_mean: Array.isArray(d.tp_yaw_error_abs_mean) ? d.tp_yaw_error_abs_mean : null,
+    frame_severity_max: Array.isArray(d.frame_severity_max) ? d.frame_severity_max : null,
+    gt: Array.isArray(d.gt) ? d.gt : [],
+    pred: Array.isArray(d.pred) ? d.pred : [],
+    tpr: Array.isArray(d.tpr) ? d.tpr : null,
+  };
+}
+
+function looksLikeFrameMap(obj){
+  if (!obj || typeof obj !== "object" || Array.isArray(obj)) return false;
+  const keys = Object.keys(obj);
+  if (!keys.length) return false;
+  return keys.every((k) => /^\d+$/.test(String(k)));
+}
+
+function normalizeViewerSessionPayload(raw, sourceName){
+  const root0 = raw && typeof raw === "object" ? raw : {};
+  const root = root0.payload && typeof root0.payload === "object" ? root0.payload : root0;
+  const out = {};
+  let byFrame = null;
+  if (root.type === "bbox_layers_by_frame" && root.frames && typeof root.frames === "object") byFrame = root.frames;
+  else if (root.bbox_layers_by_frame && typeof root.bbox_layers_by_frame === "object") byFrame = root.bbox_layers_by_frame;
+  else if (root.frames && typeof root.frames === "object" && !Array.isArray(root.frames)) byFrame = root.frames;
+  else if (looksLikeFrameMap(root)) byFrame = root;
+  if (byFrame) out.bbox_layers_by_frame = byFrame;
+
+  let single = null;
+  if (root.type === "bbox_layers") single = root;
+  else if (root.bbox_layers && typeof root.bbox_layers === "object") single = root.bbox_layers;
+  else if (Array.isArray(root.gt) || Array.isArray(root.pred)) single = root;
+  if (single) {
+    out.bbox_layers = {
+      gt: Array.isArray(single.gt) ? single.gt : [],
+      pred: Array.isArray(single.pred) ? single.pred : [],
+    };
+  }
+
+  const metrics = root.type === "eval_metrics_series"
+    ? root
+    : (root.eval_metrics_series || root.metricsSeries || root.metrics_series || null);
+  if (metrics && typeof metrics === "object") out.eval_metrics_series = normalizeMetricsSeriesPayload(metrics);
+
+  if (!Object.keys(out).length) {
+    throw new Error("JSON must contain bbox_layers_by_frame, bbox_layers, eval_metrics_series, or a frame map.");
+  }
+  return {
+    payload: out,
+    source_name: String(root0.source_name || sourceName || "").trim() || null,
+  };
+}
+
+function updateViewerSessionUrl(sessionId){
+  if (sessionId) params.set("session_id", sessionId);
+  else params.delete("session_id");
+  const next = `${window.location.pathname}?${params.toString()}`;
+  window.history.replaceState(null, "", next);
+}
+
+function clearCurrentViewerLayers(opts){
+  const doCameraRefresh = !opts || opts.refreshCamera !== false;
+  const clearMetrics = !opts || opts.clearMetrics !== false;
+  bboxLayersByFrame = null;
+  if (clearMetrics) metricsSeriesOverride = null;
+  externalLayers = { gt: [], pred: [] };
+  renderExternalLayers();
+  updateEvalHud();
+  syncSpotlightFrames();
+  rebuildAllMetricsPlots();
+  if (doCameraRefresh && cameraViewportEnabled) refreshCameraOverlay().catch(() => {});
+}
+
+function applyViewerSessionPayload(payload, opts){
+  const doCameraRefresh = !opts || opts.refreshCamera !== false;
+  const norm = payload && typeof payload === "object" ? payload : {};
+  metricsSeriesOverride = norm.eval_metrics_series ? normalizeMetricsSeriesPayload(norm.eval_metrics_series) : null;
+  if (norm.bbox_layers_by_frame && typeof norm.bbox_layers_by_frame === "object") {
+    bboxLayersByFrame = norm.bbox_layers_by_frame;
+    applyEvalLayersForFrame(frame);
+  } else if (norm.bbox_layers && typeof norm.bbox_layers === "object") {
+    bboxLayersByFrame = null;
+    setExternalLayerPayload(norm.bbox_layers, { ack: false, refreshCamera: false });
+  } else {
+    bboxLayersByFrame = null;
+    externalLayers = { gt: [], pred: [] };
+    renderExternalLayers();
+    updateEvalHud();
+  }
+  syncSpotlightFrames();
+  rebuildAllMetricsPlots();
+  if (doCameraRefresh && cameraViewportEnabled) refreshCameraOverlay().catch(() => {});
+}
+
+function buildCurrentViewerSessionPayload(){
+  const payload = {};
+  if (bboxLayersByFrame && typeof bboxLayersByFrame === "object" && Object.keys(bboxLayersByFrame).length) {
+    payload.bbox_layers_by_frame = bboxLayersByFrame;
+  } else {
+    const gt = Array.isArray(externalLayers.gt) ? externalLayers.gt : [];
+    const pred = Array.isArray(externalLayers.pred) ? externalLayers.pred : [];
+    if (gt.length || pred.length) payload.bbox_layers = { gt, pred };
+  }
+  if (metricsSeriesOverride && typeof metricsSeriesOverride === "object") {
+    payload.eval_metrics_series = normalizeMetricsSeriesPayload(metricsSeriesOverride);
+  }
+  return Object.keys(payload).length ? payload : null;
+}
+
+function downloadViewerSessionJson(){
+  const payload = buildCurrentViewerSessionPayload();
+  if (!payload) {
+    setStatus("save json: no imported or external overlay data to export");
+    return;
+  }
+  const doc = {
+    source_name: activeViewerSessionSource || null,
+    exported_at: new Date().toISOString(),
+    viewer_context: {
+      t4dataset_id: dataset,
+      scenario_name: scenario,
+      frame_index: frame,
+      version,
+      session_id: activeViewerSessionId || null,
+    },
+    payload,
+  };
+  const blob = new Blob([JSON.stringify(doc, null, 2)], { type: "application/json" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  const safeDataset = String(dataset || "dataset").replace(/[^a-z0-9._-]+/gi, "_");
+  const safeScenario = String(scenario || "scenario").replace(/[^a-z0-9._-]+/gi, "_");
+  a.href = url;
+  a.download = `${safeDataset}_${safeScenario}_frame${frame}_viewer_session.json`;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 0);
+  setStatus(`saved json ${a.download}`);
+}
+
+async function parseJsonResponseOrThrow(res, fallback){
+  const body = await res.json().catch(() => null);
+  if (res.ok) return body;
+  const msg = body && body.detail && body.detail.message
+    ? body.detail.message
+    : (body && body.message ? body.message : fallback);
+  throw new Error(msg || fallback || `HTTP ${res.status}`);
+}
+
+async function loadViewerSessionById(sessionId){
+  const sid = String(sessionId || "").trim();
+  if (!sid) return null;
+  const res = await fetch(`/viewer/three/session/${encodeURIComponent(sid)}`);
+  const record = await parseJsonResponseOrThrow(res, `viewer session HTTP ${res.status}`);
+  const normalized = normalizeViewerSessionPayload(record, record && record.source_name ? String(record.source_name) : "");
+  activeViewerSessionId = String(record && record.session_id ? record.session_id : sid);
+  activeViewerSessionSource = normalized.source_name || "";
+  applyViewerSessionPayload(normalized.payload, { refreshCamera: false });
+  setShareSessionState(`session ${activeViewerSessionId.slice(0, 8)}`);
+  updateViewerSessionUrl(activeViewerSessionId);
+  return record;
+}
 
 const metricsCanvas = document.getElementById("metricsCanvas");
 const metricsWrapEl = document.getElementById("metricsWrap");
@@ -882,8 +1061,12 @@ const statusEl = document.getElementById("status");
 const metaEl = document.getElementById("meta");
 const evalHudEl = document.getElementById("evalHud");
 const appRootEl = document.getElementById("app");
+const shareSessionStateEl = document.getElementById("shareSessionState");
+const viewerSessionFileInput = document.getElementById("viewerSessionFileInput");
 function setStatus(t){ statusEl.textContent = t; }
 function setFrameText(){ frameTxt.textContent = `frame ${frame}/${Math.max(0,totalFrames-1)}`; slider.value = String(frame); }
+function setShareSessionState(t){ if (shareSessionStateEl) shareSessionStateEl.textContent = t; }
+setShareSessionState(initialSessionId ? `session ${initialSessionId.slice(0, 8)}` : "session local-only");
 function fmtNum(v, d){
   return Number.isFinite(v) ? Number(v).toFixed(d) : "—";
 }
@@ -4631,53 +4814,90 @@ window.addEventListener("message", (ev) => {
       if (cameraViewportEnabled) refreshCameraOverlay().catch(() => {});
     }
   } else if (d.type === "eval_metrics_series") {
-    metricsSeriesOverride = {
-      gt_tp: Array.isArray(d.gt_tp) ? d.gt_tp : null,
-      gt_fn: Array.isArray(d.gt_fn) ? d.gt_fn : null,
-      est_tp: Array.isArray(d.est_tp) ? d.est_tp : null,
-      est_fp: Array.isArray(d.est_fp) ? d.est_fp : null,
-      tp_center_distance_mean: Array.isArray(d.tp_center_distance_mean) ? d.tp_center_distance_mean : null,
-      tp_plane_distance_mean: Array.isArray(d.tp_plane_distance_mean) ? d.tp_plane_distance_mean : null,
-      tp_yaw_error_abs_mean: Array.isArray(d.tp_yaw_error_abs_mean) ? d.tp_yaw_error_abs_mean : null,
-      frame_severity_max: Array.isArray(d.frame_severity_max) ? d.frame_severity_max : null,
-      gt: Array.isArray(d.gt) ? d.gt : [],
-      pred: Array.isArray(d.pred) ? d.pred : [],
-      tpr: Array.isArray(d.tpr) ? d.tpr : null,
-    };
+    metricsSeriesOverride = normalizeMetricsSeriesPayload(d);
     rebuildAllMetricsPlots();
   } else if (d.type === "bbox_layers_clear") {
-    bboxLayersByFrame = null;
-    metricsSeriesOverride = null;
-    externalLayers = { gt: [], pred: [] };
-    renderExternalLayers();
-    updateEvalHud();
-    rebuildAllMetricsPlots();
-    if (cameraViewportEnabled) refreshCameraOverlay().catch(() => {});
+    clearCurrentViewerLayers();
   }
 });
 window.T4ViewerAPI = {
   setLayers(payload){ bboxLayersByFrame = null; setExternalLayerPayload(payload || {}); },
-  clearLayers(){ bboxLayersByFrame = null; externalLayers = { gt: [], pred: [] }; renderExternalLayers(); updateEvalHud(); rebuildAllMetricsPlots(); if (cameraViewportEnabled) refreshCameraOverlay().catch(() => {}); },
+  clearLayers(){ clearCurrentViewerLayers({ clearMetrics: false }); },
   setMetricsSeries(obj){
     if (!obj || typeof obj !== "object") return;
-    metricsSeriesOverride = {
-      gt_tp: Array.isArray(obj.gt_tp) ? obj.gt_tp : null,
-      gt_fn: Array.isArray(obj.gt_fn) ? obj.gt_fn : null,
-      est_tp: Array.isArray(obj.est_tp) ? obj.est_tp : null,
-      est_fp: Array.isArray(obj.est_fp) ? obj.est_fp : null,
-      tp_center_distance_mean: Array.isArray(obj.tp_center_distance_mean) ? obj.tp_center_distance_mean : null,
-      tp_plane_distance_mean: Array.isArray(obj.tp_plane_distance_mean) ? obj.tp_plane_distance_mean : null,
-      tp_yaw_error_abs_mean: Array.isArray(obj.tp_yaw_error_abs_mean) ? obj.tp_yaw_error_abs_mean : null,
-      frame_severity_max: Array.isArray(obj.frame_severity_max) ? obj.frame_severity_max : null,
-      gt: Array.isArray(obj.gt) ? obj.gt : [],
-      pred: Array.isArray(obj.pred) ? obj.pred : [],
-      tpr: Array.isArray(obj.tpr) ? obj.tpr : null,
-    };
+    metricsSeriesOverride = normalizeMetricsSeriesPayload(obj);
     rebuildAllMetricsPlots();
   },
   clearMetricsSeries(){ metricsSeriesOverride = null; rebuildAllMetricsPlots(); },
   getFrameContext(){ return { dataset, scenario, frame, totalFrames }; },
 };
+document.getElementById("importSessionBtn").addEventListener("click", () => {
+  if (viewerSessionFileInput) viewerSessionFileInput.click();
+});
+document.getElementById("exportSessionBtn").addEventListener("click", () => {
+  downloadViewerSessionJson();
+});
+if (viewerSessionFileInput) {
+  viewerSessionFileInput.addEventListener("change", async (ev) => {
+    const input = ev.currentTarget;
+    const file = input && input.files && input.files[0] ? input.files[0] : null;
+    if (!file) return;
+    try {
+      const raw = JSON.parse(await file.text());
+      const normalized = normalizeViewerSessionPayload(raw, file.name);
+      applyViewerSessionPayload(normalized.payload);
+      activeViewerSessionId = "";
+      activeViewerSessionSource = normalized.source_name || file.name;
+      updateViewerSessionUrl("");
+      setShareSessionState(`imported ${String(file.name).slice(0, 18)}`);
+      setStatus(`imported ${file.name}`);
+    } catch (err) {
+      setStatus(`import error: ${err && err.message ? err.message : String(err)}`);
+    } finally {
+      input.value = "";
+    }
+  });
+}
+document.getElementById("shareSessionBtn").addEventListener("click", async () => {
+  const payload = buildCurrentViewerSessionPayload();
+  if (!payload) {
+    setStatus("share: no imported or external overlay data to save");
+    return;
+  }
+  try {
+    setStatus("saving viewer session...");
+    const res = await fetch("/viewer/three/session", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        payload,
+        source_name: activeViewerSessionSource || null,
+        t4dataset_id: dataset,
+        scenario_name: scenario,
+        frame_index: frame,
+        version,
+      }),
+    });
+    const body = await parseJsonResponseOrThrow(res, `viewer session HTTP ${res.status}`);
+    activeViewerSessionId = String(body && body.session_id ? body.session_id : "");
+    if (!activeViewerSessionId) throw new Error("Server did not return a session id.");
+    const shareUrl = body && body.share_url
+      ? new URL(String(body.share_url), window.location.origin).toString()
+      : `${window.location.origin}${window.location.pathname}?${params.toString()}`;
+    updateViewerSessionUrl(activeViewerSessionId);
+    setShareSessionState(`session ${activeViewerSessionId.slice(0, 8)}`);
+    let copied = false;
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      try {
+        await navigator.clipboard.writeText(shareUrl);
+        copied = true;
+      } catch (_) {}
+    }
+    setStatus(copied ? `share link copied · ${activeViewerSessionId.slice(0, 8)}` : `share link ready · ${activeViewerSessionId.slice(0, 8)}`);
+  } catch (err) {
+    setStatus(`share error: ${err && err.message ? err.message : String(err)}`);
+  }
+});
 document.getElementById("toggleFullscreen").addEventListener("click", async () => {
   const fsEl = appRootEl || document.documentElement;
   try {
@@ -4812,6 +5032,11 @@ function animate(ts){
   requestAnimationFrame(() => resizeMainRenderer());
   setTimeout(() => resizeMainRenderer(), 0);
   await showFrame(Math.min(startFrame, Math.max(0, totalFrames - 1)));
+  if (initialSessionId) {
+    const record = await loadViewerSessionById(initialSessionId);
+    const src = record && record.source_name ? ` · ${record.source_name}` : "";
+    setStatus(`loaded shared session ${initialSessionId.slice(0, 8)}${src}`);
+  }
   updateCameraToolbarMode();
   applyPanelVisibility();
   const hudEl = document.getElementById("hud");
