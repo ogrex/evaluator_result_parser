@@ -58,6 +58,15 @@
     .pill{display:inline-block;padding:.15rem .55rem;border-radius:999px;background:#f7e7d6;color:var(--accent);font-size:.78rem}
     .camera-strip{display:flex;gap:.5rem;flex-wrap:wrap}
     .camera-chip{padding:.3rem .7rem;border-radius:999px;border:1px solid var(--line);background:#fffaf2;font-size:.82rem}
+    .eval-panel{margin-bottom:1rem;padding:1rem 1.1rem;border:1px solid var(--line);border-radius:14px;background:#fff7ef;display:block}
+    .eval-title{display:flex;justify-content:space-between;gap:1rem;align-items:center;margin-bottom:.7rem}
+    .eval-badges{display:flex;flex-wrap:wrap;gap:.5rem}
+    .eval-pill{display:inline-flex;align-items:center;gap:.35rem;padding:.28rem .65rem;border-radius:999px;background:#f7e7d6;color:#8a4a12;font-size:.82rem;font-weight:700}
+    .eval-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:.65rem}
+    .eval-stat{padding:.75rem;border:1px solid var(--line);border-radius:12px;background:#fffdf8}
+    .eval-stat .k{font-size:.76rem;color:var(--muted);text-transform:uppercase;letter-spacing:.04em}
+    .eval-stat .v{font-weight:700;margin-top:.25rem;word-break:break-word}
+    .eval-note{margin-top:.8rem;color:var(--muted);font-size:.88rem;line-height:1.45}
     .empty,.error,.loading{padding:1rem;border:1px dashed var(--line);border-radius:12px;color:var(--muted)}
     .error{color:var(--warn)}
     .loading-inline{
@@ -111,6 +120,18 @@
         </div>
 
         <div id="cameraStrip" class="camera-strip" style="margin-bottom:1rem"></div>
+        <div id="evalPanel" class="eval-panel">
+          <div class="eval-title">
+            <div>
+              <div class="view-title">Evaluation overlay</div>
+              <div class="muted">Frame-aware metadata pushed from the parent dashboard.</div>
+            </div>
+            <div id="evalState" class="pill">annotation-only</div>
+          </div>
+          <div id="evalBadges" class="eval-badges"></div>
+          <div id="evalGrid" class="eval-grid" style="margin-top:.8rem"></div>
+          <div id="evalNote" class="eval-note"></div>
+        </div>
         <div id="viewerGrid" class="viewer-grid"></div>
 
         <div class="footer-links">
@@ -138,6 +159,8 @@
     let hasLoadedOnce = false;
     let playTimer = null;
     let isPlaying = false;
+    let currentFrameData = null;
+    let tlrEvalByFrame = null;
     const el = (id) => document.getElementById(id);
 
     function frameApiUrl(){
@@ -180,6 +203,91 @@
       const ss = String(dt.getSeconds()).padStart(2, "0");
       const micros = String(ts % 1000000).padStart(6, "0");
       return `${y}-${m}-${d} ${hh}:${mm}:${ss}.${micros}`;
+    }
+
+    function formatEvalValue(value, digits = 2){
+      if (value === null || value === undefined || value === "") return "-";
+      const num = Number(value);
+      if (Number.isFinite(num)) return String(num.toFixed(digits));
+      return String(value);
+    }
+
+    function getEvalRowDatasetId(row){
+      if (!row || typeof row !== "object") return "";
+      return String(row.t4dataset_id || row.dataset_id || row.dataset || "").trim();
+    }
+
+    function rowMatchesCurrentContext(row, data){
+      if (!row || typeof row !== "object") return false;
+      const rowDatasetId = getEvalRowDatasetId(row);
+      if (rowDatasetId && rowDatasetId !== state.datasetId) return false;
+      return true;
+    }
+
+    function normalizeEvalFramesPayload(payload){
+      if (!payload || typeof payload !== "object") return null;
+      const payloadDatasetId = String(payload.t4dataset_id || payload.dataset_id || payload.dataset || "").trim();
+      const frames = payload.frames && typeof payload.frames === "object" ? payload.frames : payload;
+      if (!frames || typeof frames !== "object") return null;
+      const out = {};
+      for (const [k, row] of Object.entries(frames)) {
+        if (!row || typeof row !== "object") continue;
+        const merged = Object.assign({}, row);
+        if (!merged.t4dataset_id && payloadDatasetId) merged.t4dataset_id = payloadDatasetId;
+        out[String(k)] = merged;
+      }
+      return out;
+    }
+
+    function renderEvalOverlay(data){
+      const panel = el("evalPanel");
+      const badges = el("evalBadges");
+      const grid = el("evalGrid");
+      const statePill = el("evalState");
+      const note = el("evalNote");
+      const frameKey = String(state.frameIndex);
+      const rawRow = tlrEvalByFrame && typeof tlrEvalByFrame === "object" ? tlrEvalByFrame[frameKey] : null;
+      const row = rowMatchesCurrentContext(rawRow, data) ? rawRow : null;
+      panel.style.display = "block";
+      if (!row) {
+        badges.innerHTML = "";
+        grid.innerHTML = "";
+        statePill.textContent = "annotation-only";
+        if (note) {
+          note.textContent = "This annotation dataset provides image + bbox/category data only. Fields such as Evaluation result, Vehicle status, Criteria, and TP/FP/FN/TN appear only when a matching parent evaluation payload is provided for the same t4dataset_id and scenario.";
+        }
+        return;
+      }
+      statePill.textContent = "overlay active";
+      const badgeItems = [
+        row.status ? `<span class="eval-pill">Vehicle status: ${row.status}</span>` : "",
+        (row.evaluation_result || row.traffic_light_type) ? `<span class="eval-pill">Evaluation result: ${row.evaluation_result || row.traffic_light_type}</span>` : "",
+        row.criteria ? `<span class="eval-pill">Criteria: ${row.criteria}</span>` : "",
+      ].filter(Boolean);
+      badges.innerHTML = badgeItems.join("");
+      const cards = [
+        ["t4dataset_id", getEvalRowDatasetId(row) || state.datasetId || "-"],
+        ["Scenario", row.scenario || data.scenario_name || "-"],
+        ["Frame name", row.frame_name || "-"],
+        ["Vehicle status", row.status || "-"],
+        ["Evaluation result", row.evaluation_result || row.traffic_light_type || "-"],
+        ["Criteria", row.criteria || "-"],
+        ["Speed (kph)", formatEvalValue(row.speed_kph, 2)],
+        ["Yaw rate (deg/s)", formatEvalValue(row.yaw_rate_deg_s, 2)],
+        ["Current time", formatEvalValue(row.current_time, 3)],
+        ["TP", row.tp || "-"],
+        ["FP", row.fp || "-"],
+        ["FN", row.fn || "-"],
+        ["TN", row.tn || "-"],
+      ];
+      grid.innerHTML = cards.map(([k, v]) => `
+        <div class="eval-stat">
+          <div class="k">${k}</div>
+          <div class="v">${v}</div>
+        </div>`).join("");
+      if (note) {
+        note.textContent = `Overlay source: only TLR rows from selected t4dataset_id ${getEvalRowDatasetId(row) || state.datasetId || '-'} are applied.`;
+      }
     }
 
     function renderView(view, idx){
@@ -299,8 +407,10 @@
         if (!res.ok) {
           throw new Error((data && (data.message || (data.detail && data.detail.message))) || `HTTP ${res.status}`);
         }
+        currentFrameData = data;
         syncControls(data);
         renderViews(data);
+        renderEvalOverlay(data);
         hasLoadedOnce = true;
         el("stateBox").style.display = "none";
         el("content").style.display = "block";
@@ -413,6 +523,39 @@
     el("speedSelect").addEventListener("change", () => {
       if (isPlaying) schedulePlaybackTick();
     });
+
+    window.addEventListener("message", (ev) => {
+      const d = ev && ev.data ? ev.data : null;
+      if (!d || typeof d !== "object") return;
+      if (d.type === "tlr_eval_by_frame") {
+        const frames = normalizeEvalFramesPayload(d);
+        if (frames && typeof frames === "object") {
+          tlrEvalByFrame = frames;
+          const n = Object.keys(frames).length;
+          const ack = `/viewer/tlr/debug/message-received?t4dataset_id=${encodeURIComponent(state.datasetId)}&scenario_name=${encodeURIComponent(state.scenarioName || "")}&frame_index=${encodeURIComponent(String(state.frameIndex))}&message_type=tlr_eval_by_frame&frames_count=${encodeURIComponent(String(n))}`;
+          fetch(ack).catch(() => {});
+          if (currentFrameData) renderEvalOverlay(currentFrameData);
+        }
+      } else if (d.type === "tlr_eval_clear") {
+        tlrEvalByFrame = null;
+        if (currentFrameData) renderEvalOverlay(currentFrameData);
+      }
+    });
+
+    window.TLRViewerAPI = {
+      setEvalPayload(payload){
+        const frames = normalizeEvalFramesPayload(payload);
+        if (frames && typeof frames === "object") {
+          tlrEvalByFrame = frames;
+          if (currentFrameData) renderEvalOverlay(currentFrameData);
+        }
+      },
+      clearEvalPayload(){
+        tlrEvalByFrame = null;
+        if (currentFrameData) renderEvalOverlay(currentFrameData);
+      },
+      getFrameContext(){ return { dataset: state.datasetId, scenario: state.scenarioName, frame: state.frameIndex, totalFrames: state.totalFrames }; },
+    };
 
     loadFrame();
   </script>

@@ -3065,6 +3065,43 @@ def _build_app(
         )
         return HTMLResponse(content=page, media_type="text/html; charset=utf-8")
 
+
+    @app.get(
+        "/viewer/tlr/debug/message-received",
+        tags=["viewer"],
+        summary="Debug ack: TLR viewer received tlr_eval_by_frame postMessage",
+    )
+    def viewer_tlr_debug_message_received(
+        t4dataset_id: str,
+        scenario_name: Optional[str] = Query(None),
+        frame_index: int = Query(0, ge=0),
+        message_type: Optional[str] = Query(
+            None,
+            description="Overlay message type received by the TLR viewer.",
+        ),
+        frames_count: Optional[int] = Query(
+            None,
+            ge=0,
+            description="Number of frame keys when message_type=tlr_eval_by_frame.",
+        ),
+    ):
+        print(
+            "[viewer:tlr-message] "
+            f"dataset={t4dataset_id} "
+            f"scenario={scenario_name or ''} "
+            f"frame={frame_index} "
+            f"type={message_type or 'tlr_eval_by_frame'} "
+            f"frames={frames_count if frames_count is not None else ''}"
+        )
+        return {
+            "ok": True,
+            "t4dataset_id": t4dataset_id,
+            "scenario_name": scenario_name,
+            "frame_index": frame_index,
+            "message_type": message_type,
+            "frames_count": frames_count,
+        }
+
     @app.get(
         "/viewer/tlr/frame",
         response_model=TlrFrameResponse,
