@@ -58,15 +58,55 @@
     .pill{display:inline-block;padding:.15rem .55rem;border-radius:999px;background:#f7e7d6;color:var(--accent);font-size:.78rem}
     .camera-strip{display:flex;gap:.5rem;flex-wrap:wrap}
     .camera-chip{padding:.3rem .7rem;border-radius:999px;border:1px solid var(--line);background:#fffaf2;font-size:.82rem}
-    .eval-panel{margin-bottom:1rem;padding:1rem 1.1rem;border:1px solid var(--line);border-radius:14px;background:#fff7ef;display:block}
-    .eval-title{display:flex;justify-content:space-between;gap:1rem;align-items:center;margin-bottom:.7rem}
-    .eval-badges{display:flex;flex-wrap:wrap;gap:.5rem}
-    .eval-pill{display:inline-flex;align-items:center;gap:.35rem;padding:.28rem .65rem;border-radius:999px;background:#f7e7d6;color:#8a4a12;font-size:.82rem;font-weight:700}
+    .eval-panel{margin-bottom:1rem;padding:1rem 1.1rem;border:1px solid var(--line);border-radius:18px;background:linear-gradient(180deg,#fff8ee 0%,#fffdf8 100%);display:block}
+    .eval-title{display:flex;justify-content:space-between;gap:1rem;align-items:flex-start;margin-bottom:.85rem}
+    .eval-kicker{font-size:.76rem;color:var(--muted);text-transform:uppercase;letter-spacing:.08em;font-weight:700}
+    .eval-hero{display:grid;grid-template-columns:minmax(280px,1.15fr) minmax(260px,.85fr);gap:1rem;align-items:stretch;margin-bottom:1rem}
+    .eval-result-card{position:relative;overflow:hidden;padding:1rem 1.1rem;border-radius:18px;border:1px solid rgba(0,0,0,.05);background:linear-gradient(135deg,#2a241d 0%,#1f1b16 100%);color:#fff8ef;box-shadow:0 18px 38px rgba(31,27,22,.18)}
+    .eval-result-card::after{content:"";position:absolute;right:-1.8rem;top:-2.2rem;width:9rem;height:9rem;border-radius:999px;background:radial-gradient(circle,rgba(255,255,255,.22) 0%,rgba(255,255,255,0) 70%)}
+    .eval-result-card.ok{background:linear-gradient(135deg,#0f6a40 0%,#1d8f50 100%)}
+    .eval-result-card.warn{background:linear-gradient(135deg,#8a241c 0%,#b9382f 100%)}
+    .eval-result-card.mixed{background:linear-gradient(135deg,#8a4d09 0%,#d17a0f 100%)}
+    .eval-verdict{display:inline-flex;align-items:center;gap:.45rem;padding:.36rem .72rem;border-radius:999px;background:rgba(255,255,255,.14);font-size:.79rem;font-weight:800;letter-spacing:.06em;text-transform:uppercase}
+    .eval-result-main{margin-top:.95rem;font-size:2.45rem;line-height:.96;font-weight:900;letter-spacing:-.04em;word-break:break-word;max-width:14ch}
+    .eval-result-sub{margin-top:.75rem;display:flex;flex-wrap:wrap;gap:.5rem}
+    .eval-compare{margin-top:.8rem;display:flex;flex-wrap:wrap;gap:.6rem}
+    .eval-pill{display:inline-flex;align-items:center;gap:.35rem;padding:.32rem .72rem;border-radius:999px;background:#f4e3cd;color:#7d4710;font-size:.82rem;font-weight:800}
+    .eval-pill.soft{background:rgba(255,255,255,.14);color:#fff8ef}
+    .eval-pill.neutral{background:#f6eee3;color:#66584a}
+    .eval-pill.match{background:#daf7e5;color:#0f5c2d}
+    .eval-pill.mismatch{background:#ffe1e1;color:#8a1113}
+    .eval-pill.timing{background:#fff2d9;color:#7a4900}
+    .eval-side{display:grid;gap:.8rem}
+    .eval-count-strip{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:.7rem}
+    .eval-count{padding:.8rem .9rem;border:1px solid var(--line);border-radius:14px;background:#fffdf8;display:flex;flex-direction:column;gap:.18rem;min-height:86px;justify-content:center}
+    .eval-count .k{font-size:.76rem;color:var(--muted);text-transform:uppercase;letter-spacing:.08em;font-weight:700}
+    .eval-count .v{font-size:1.3rem;font-weight:900;line-height:1.05}
+    .eval-count .s{font-size:.84rem;color:var(--muted);word-break:break-word}
+    .eval-count.tp{background:#eef9f2;border-color:#bfe8ce}
+    .eval-count.fp,.eval-count.fn{background:#fff0ee;border-color:#efc0bc}
+    .eval-count.tn{background:#f7f1ea;border-color:#e3d3c0}
     .eval-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:.65rem}
-    .eval-stat{padding:.75rem;border:1px solid var(--line);border-radius:12px;background:#fffdf8}
-    .eval-stat .k{font-size:.76rem;color:var(--muted);text-transform:uppercase;letter-spacing:.04em}
-    .eval-stat .v{font-weight:700;margin-top:.25rem;word-break:break-word}
-    .eval-note{margin-top:.8rem;color:var(--muted);font-size:.88rem;line-height:1.45}
+    .eval-stat{padding:.8rem .9rem;border:1px solid var(--line);border-radius:14px;background:#fffdf8}
+    .eval-stat .k{font-size:.74rem;color:var(--muted);text-transform:uppercase;letter-spacing:.08em;font-weight:700}
+    .eval-stat .v{font-weight:800;margin-top:.3rem;word-break:break-word;font-size:1rem}
+    .eval-timeline-wrap{margin-top:1rem;padding-top:.9rem;border-top:1px dashed var(--line)}
+    .eval-timeline-head{display:flex;justify-content:space-between;gap:1rem;align-items:center;margin-bottom:.55rem}
+    .eval-timeline-title{font-size:.8rem;color:var(--muted);text-transform:uppercase;letter-spacing:.08em;font-weight:700}
+    .eval-legend{display:flex;flex-wrap:wrap;gap:.45rem;font-size:.78rem;color:var(--muted)}
+    .eval-legend span{display:inline-flex;align-items:center;gap:.35rem}
+    .eval-legend i{display:inline-block;width:.7rem;height:.7rem;border-radius:999px}
+    .eval-timeline{display:flex;gap:2px;overflow-x:auto;padding:.4rem .1rem .15rem;scrollbar-width:thin}
+    .eval-tick{flex:0 0 10px;height:36px;border:none;border-radius:999px;background:#e1d5c7;cursor:pointer;position:relative;outline:none;transition:transform .12s ease,opacity .12s ease,box-shadow .12s ease}
+    .eval-tick:hover{transform:translateY(-1px);opacity:.95}
+    .eval-tick.current{box-shadow:0 0 0 2px #1f1b16 inset,0 0 0 2px rgba(255,255,255,.9);transform:translateY(-2px)}
+    .eval-tick.ok{background:#1d8f50}
+    .eval-tick.warn{background:#b9382f}
+    .eval-tick.mixed{background:#d17a0f}
+    .eval-tick.empty{background:#e1d5c7}
+    .eval-note{margin-top:.85rem;color:var(--muted);font-size:.88rem;line-height:1.45}
+    .eval-align{margin-top:.65rem;font-size:.84rem;color:var(--muted);display:flex;flex-wrap:wrap;gap:.5rem}
+    @media (max-width:980px){.eval-hero{grid-template-columns:1fr}.eval-count-strip{grid-template-columns:repeat(2,minmax(0,1fr))}.eval-result-main{font-size:2rem}}
     .empty,.error,.loading{padding:1rem;border:1px dashed var(--line);border-radius:12px;color:var(--muted)}
     .error{color:var(--warn)}
     .loading-inline{
@@ -123,13 +163,36 @@
         <div id="evalPanel" class="eval-panel">
           <div class="eval-title">
             <div>
-              <div class="view-title">Evaluation overlay</div>
-              <div class="muted">Frame-aware metadata pushed from the parent dashboard.</div>
+              <div class="eval-kicker">Evaluation overlay</div>
+              <div class="view-title">Prediction quality against annotations</div>
             </div>
-            <div id="evalState" class="pill">annotation-only</div>
+            <div id="evalState" class="eval-pill neutral">annotation-only</div>
           </div>
-          <div id="evalBadges" class="eval-badges"></div>
-          <div id="evalGrid" class="eval-grid" style="margin-top:.8rem"></div>
+          <div class="eval-hero">
+            <div id="evalResultCard" class="eval-result-card">
+              <div id="evalVerdict" class="eval-verdict">Awaiting overlay</div>
+              <div id="evalResultMain" class="eval-result-main">Annotation only</div>
+              <div id="evalResultSub" class="eval-result-sub"></div>
+              <div id="evalCompare" class="eval-compare"></div>
+              <div id="evalAlign" class="eval-align"></div>
+            </div>
+            <div class="eval-side">
+              <div id="evalCounts" class="eval-count-strip"></div>
+              <div id="evalGrid" class="eval-grid"></div>
+            </div>
+          </div>
+          <div class="eval-timeline-wrap">
+            <div class="eval-timeline-head">
+              <div class="eval-timeline-title">Sequence quality timeline</div>
+              <div class="eval-legend">
+                <span><i style="background:#1d8f50"></i> Correct</span>
+                <span><i style="background:#b9382f"></i> Wrong</span>
+                <span><i style="background:#d17a0f"></i> Mixed</span>
+                <span><i style="background:#e1d5c7"></i> No eval</span>
+              </div>
+            </div>
+            <div id="evalTimeline" class="eval-timeline"></div>
+          </div>
           <div id="evalNote" class="eval-note"></div>
         </div>
         <div id="viewerGrid" class="viewer-grid"></div>
@@ -161,6 +224,10 @@
     let isPlaying = false;
     let currentFrameData = null;
     let tlrEvalByFrame = null;
+    let tlrEvalRows = [];
+    let viewerFrameSummary = [];
+    let viewerFrameSummaryPromise = null;
+    let viewerFrameSummarySig = "";
     const el = (id) => document.getElementById(id);
 
     function frameApiUrl(){
@@ -236,59 +303,255 @@
         if (!merged.t4dataset_id && payloadDatasetId) merged.t4dataset_id = payloadDatasetId;
         out[String(k)] = merged;
       }
+      tlrEvalRows = buildEvalRows(out);
       return out;
+    }
+
+    function annotationLabelSummary(data){
+      const views = data && Array.isArray(data.views) ? data.views : [];
+      const labels = new Map();
+      views.forEach((view) => {
+        const rows = Array.isArray(view.annotations) ? view.annotations : [];
+        rows.forEach((row) => {
+          const key = String(row && row.label ? row.label : 'unknown').trim() || 'unknown';
+          labels.set(key, (labels.get(key) || 0) + 1);
+        });
+      });
+      return Array.from(labels.entries()).map(([label, count]) => ({ label, count }));
+    }
+
+    function summarizeAnnotationLabels(data){
+      const parts = annotationLabelSummary(data);
+      if (!parts.length) return 'none';
+      return parts.map((item) => item.count > 1 ? `${item.label} x${item.count}` : item.label).join(', ');
+    }
+
+    function currentViewerTimestampUs(data){
+      const ts = Number(data && data.timestamp_us ? data.timestamp_us : 0);
+      return Number.isFinite(ts) ? ts : 0;
+    }
+
+    function evalRowTimestampUs(row){
+      if (!row || typeof row !== 'object') return 0;
+      if (row.current_time_us !== undefined && row.current_time_us !== null) {
+        const n = Number(row.current_time_us);
+        if (Number.isFinite(n)) return n;
+      }
+      const sec = Number(row.current_time);
+      if (Number.isFinite(sec) && sec > 0) return Math.round(sec * 1000000);
+      return 0;
+    }
+
+    function buildEvalRows(framesObj){
+      if (!framesObj || typeof framesObj !== 'object') return [];
+      return Object.entries(framesObj)
+        .map(([frameKey, row]) => {
+          const merged = Object.assign({}, row || {});
+          merged.payload_frame_index = Number(frameKey);
+          merged._timestamp_us = evalRowTimestampUs(merged);
+          return merged;
+        })
+        .filter((row) => rowMatchesCurrentContext(row, currentFrameData) && row._timestamp_us > 0)
+        .sort((a, b) => a._timestamp_us - b._timestamp_us);
+    }
+
+    function findNearestEvalRow(data){
+      if (!data || !tlrEvalRows.length) return { row: null, deltaMs: null };
+      const target = currentViewerTimestampUs(data);
+      if (!target) return { row: null, deltaMs: null };
+      let best = null;
+      let bestDelta = Number.POSITIVE_INFINITY;
+      for (const row of tlrEvalRows) {
+        const delta = Math.abs(row._timestamp_us - target);
+        if (delta < bestDelta) {
+          best = row;
+          bestDelta = delta;
+        }
+      }
+      return { row: best, deltaMs: Number.isFinite(bestDelta) ? (bestDelta / 1000.0) : null };
+    }
+
+    async function ensureViewerFrameSummary(){
+      const sig = `${state.datasetId}|${state.scenarioName || ''}`;
+      if (!state.datasetId || !state.scenarioName) {
+        viewerFrameSummary = [];
+        viewerFrameSummarySig = sig;
+        return [];
+      }
+      if (viewerFrameSummarySig === sig && viewerFrameSummary.length) return viewerFrameSummary;
+      if (viewerFrameSummaryPromise && viewerFrameSummarySig === sig) return viewerFrameSummaryPromise;
+      viewerFrameSummarySig = sig;
+      viewerFrameSummaryPromise = (async () => {
+        const rows = [];
+        let offset = 0;
+        const limit = 500;
+        let total = null;
+        while (total === null || offset < total) {
+          const qs = new URLSearchParams();
+          qs.set('offset', String(offset));
+          qs.set('limit', String(limit));
+          if (state.version) qs.set('version', state.version);
+          const url = `/datasets/${encodeURIComponent(state.datasetId)}/scenarios/${encodeURIComponent(state.scenarioName)}/frames/summary?${qs.toString()}`;
+          const res = await fetch(url, { headers: { 'Accept': 'application/json' } });
+          if (!res.ok) throw new Error(`frame summary HTTP ${res.status}`);
+          const body = await res.json();
+          total = Number(body.total_frames || 0);
+          const chunk = Array.isArray(body.frames) ? body.frames : [];
+          rows.push(...chunk.map((item) => ({ frame_index: Number(item.frame_index || 0), timestamp_us: Number(item.timestamp_us || 0) })));
+          if (!chunk.length) break;
+          offset += chunk.length;
+          if (chunk.length < limit) break;
+        }
+        viewerFrameSummary = rows;
+        return rows;
+      })().catch((err) => {
+        console.warn('[tlr-debug] frame summary failed', err);
+        viewerFrameSummary = [];
+        return [];
+      }).finally(() => {
+        viewerFrameSummaryPromise = null;
+      });
+      return viewerFrameSummaryPromise;
+    }
+
+    function parseEvalCount(value){
+      if (value === null || value === undefined) return 0;
+      const m = String(value).match(/-?\d+/);
+      return m ? Number(m[0]) || 0 : 0;
+    }
+
+    function deriveEvalVerdict(row){
+      if (!row || typeof row !== "object") return { tone: "empty", label: "No evaluation", detail: "No parent evaluation payload for this frame." };
+      const tp = parseEvalCount(row.tp);
+      const fp = parseEvalCount(row.fp);
+      const fn = parseEvalCount(row.fn);
+      if (tp > 0 && fp === 0 && fn === 0) return { tone: "ok", label: "Correct prediction", detail: "Prediction aligns cleanly with the annotated signal." };
+      if (tp === 0 && (fp > 0 || fn > 0)) return { tone: "warn", label: "Wrong prediction", detail: fp > 0 && fn > 0 ? "Contains both false positives and misses." : (fp > 0 ? "Produced false positives for this frame." : "Missed an annotated signal in this frame.") };
+      if (tp > 0 && (fp > 0 || fn > 0)) return { tone: "mixed", label: "Partially correct", detail: "Has a correct match, but also includes extra errors." };
+      return { tone: "empty", label: "No evaluation", detail: "No TP/FP/FN signal was recorded for this frame." };
+    }
+
+    function renderEvalCounts(row){
+      const host = el("evalCounts");
+      if (!host) return;
+      const specs = [
+        ["TP", row && row.tp ? row.tp : "-", "tp"],
+        ["FP", row && row.fp ? row.fp : "-", "fp"],
+        ["FN", row && row.fn ? row.fn : "-", "fn"],
+        ["TN", row && row.tn ? row.tn : "-", "tn"],
+      ];
+      host.innerHTML = specs.map(([k, v, cls]) => `
+        <div class="eval-count ${cls}">
+          <div class="k">${k}</div>
+          <div class="v">${parseEvalCount(v)}</div>
+          <div class="s">${String(v)}</div>
+        </div>`).join("");
+    }
+
+    function renderEvalTimeline(){
+      const host = el("evalTimeline");
+      if (!host) return;
+      if (!viewerFrameSummary.length || !tlrEvalRows.length) {
+        host.innerHTML = "";
+        return;
+      }
+      host.innerHTML = viewerFrameSummary.map((frame) => {
+        let best = null;
+        let bestDelta = Number.POSITIVE_INFINITY;
+        for (const row of tlrEvalRows) {
+          const delta = Math.abs(row._timestamp_us - Number(frame.timestamp_us || 0));
+          if (delta < bestDelta) {
+            best = row;
+            bestDelta = delta;
+          }
+        }
+        const verdict = deriveEvalVerdict(best);
+        const current = Number(state.frameIndex) === Number(frame.frame_index) ? ' current' : '';
+        const evalResult = best ? (best.evaluation_result || best.traffic_light_type || '-') : '-';
+        const title = `viewer f${frame.frame_index} | ${verdict.label} | ${evalResult} | Δ ${(bestDelta/1000).toFixed(1)} ms`;
+        return `<button type="button" class="eval-tick ${verdict.tone}${current}" data-frame="${frame.frame_index}" title="${title}"></button>`;
+      }).join("");
+      host.querySelectorAll('.eval-tick').forEach((node) => {
+        node.addEventListener('click', () => {
+          const frame = Number(node.getAttribute('data-frame') || '0');
+          stopPlayback();
+          state.frameIndex = Math.max(0, frame);
+          el('frameSlider').value = String(state.frameIndex);
+          el('frameInput').value = String(state.frameIndex);
+          loadFrame();
+        });
+      });
     }
 
     function renderEvalOverlay(data){
       const panel = el("evalPanel");
-      const badges = el("evalBadges");
       const grid = el("evalGrid");
       const statePill = el("evalState");
       const note = el("evalNote");
-      const frameKey = String(state.frameIndex);
-      const rawRow = tlrEvalByFrame && typeof tlrEvalByFrame === "object" ? tlrEvalByFrame[frameKey] : null;
-      const row = rowMatchesCurrentContext(rawRow, data) ? rawRow : null;
+      const resultCard = el("evalResultCard");
+      const verdictEl = el("evalVerdict");
+      const resultMain = el("evalResultMain");
+      const resultSub = el("evalResultSub");
+      const compareEl = el("evalCompare");
+      const alignEl = el("evalAlign");
       panel.style.display = "block";
+      const match = findNearestEvalRow(data);
+      const row = match.row;
+      const deltaMs = match.deltaMs;
+      const annotationSummary = summarizeAnnotationLabels(data);
       if (!row) {
-        badges.innerHTML = "";
-        grid.innerHTML = "";
         statePill.textContent = "annotation-only";
-        if (note) {
-          note.textContent = "This annotation dataset provides image + bbox/category data only. Fields such as Evaluation result, Vehicle status, Criteria, and TP/FP/FN/TN appear only when a matching parent evaluation payload is provided for the same t4dataset_id and scenario.";
-        }
+        statePill.className = "eval-pill neutral";
+        resultCard.className = "eval-result-card";
+        verdictEl.textContent = "Awaiting overlay";
+        resultMain.textContent = "Annotation only";
+        resultSub.innerHTML = '<span class="eval-pill soft">Prediction result will appear here once a timestamp-aligned evaluation payload is available.</span>';
+        compareEl.innerHTML = `<span class="eval-pill neutral">Annotations: ${annotationSummary}</span>`;
+        alignEl.innerHTML = '';
+        grid.innerHTML = '';
+        renderEvalCounts(null);
+        renderEvalTimeline();
+        if (note) note.textContent = 'This viewer is showing annotation imagery only. Once timestamp-aligned evaluation data arrives, the overlay will highlight whether each viewed frame is correct, wrong, or mixed.';
         return;
       }
-      statePill.textContent = "overlay active";
-      const badgeItems = [
-        row.status ? `<span class="eval-pill">Vehicle status: ${row.status}</span>` : "",
-        (row.evaluation_result || row.traffic_light_type) ? `<span class="eval-pill">Evaluation result: ${row.evaluation_result || row.traffic_light_type}</span>` : "",
-        row.criteria ? `<span class="eval-pill">Criteria: ${row.criteria}</span>` : "",
-      ].filter(Boolean);
-      badges.innerHTML = badgeItems.join("");
+      const verdict = deriveEvalVerdict(row);
+      const evalResult = row.evaluation_result || row.traffic_light_type || 'Unknown';
+      const annotationLabels = annotationLabelSummary(data).map((item) => item.label);
+      const annotationsMatch = annotationLabels.length ? annotationLabels.includes(String(evalResult).trim()) : false;
+      statePill.textContent = verdict.label;
+      statePill.className = verdict.tone === 'ok' ? 'eval-pill match' : (verdict.tone === 'warn' ? 'eval-pill mismatch' : 'eval-pill timing');
+      resultCard.className = `eval-result-card ${verdict.tone}`;
+      verdictEl.textContent = verdict.label;
+      resultMain.textContent = evalResult;
+      resultSub.innerHTML = [
+        row.status ? `<span class="eval-pill soft">Vehicle status: ${row.status}</span>` : '',
+        row.criteria ? `<span class="eval-pill soft">Criteria: ${row.criteria}</span>` : '',
+        row.frame_name ? `<span class="eval-pill soft">Eval frame: ${row.frame_name}</span>` : '',
+      ].filter(Boolean).join('');
+      compareEl.innerHTML = [
+        `<span class="eval-pill ${annotationsMatch ? 'match' : 'mismatch'}">Annotations: ${annotationSummary}</span>`,
+        `<span class="eval-pill timing">Timestamp match: ${deltaMs !== null ? `${deltaMs.toFixed(1)} ms` : 'n/a'}</span>`,
+      ].join('');
+      alignEl.innerHTML = [
+        `<span>Viewer frame ${state.frameIndex}</span>`,
+        row.payload_frame_index !== undefined ? `<span>Closest eval row ${row.payload_frame_index}</span>` : '',
+      ].filter(Boolean).join('');
+      renderEvalCounts(row);
       const cards = [
-        ["t4dataset_id", getEvalRowDatasetId(row) || state.datasetId || "-"],
-        ["Scenario", row.scenario || data.scenario_name || "-"],
-        ["Frame name", row.frame_name || "-"],
-        ["Vehicle status", row.status || "-"],
-        ["Evaluation result", row.evaluation_result || row.traffic_light_type || "-"],
-        ["Criteria", row.criteria || "-"],
-        ["Speed (kph)", formatEvalValue(row.speed_kph, 2)],
-        ["Yaw rate (deg/s)", formatEvalValue(row.yaw_rate_deg_s, 2)],
-        ["Current time", formatEvalValue(row.current_time, 3)],
-        ["TP", row.tp || "-"],
-        ["FP", row.fp || "-"],
-        ["FN", row.fn || "-"],
-        ["TN", row.tn || "-"],
+        ['Alignment', deltaMs !== null ? `${deltaMs.toFixed(1)} ms` : '-'],
+        ['Speed (kph)', formatEvalValue(row.speed_kph, 2)],
+        ['Yaw rate (deg/s)', formatEvalValue(row.yaw_rate_deg_s, 2)],
+        ['Current time', formatEvalValue(row.current_time, 3)],
       ];
       grid.innerHTML = cards.map(([k, v]) => `
         <div class="eval-stat">
           <div class="k">${k}</div>
           <div class="v">${v}</div>
         </div>`).join("");
-      if (note) {
-        note.textContent = `Overlay source: only TLR rows from selected t4dataset_id ${getEvalRowDatasetId(row) || state.datasetId || '-'} are applied.`;
-      }
+      renderEvalTimeline();
+      if (note) note.textContent = `${verdict.detail} This overlay is aligned by nearest timestamp rather than raw frame number, so you can compare the predicted result against the image annotations with the timing offset shown above.`;
     }
+
 
     function renderView(view, idx){
       const rows = Array.isArray(view.annotations) ? view.annotations : [];
@@ -376,6 +639,7 @@
       const strip = el("cameraStrip");
       strip.innerHTML = cams.map((cam) => `<div class="camera-chip">${cam}</div>`).join("");
       history.replaceState(null, "", pageUrl());
+      ensureViewerFrameSummary().then(() => renderEvalTimeline()).catch(() => {});
     }
 
     function renderViews(data){
