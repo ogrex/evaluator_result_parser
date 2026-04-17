@@ -8,7 +8,7 @@
   <style>
     :root{
       --bg:#f5f3ec; --panel:#fffdf8; --text:#1f1b16; --muted:#6b6257; --line:#d9cfbf;
-      --accent:#c55200; --ok:#1d8f50; --warn:#b9382f; --shadow:rgba(69,45,18,.12);
+      --accent:#c55200; --ok:#0f766e; --warn:#c2410c; --mixed:#b7791f; --info:#1d4ed8; --shadow:rgba(69,45,18,.12);
     }
     *{box-sizing:border-box}
     body{
@@ -18,15 +18,15 @@
         var(--bg);
       font-family:ui-sans-serif,system-ui,-apple-system,Segoe UI,sans-serif;
     }
-    .wrap{max-width:1800px;margin:0 auto;padding:1rem}
-    .hero{display:flex;justify-content:space-between;align-items:end;gap:1rem;margin-bottom:1rem}
-    h1{margin:0;font-size:1.4rem}
+    .wrap{max-width:1800px;margin:0 auto;padding:.8rem}
+    .hero{display:flex;justify-content:space-between;align-items:end;gap:1rem;margin-bottom:.75rem}
+    h1{margin:0;font-size:1.3rem}
     .muted{color:var(--muted)}
     .card{
-      background:var(--panel); border:1px solid var(--line); border-radius:16px; padding:1rem;
+      background:var(--panel); border:1px solid var(--line); border-radius:16px; padding:.85rem;
       box-shadow:0 10px 30px var(--shadow);
     }
-    .toolbar{display:flex;flex-wrap:wrap;gap:.6rem;align-items:center;margin-bottom:1rem}
+    .toolbar{display:flex;flex-wrap:wrap;gap:.55rem;align-items:center;margin-bottom:.75rem}
     .toolbar input,.toolbar button,.toolbar a{
       border:1px solid var(--line); border-radius:10px; padding:.6rem .75rem; background:#fffaf2;
       color:var(--text); text-decoration:none; font:inherit;
@@ -40,73 +40,100 @@
     }
     .toolbar button{cursor:pointer;background:var(--accent);border-color:var(--accent);color:#fff7ef}
     .toolbar button[disabled]{opacity:.45;cursor:not-allowed}
-    .meta{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:.75rem;margin-bottom:1rem}
-    .stat{padding:.75rem;border:1px solid var(--line);border-radius:12px;background:#fffaf2}
-    .stat .k{font-size:.8rem;color:var(--muted);text-transform:uppercase;letter-spacing:.04em}
-    .stat .v{font-weight:700;margin-top:.25rem;word-break:break-word}
-    .viewer-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(420px,1fr));gap:1rem}
-    .view-card{display:flex;flex-direction:column;gap:.85rem}
+    .meta{display:grid;grid-template-columns:repeat(auto-fit,minmax(155px,1fr));gap:.6rem;margin-bottom:.75rem}
+    .stat{padding:.58rem .7rem;border:1px solid var(--line);border-radius:12px;background:#fffaf2}
+    .stat .k{font-size:.72rem;color:var(--muted);text-transform:uppercase;letter-spacing:.05em}
+    .stat .v{font-weight:700;margin-top:.18rem;word-break:break-word;font-size:.92rem;line-height:1.25}
+    .viewer-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(320px,1fr));gap:.8rem}
+    .view-card{display:flex;flex-direction:column;gap:.65rem}
     .view-head{display:flex;justify-content:space-between;gap:1rem;align-items:center}
-    .view-title{font-weight:700;font-size:1rem}
-    .frame-shell{position:relative;border:1px solid var(--line);border-radius:16px;overflow:hidden;background:#221d17}
-    .frame-shell img{display:block;width:100%;height:auto}
+    .view-title{font-weight:700;font-size:.96rem}
+    .frame-shell{position:relative;border:1px solid var(--line);border-radius:16px;overflow:hidden;background:#221d17;aspect-ratio:16/10}
+    .frame-shell img{display:block;width:100%;height:100%;object-fit:contain}
     .frame-shell svg{position:absolute;inset:0;width:100%;height:100%}
-    .anno-list{max-height:28rem;overflow:auto;border:1px solid var(--line);border-radius:12px;background:#fffaf2}
-    .anno-row{padding:.75rem;border-bottom:1px solid var(--line)}
+    .anno-list{max-height:9rem;overflow:auto;border:1px solid var(--line);border-radius:12px;background:#fffaf2}
+    .anno-row{padding:.58rem .68rem;border-bottom:1px solid var(--line)}
     .anno-row:last-child{border-bottom:none}
     .anno-head{display:flex;justify-content:space-between;gap:.5rem;font-weight:700}
     .pill{display:inline-block;padding:.15rem .55rem;border-radius:999px;background:#f7e7d6;color:var(--accent);font-size:.78rem}
     .camera-strip{display:flex;gap:.5rem;flex-wrap:wrap}
     .camera-chip{padding:.3rem .7rem;border-radius:999px;border:1px solid var(--line);background:#fffaf2;font-size:.82rem}
-    .eval-panel{margin-bottom:1rem;padding:1rem 1.1rem;border:1px solid var(--line);border-radius:18px;background:linear-gradient(180deg,#fff8ee 0%,#fffdf8 100%);display:block}
-    .eval-title{display:flex;justify-content:space-between;gap:1rem;align-items:flex-start;margin-bottom:.85rem}
+    .eval-panel{margin-bottom:.8rem;padding:.72rem .8rem;border:1px solid rgba(217,207,191,.92);border-radius:20px;background:
+      linear-gradient(180deg,rgba(255,253,248,.98) 0%,rgba(255,248,239,.98) 100%);
+      display:block;box-shadow:0 14px 30px rgba(69,45,18,.08),inset 0 1px 0 rgba(255,255,255,.9)}
+    .eval-title{display:flex;justify-content:space-between;gap:.8rem;align-items:center;margin-bottom:.55rem}
     .eval-kicker{font-size:.76rem;color:var(--muted);text-transform:uppercase;letter-spacing:.08em;font-weight:700}
-    .eval-hero{display:grid;grid-template-columns:minmax(280px,1.15fr) minmax(260px,.85fr);gap:1rem;align-items:stretch;margin-bottom:1rem}
-    .eval-result-card{position:relative;overflow:hidden;padding:1rem 1.1rem;border-radius:18px;border:1px solid rgba(0,0,0,.05);background:linear-gradient(135deg,#2a241d 0%,#1f1b16 100%);color:#fff8ef;box-shadow:0 18px 38px rgba(31,27,22,.18)}
-    .eval-result-card::after{content:"";position:absolute;right:-1.8rem;top:-2.2rem;width:9rem;height:9rem;border-radius:999px;background:radial-gradient(circle,rgba(255,255,255,.22) 0%,rgba(255,255,255,0) 70%)}
-    .eval-result-card.ok{background:linear-gradient(135deg,#0f6a40 0%,#1d8f50 100%)}
-    .eval-result-card.warn{background:linear-gradient(135deg,#8a241c 0%,#b9382f 100%)}
-    .eval-result-card.mixed{background:linear-gradient(135deg,#8a4d09 0%,#d17a0f 100%)}
-    .eval-verdict{display:inline-flex;align-items:center;gap:.45rem;padding:.36rem .72rem;border-radius:999px;background:rgba(255,255,255,.14);font-size:.79rem;font-weight:800;letter-spacing:.06em;text-transform:uppercase}
-    .eval-result-main{margin-top:.95rem;font-size:2.45rem;line-height:.96;font-weight:900;letter-spacing:-.04em;word-break:break-word;max-width:14ch}
-    .eval-result-sub{margin-top:.75rem;display:flex;flex-wrap:wrap;gap:.5rem}
-    .eval-compare{margin-top:.8rem;display:flex;flex-wrap:wrap;gap:.6rem}
-    .eval-pill{display:inline-flex;align-items:center;gap:.35rem;padding:.32rem .72rem;border-radius:999px;background:#f4e3cd;color:#7d4710;font-size:.82rem;font-weight:800}
-    .eval-pill.soft{background:rgba(255,255,255,.14);color:#fff8ef}
+    .eval-hero{display:grid;grid-template-columns:minmax(250px,1.2fr) minmax(260px,1fr) minmax(220px,.95fr);gap:.55rem;align-items:stretch;margin-bottom:.65rem}
+    .eval-result-card{position:relative;overflow:hidden;padding:.68rem .74rem;border-radius:16px;border:1px solid rgba(217,207,191,.86);background:linear-gradient(180deg,rgba(255,255,255,.94) 0%,rgba(255,250,243,.98) 100%);color:var(--text);box-shadow:0 8px 20px rgba(104,72,32,.05)}
+    .eval-result-card::after{content:"";position:absolute;right:-1.2rem;top:-1.8rem;width:9rem;height:9rem;border-radius:999px;background:radial-gradient(circle,rgba(29,78,216,.14) 0%,rgba(29,78,216,0) 72%)}
+    .eval-result-card.ok{background:linear-gradient(145deg,#f2fffb 0%,#e0f7f2 100%);border-color:#bfe8ce}
+    .eval-result-card.ok::after{background:radial-gradient(circle,rgba(16,185,129,.18) 0%,rgba(16,185,129,0) 72%)}
+    .eval-result-card.warn{background:linear-gradient(145deg,#fff6f3 0%,#ffe5dd 100%);border-color:#efc0bc}
+    .eval-result-card.warn::after{background:radial-gradient(circle,rgba(251,113,133,.18) 0%,rgba(251,113,133,0) 72%)}
+    .eval-result-card.mixed{background:linear-gradient(145deg,#fffaf0 0%,#ffefc8 100%);border-color:#efd28b}
+    .eval-result-card.mixed::after{background:radial-gradient(circle,rgba(251,191,36,.2) 0%,rgba(251,191,36,0) 72%)}
+    .eval-verdict{display:inline-flex;align-items:center;gap:.45rem;padding:.34rem .64rem;border-radius:999px;background:rgba(255,255,255,.8);border:1px solid rgba(217,207,191,.8);font-size:.73rem;font-weight:800;letter-spacing:.06em;text-transform:uppercase;box-shadow:0 6px 14px rgba(104,72,32,.06)}
+    .eval-result-main{margin-top:.42rem;font-size:1.18rem;line-height:1.02;font-weight:900;letter-spacing:-.03em;word-break:break-word;max-width:none}
+    .eval-result-sub{margin-top:.32rem;display:flex;flex-wrap:wrap;gap:.34rem}
+    .eval-compare{margin-top:.4rem;display:flex;flex-wrap:wrap;gap:.35rem}
+    .eval-compare-grid{margin-top:0;display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:.5rem;align-self:stretch}
+    .eval-compare-card{position:relative;overflow:hidden;padding:.72rem .82rem;border-radius:18px;border:1px solid rgba(217,207,191,.8);background:linear-gradient(160deg,rgba(255,255,255,.88) 0%,rgba(255,249,240,.96) 100%);min-height:0;display:flex;flex-direction:column;justify-content:center;box-shadow:0 10px 20px rgba(104,72,32,.06)}
+    .eval-compare-card .k{font-size:.72rem;letter-spacing:.12em;text-transform:uppercase;opacity:.82;font-weight:900}
+    .eval-compare-card .v{margin-top:.32rem;font-size:1.05rem;font-weight:950;line-height:1.05;word-break:break-word}
+    .eval-compare-card.pred{box-shadow:0 10px 20px rgba(197,82,0,.08)}
+    .eval-compare-card.gt{box-shadow:0 10px 20px rgba(29,78,216,.08)}
+    .eval-compare-card.signal-red{background:linear-gradient(145deg,#7f1d1d 0%,#dc2626 68%,#f87171 100%) !important;border-color:#f3a5a5;color:#fff7f7}
+    .eval-compare-card.signal-green{background:linear-gradient(145deg,#14532d 0%,#16a34a 68%,#4ade80 100%) !important;border-color:#8be1ae;color:#f3fff6}
+    .eval-compare-card.signal-yellow,.eval-compare-card.signal-amber{background:linear-gradient(145deg,#854d0e 0%,#f59e0b 68%,#fcd34d 100%) !important;border-color:#f5d28b;color:#fff9ed}
+    .eval-compare-card.signal-unknown{background:linear-gradient(145deg,#334155 0%,#64748b 100%) !important;border-color:#94a3b8;color:#f8fafc}
+    .eval-compare-card.signal-red .k,.eval-compare-card.signal-green .k,.eval-compare-card.signal-yellow .k,.eval-compare-card.signal-amber .k,.eval-compare-card.signal-unknown .k{color:rgba(255,255,255,.82);opacity:1}
+    .signal-red{background:linear-gradient(145deg,#7f1d1d 0%,#dc2626 68%,#f87171 100%) !important;color:#fff7f7 !important}
+    .signal-green{background:linear-gradient(145deg,#14532d 0%,#16a34a 68%,#4ade80 100%) !important;color:#f3fff6 !important}
+    .signal-yellow,.signal-amber{background:linear-gradient(145deg,#854d0e 0%,#f59e0b 68%,#fcd34d 100%) !important;color:#fff9ed !important}
+    .signal-unknown{background:linear-gradient(145deg,#334155 0%,#64748b 100%) !important;color:#f8fafc !important}
+    .signal-chip{display:inline-flex;align-items:center;gap:.48rem;padding:.34rem .52rem;border-radius:999px;font-size:.88rem;font-weight:950;letter-spacing:-.02em;box-shadow:inset 0 0 0 1px rgba(255,255,255,.1);min-height:0}
+    .signal-dot{width:.72rem;height:.72rem;border-radius:999px;background:rgba(255,255,255,.9);box-shadow:0 0 0 3px rgba(255,255,255,.16)}
+    .eval-pill{display:inline-flex;align-items:center;gap:.35rem;padding:.26rem .58rem;border-radius:999px;background:#f4e3cd;color:#7d4710;font-size:.76rem;font-weight:800}
+    .eval-pill.soft{background:rgba(255,255,255,.82);color:#5f5245;border:1px solid rgba(217,207,191,.82)}
     .eval-pill.neutral{background:#f6eee3;color:#66584a}
-    .eval-pill.match{background:#daf7e5;color:#0f5c2d}
-    .eval-pill.mismatch{background:#ffe1e1;color:#8a1113}
+    .eval-pill.match{background:#d8f3f1;color:#0f5f5a}
+    .eval-pill.mismatch{background:#ffdfd3;color:#9a3412}
     .eval-pill.timing{background:#fff2d9;color:#7a4900}
-    .eval-side{display:grid;gap:.8rem}
-    .eval-count-strip{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:.7rem}
-    .eval-count{padding:.8rem .9rem;border:1px solid var(--line);border-radius:14px;background:#fffdf8;display:flex;flex-direction:column;gap:.18rem;min-height:86px;justify-content:center}
-    .eval-count .k{font-size:.76rem;color:var(--muted);text-transform:uppercase;letter-spacing:.08em;font-weight:700}
-    .eval-count .v{font-size:1.3rem;font-weight:900;line-height:1.05}
-    .eval-count .s{font-size:.84rem;color:var(--muted);word-break:break-word}
+    .eval-pill.info{background:#dbeafe;color:#1d4ed8}
+    .eval-side{display:grid;grid-template-rows:auto auto;gap:.4rem}
+    .eval-count-strip{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:.32rem}
+    .eval-count{padding:.46rem .42rem;border:1px solid var(--line);border-radius:12px;background:#fffdf8;display:flex;flex-direction:column;gap:.08rem;min-height:0;justify-content:center;align-items:center;text-align:center}
+    .eval-count .k{font-size:.68rem;color:var(--muted);text-transform:uppercase;letter-spacing:.08em;font-weight:800}
+    .eval-count .v{font-size:.96rem;font-weight:900;line-height:1}
+    .eval-count .s{display:none}
     .eval-count.tp{background:#eef9f2;border-color:#bfe8ce}
     .eval-count.fp,.eval-count.fn{background:#fff0ee;border-color:#efc0bc}
     .eval-count.tn{background:#f7f1ea;border-color:#e3d3c0}
-    .eval-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:.65rem}
-    .eval-stat{padding:.8rem .9rem;border:1px solid var(--line);border-radius:14px;background:#fffdf8}
+    .eval-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:.45rem}
+    .eval-stat{padding:.58rem .65rem;border:1px solid var(--line);border-radius:14px;background:#fffdf8}
     .eval-stat .k{font-size:.74rem;color:var(--muted);text-transform:uppercase;letter-spacing:.08em;font-weight:700}
-    .eval-stat .v{font-weight:800;margin-top:.3rem;word-break:break-word;font-size:1rem}
-    .eval-timeline-wrap{margin-top:1rem;padding-top:.9rem;border-top:1px dashed var(--line)}
-    .eval-timeline-head{display:flex;justify-content:space-between;gap:1rem;align-items:center;margin-bottom:.55rem}
+    .eval-stat .v{font-weight:800;margin-top:.22rem;word-break:break-word;font-size:.92rem}
+    .eval-timeline-wrap{margin-top:0;padding-top:.58rem;border-top:1px dashed var(--line)}
+    .eval-timeline-head{display:flex;justify-content:space-between;gap:.75rem;align-items:center;margin-bottom:.42rem}
     .eval-timeline-title{font-size:.8rem;color:var(--muted);text-transform:uppercase;letter-spacing:.08em;font-weight:700}
     .eval-legend{display:flex;flex-wrap:wrap;gap:.45rem;font-size:.78rem;color:var(--muted)}
     .eval-legend span{display:inline-flex;align-items:center;gap:.35rem}
     .eval-legend i{display:inline-block;width:.7rem;height:.7rem;border-radius:999px}
-    .eval-timeline{display:flex;gap:2px;overflow-x:auto;padding:.4rem .1rem .15rem;scrollbar-width:thin}
-    .eval-tick{flex:0 0 10px;height:36px;border:none;border-radius:999px;background:#e1d5c7;cursor:pointer;position:relative;outline:none;transition:transform .12s ease,opacity .12s ease,box-shadow .12s ease}
-    .eval-tick:hover{transform:translateY(-1px);opacity:.95}
-    .eval-tick.current{box-shadow:0 0 0 2px #1f1b16 inset,0 0 0 2px rgba(255,255,255,.9);transform:translateY(-2px)}
-    .eval-tick.ok{background:#1d8f50}
-    .eval-tick.warn{background:#b9382f}
-    .eval-tick.mixed{background:#d17a0f}
-    .eval-tick.empty{background:#e1d5c7}
-    .eval-note{margin-top:.85rem;color:var(--muted);font-size:.88rem;line-height:1.45}
-    .eval-align{margin-top:.65rem;font-size:.84rem;color:var(--muted);display:flex;flex-wrap:wrap;gap:.5rem}
-    @media (max-width:980px){.eval-hero{grid-template-columns:1fr}.eval-count-strip{grid-template-columns:repeat(2,minmax(0,1fr))}.eval-result-main{font-size:2rem}}
+    .eval-overview-shell{padding:.56rem .62rem .52rem;border-radius:16px;background:linear-gradient(180deg,#fffdfa 0%,#f8f2e8 100%);border:1px solid rgba(173,145,112,.18);box-shadow:inset 0 1px 0 rgba(255,255,255,.7)}
+    .eval-overview-slider{width:100%;margin:0;accent-color:var(--accent);background:transparent}
+    .eval-overview-slider:focus{outline:none}
+    .eval-overview-slider::-webkit-slider-runnable-track{height:6px;border-radius:999px;background:var(--timeline-track, #ded3c5)}
+    .eval-overview-slider::-moz-range-track{height:6px;border:none;border-radius:999px;background:var(--timeline-track, #ded3c5)}
+    .eval-overview-slider::-webkit-slider-thumb{-webkit-appearance:none;appearance:none;margin-top:-8px;width:22px;height:22px;border:none;border-radius:50%;background:var(--accent);box-shadow:0 0 0 3px #fff,0 4px 12px rgba(69,45,18,.24)}
+    .eval-overview-slider::-moz-range-thumb{width:22px;height:22px;border:none;border-radius:50%;background:var(--accent);box-shadow:0 0 0 3px #fff,0 4px 12px rgba(69,45,18,.24)}
+    .eval-overview-meta{display:flex;justify-content:space-between;gap:.75rem;align-items:center;margin-top:.36rem;font-size:.74rem;color:var(--muted)}
+    .eval-overview-meta strong{color:#1f1b16}
+    .eval-overview-hint{margin-top:.24rem;display:flex;justify-content:space-between;align-items:center;gap:.75rem;font-size:.72rem;color:#7a6856}
+    .eval-overview-hint .gesture{display:inline-flex;align-items:center;gap:.4rem;padding:.18rem .42rem;border-radius:999px;background:rgba(255,255,255,.72);border:1px solid rgba(173,145,112,.18);box-shadow:inset 0 1px 0 rgba(255,255,255,.82)}
+    .eval-note{margin-top:.45rem;color:var(--muted);font-size:.78rem;line-height:1.32}
+    .eval-align{margin-top:.42rem;font-size:.78rem;color:var(--muted);display:flex;flex-wrap:wrap;gap:.38rem}
+    @media (max-width:1180px){.eval-hero{grid-template-columns:1fr 1fr}.eval-result-card{grid-column:1 / -1}.eval-result-main{font-size:1.1rem}}
+    @media (max-width:980px){.eval-hero{grid-template-columns:1fr}.eval-count-strip,.eval-grid,.eval-compare-grid{grid-template-columns:repeat(2,minmax(0,1fr))}.eval-side{grid-column:auto}.eval-result-main{font-size:1.15rem}.signal-chip{font-size:.96rem}}
     .empty,.error,.loading{padding:1rem;border:1px dashed var(--line);border-radius:12px;color:var(--muted)}
     .error{color:var(--warn)}
     .loading-inline{
@@ -115,6 +142,7 @@
     }
     .footer-links{display:flex;gap:.75rem;flex-wrap:wrap;margin-top:.75rem}
     .footer-links a{color:var(--accent);text-decoration:none}
+    @media (min-width:1280px){.viewer-grid{grid-template-columns:repeat(2,minmax(0,1fr));gap:.8rem}}
     @media (max-width:1100px){.viewer-grid{grid-template-columns:1fr}}
   </style>
 </head>
@@ -176,6 +204,7 @@
               <div id="evalCompare" class="eval-compare"></div>
               <div id="evalAlign" class="eval-align"></div>
             </div>
+            <div id="evalCompareGrid" class="eval-compare-grid"></div>
             <div class="eval-side">
               <div id="evalCounts" class="eval-count-strip"></div>
               <div id="evalGrid" class="eval-grid"></div>
@@ -185,13 +214,17 @@
             <div class="eval-timeline-head">
               <div class="eval-timeline-title">Sequence quality timeline</div>
               <div class="eval-legend">
-                <span><i style="background:#1d8f50"></i> Correct</span>
-                <span><i style="background:#b9382f"></i> Wrong</span>
-                <span><i style="background:#d17a0f"></i> Mixed</span>
-                <span><i style="background:#e1d5c7"></i> No eval</span>
+                <span><i style="background:#0f766e"></i> Correct</span>
+                <span><i style="background:#c2410c"></i> Wrong</span>
+                <span><i style="background:#b7791f"></i> Mixed</span>
+                <span><i style="background:#ded3c5"></i> No eval</span>
               </div>
             </div>
-            <div id="evalTimeline" class="eval-timeline"></div>
+            <div class="eval-overview-shell">
+              <input id="evalOverviewSlider" class="eval-overview-slider" type="range" min="0" max="0" value="0" aria-label="Sequence quality timeline slider">
+              <div id="evalOverviewMeta" class="eval-overview-meta"></div>
+
+            </div>
           </div>
           <div id="evalNote" class="eval-note"></div>
         </div>
@@ -305,6 +338,14 @@
       }
       tlrEvalRows = buildEvalRows(out);
       return out;
+    }
+
+    function signalToneClass(label){
+      const key = String(label || '').trim().toLowerCase();
+      if (key === 'red') return 'signal-red';
+      if (key === 'green') return 'signal-green';
+      if (key === 'yellow' || key === 'amber') return 'signal-yellow';
+      return 'signal-unknown';
     }
 
     function annotationLabelSummary(data){
@@ -448,14 +489,9 @@
         </div>`).join("");
     }
 
-    function renderEvalTimeline(){
-      const host = el("evalTimeline");
-      if (!host) return;
-      if (!viewerFrameSummary.length || !tlrEvalRows.length) {
-        host.innerHTML = "";
-        return;
-      }
-      host.innerHTML = viewerFrameSummary.map((frame) => {
+    function timelineStates(){
+      if (!viewerFrameSummary.length) return [];
+      return viewerFrameSummary.map((frame) => {
         let best = null;
         let bestDelta = Number.POSITIVE_INFINITY;
         for (const row of tlrEvalRows) {
@@ -466,21 +502,85 @@
           }
         }
         const verdict = deriveEvalVerdict(best);
-        const current = Number(state.frameIndex) === Number(frame.frame_index) ? ' current' : '';
-        const evalResult = best ? (best.evaluation_result || best.traffic_light_type || '-') : '-';
-        const title = `viewer f${frame.frame_index} | ${verdict.label} | ${evalResult} | Δ ${(bestDelta/1000).toFixed(1)} ms`;
-        return `<button type="button" class="eval-tick ${verdict.tone}${current}" data-frame="${frame.frame_index}" title="${title}"></button>`;
-      }).join("");
-      host.querySelectorAll('.eval-tick').forEach((node) => {
-        node.addEventListener('click', () => {
-          const frame = Number(node.getAttribute('data-frame') || '0');
-          stopPlayback();
-          state.frameIndex = Math.max(0, frame);
-          el('frameSlider').value = String(state.frameIndex);
-          el('frameInput').value = String(state.frameIndex);
-          loadFrame();
-        });
+        return {
+          frame_index: Number(frame.frame_index || 0),
+          verdict: verdict.tone,
+          label: verdict.label,
+          evalResult: best ? (best.evaluation_result || best.traffic_light_type || '-') : '-',
+          deltaMs: Number.isFinite(bestDelta) ? (bestDelta / 1000.0) : null,
+        };
       });
+    }
+
+    function jumpToViewerFrame(frame){
+      stopPlayback();
+      state.frameIndex = Math.max(0, Number(frame || 0));
+      el('frameSlider').value = String(state.frameIndex);
+      el('frameInput').value = String(state.frameIndex);
+      loadFrame();
+    }
+
+    function timelineStateForFrame(states, frame){
+      return states.find((item) => item.frame_index === Number(frame))
+        || states[Math.min(states.length - 1, Math.max(0, Number(frame) || 0))]
+        || states[0]
+        || null;
+    }
+
+    function timelineColorForVerdict(verdict){
+      if (verdict === 'ok') return '#0f766e';
+      if (verdict === 'warn') return '#c2410c';
+      if (verdict === 'mixed') return '#b7791f';
+      return '#ded3c5';
+    }
+
+    function timelineTrackGradient(states){
+      if (!Array.isArray(states) || !states.length) return '#ded3c5';
+      if (states.length === 1) return timelineColorForVerdict(states[0].verdict);
+      const parts = [];
+      for (let i = 0; i < states.length; i += 1) {
+        const start = ((i / states.length) * 100).toFixed(3);
+        const end = (((i + 1) / states.length) * 100).toFixed(3);
+        const color = timelineColorForVerdict(states[i].verdict);
+        parts.push(`${color} ${start}% ${end}%`);
+      }
+      return `linear-gradient(90deg, ${parts.join(', ')})`;
+    }
+
+    function setTimelineChrome(states, frame){
+      const meta = el('evalOverviewMeta');
+      const slider = el('evalOverviewSlider');
+      if (!meta || !slider || !states.length) return;
+      const activeFrame = Math.max(0, Number(frame || 0));
+      slider.value = String(activeFrame);
+      slider.style.setProperty('--timeline-track', timelineTrackGradient(states));
+      const activeState = timelineStateForFrame(states, activeFrame);
+      meta.innerHTML = `
+        <span><strong>Frame ${activeFrame}</strong> of ${Math.max(0, states.length - 1)}</span>
+        <span>${activeState ? `${activeState.label} · ${activeState.evalResult}` : 'No eval'}${activeState && activeState.deltaMs !== null ? ` · Δ ${activeState.deltaMs.toFixed(1)} ms` : ''}</span>`;
+    }
+
+    function renderEvalTimeline(){
+      const slider = el('evalOverviewSlider');
+      if (!slider) return;
+      const states = timelineStates();
+      if (!states.length) {
+        if (el('evalOverviewMeta')) el('evalOverviewMeta').innerHTML = '';
+        slider.max = "0";
+        slider.value = "0";
+        slider.style.setProperty('--timeline-track', '#ded3c5');
+        return;
+      }
+      slider.min = "0";
+      slider.max = String(Math.max(0, states.length - 1));
+      slider.value = String(Math.max(0, Math.min(states.length - 1, Number(state.frameIndex) || 0)));
+      slider.oninput = (ev) => {
+        setTimelineChrome(states, Number(ev.target.value || 0));
+      };
+      slider.onchange = (ev) => {
+        jumpToViewerFrame(Number(ev.target.value || 0));
+      };
+      setTimelineChrome(states, state.frameIndex);
     }
 
     function renderEvalOverlay(data){
@@ -493,55 +593,73 @@
       const resultMain = el("evalResultMain");
       const resultSub = el("evalResultSub");
       const compareEl = el("evalCompare");
+      const compareGridEl = el("evalCompareGrid");
       const alignEl = el("evalAlign");
-      panel.style.display = "block";
       const match = findNearestEvalRow(data);
       const row = match.row;
       const deltaMs = match.deltaMs;
-      const annotationSummary = summarizeAnnotationLabels(data);
+      const annotationParts = annotationLabelSummary(data);
       if (!row) {
-        statePill.textContent = "annotation-only";
+        panel.style.display = "none";
+        statePill.textContent = "";
         statePill.className = "eval-pill neutral";
         resultCard.className = "eval-result-card";
-        verdictEl.textContent = "Awaiting overlay";
-        resultMain.textContent = "Annotation only";
-        resultSub.innerHTML = '<span class="eval-pill soft">Prediction result will appear here once a timestamp-aligned evaluation payload is available.</span>';
-        compareEl.innerHTML = `<span class="eval-pill neutral">Annotations: ${annotationSummary}</span>`;
+        verdictEl.textContent = "";
+        resultMain.textContent = "";
+        resultSub.innerHTML = "";
+        compareEl.innerHTML = "";
+        compareGridEl.innerHTML = "";
         alignEl.innerHTML = '';
         grid.innerHTML = '';
         renderEvalCounts(null);
-        renderEvalTimeline();
-        if (note) note.textContent = 'This viewer is showing annotation imagery only. Once timestamp-aligned evaluation data arrives, the overlay will highlight whether each viewed frame is correct, wrong, or mixed.';
+        if (el('evalOverviewMeta')) el('evalOverviewMeta').innerHTML = '';
+        if (el('evalOverviewSlider')) {
+          el('evalOverviewSlider').max = "0";
+          el('evalOverviewSlider').value = "0";
+          el('evalOverviewSlider').style.setProperty('--timeline-track', '#ded3c5');
+        }
+        if (note) note.textContent = '';
         return;
       }
+      panel.style.display = "block";
+      const gtPrimary = annotationParts.length ? annotationParts[0].label : 'none';
       const verdict = deriveEvalVerdict(row);
-      const evalResult = row.evaluation_result || row.traffic_light_type || 'Unknown';
-      const annotationLabels = annotationLabelSummary(data).map((item) => item.label);
-      const annotationsMatch = annotationLabels.length ? annotationLabels.includes(String(evalResult).trim()) : false;
+      const prediction = row.evaluation_result || row.traffic_light_type || 'Unknown';
+      const annotationLabels = annotationParts.map((item) => item.label);
+      const labelMatch = annotationLabels.length ? annotationLabels.includes(String(prediction).trim()) : false;
       statePill.textContent = verdict.label;
       statePill.className = verdict.tone === 'ok' ? 'eval-pill match' : (verdict.tone === 'warn' ? 'eval-pill mismatch' : 'eval-pill timing');
       resultCard.className = `eval-result-card ${verdict.tone}`;
       verdictEl.textContent = verdict.label;
-      resultMain.textContent = evalResult;
+      resultMain.textContent = verdict.tone === 'ok' ? 'Prediction matches annotation' : (verdict.tone === 'warn' ? 'Prediction disagrees with annotation' : 'Prediction only partially agrees');
       resultSub.innerHTML = [
         row.status ? `<span class="eval-pill soft">Vehicle status: ${row.status}</span>` : '',
         row.criteria ? `<span class="eval-pill soft">Criteria: ${row.criteria}</span>` : '',
         row.frame_name ? `<span class="eval-pill soft">Eval frame: ${row.frame_name}</span>` : '',
       ].filter(Boolean).join('');
       compareEl.innerHTML = [
-        `<span class="eval-pill ${annotationsMatch ? 'match' : 'mismatch'}">Annotations: ${annotationSummary}</span>`,
-        `<span class="eval-pill timing">Timestamp match: ${deltaMs !== null ? `${deltaMs.toFixed(1)} ms` : 'n/a'}</span>`,
+        `<span class="eval-pill ${labelMatch ? 'match' : 'mismatch'}">${labelMatch ? 'Label agreement' : 'Label disagreement'}</span>`,
+        `<span class="eval-pill timing">Timestamp offset: ${deltaMs !== null ? `${deltaMs.toFixed(1)} ms` : 'n/a'}</span>`,
       ].join('');
+      compareGridEl.innerHTML = `
+        <div class="eval-compare-card pred ${signalToneClass(prediction)}">
+          <div class="k">Prediction</div>
+          <div class="v"><span class="signal-chip ${signalToneClass(prediction)}"><span class="signal-dot"></span>${prediction}</span></div>
+        </div>
+        <div class="eval-compare-card gt ${signalToneClass(gtPrimary)}">
+          <div class="k">Ground truth</div>
+          <div class="v"><span class="signal-chip ${signalToneClass(gtPrimary)}"><span class="signal-dot"></span>${gtPrimary}</span></div>
+        </div>`;
       alignEl.innerHTML = [
         `<span>Viewer frame ${state.frameIndex}</span>`,
         row.payload_frame_index !== undefined ? `<span>Closest eval row ${row.payload_frame_index}</span>` : '',
       ].filter(Boolean).join('');
       renderEvalCounts(row);
       const cards = [
+        ['Label comparison', labelMatch ? 'Same label family' : 'Different label family'],
         ['Alignment', deltaMs !== null ? `${deltaMs.toFixed(1)} ms` : '-'],
         ['Speed (kph)', formatEvalValue(row.speed_kph, 2)],
         ['Yaw rate (deg/s)', formatEvalValue(row.yaw_rate_deg_s, 2)],
-        ['Current time', formatEvalValue(row.current_time, 3)],
       ];
       grid.innerHTML = cards.map(([k, v]) => `
         <div class="eval-stat">
@@ -549,7 +667,7 @@
           <div class="v">${v}</div>
         </div>`).join("");
       renderEvalTimeline();
-      if (note) note.textContent = `${verdict.detail} This overlay is aligned by nearest timestamp rather than raw frame number, so you can compare the predicted result against the image annotations with the timing offset shown above.`;
+      if (note) note.textContent = `${verdict.detail} Traffic-light colors are reserved for the signal labels themselves; correctness is encoded separately through verdict chips, the comparison cards, and the timeline.`;
     }
 
 
