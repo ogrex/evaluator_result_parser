@@ -598,16 +598,41 @@ def _make_shadow(t4_root: Path) -> Path:
     - Symlinks for every non-JSON entry (images, point clouds, etc.)
       pointing back to the originals on the source filesystem.
 
-    The shadow root lives under ~/.cache/t4_shadow/ and is keyed by the
-    absolute real path of *t4_root*, so the same dataset always reuses
-    the same shadow.
+    The shadow root lives under the first writable location among:
+    - ``$T4_SHADOW_ROOT``
+    - ``~/.cache/t4_shadow``
+    - ``/tmp/t4_shadow``
+
+    It is keyed by the absolute real path of *t4_root*, so the same dataset
+    always reuses the same shadow.
     """
     import hashlib
     import shutil
 
     key = hashlib.sha1(str(t4_root.resolve()).encode()).hexdigest()[:16]
-    shadow_root = Path.home() / ".cache" / "t4_shadow" / key
-    shadow_root.mkdir(parents=True, exist_ok=True)
+    candidates = []
+    env_root = os.environ.get("T4_SHADOW_ROOT", "").strip()
+    if env_root:
+        candidates.append(Path(env_root).expanduser())
+    candidates.append(Path.home() / ".cache" / "t4_shadow")
+    candidates.append(Path("/tmp/t4_shadow"))
+
+    shadow_root = None
+    last_exc = None
+    for base in candidates:
+        try:
+            base.mkdir(parents=True, exist_ok=True)
+            probe = base / ".write_test"
+            probe.write_text("", encoding="utf-8")
+            probe.unlink()
+            shadow_root = base / key
+            shadow_root.mkdir(parents=True, exist_ok=True)
+            break
+        except OSError as exc:
+            last_exc = exc
+            continue
+    if shadow_root is None:
+        raise OSError(f"Unable to create T4 shadow directory: {last_exc}")
 
     # Walk the source tree and mirror its structure locally.
     for src in t4_root.rglob("*"):
@@ -763,4 +788,3 @@ def _download_impl(t4dataset_id: str, dest_dir: Path, dataset_path: Path) -> Non
     # webauto writes to dest_dir/annotation_dataset/<uuid>/<version>/
     # Flatten the versioned directory contents into dataset_path.
     _try_flatten(dest_dir, t4dataset_id, dst=dataset_path)
-

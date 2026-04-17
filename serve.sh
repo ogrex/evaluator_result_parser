@@ -10,6 +10,7 @@
 #   --search-depth N       サブディレクトリ探索深さ (デフォルト: 1)
 #   --host HOST            バインドアドレス (デフォルト: 0.0.0.0 = 全インターフェース)
 #   --port PORT            サーバーポート (デフォルト: 8000)
+#   --workers N            uvicorn ワーカープロセス数 (デフォルト: 2)
 #   --tier4-cache N        メモリ上に保持する Tier4 インスタンス数 (デフォルト: 8)
 #   --project-id ID        webauto プロジェクト ID (WEBAUTO_PROJECT_ID 環境変数でも可)
 #   --venv PATH            仮想環境ディレクトリ (デフォルト: .venv)
@@ -27,6 +28,7 @@ DATA_DIR="/mnt/qnapdata/internal/t4datasets"
 SEARCH_DEPTH=1
 HOST="0.0.0.0"
 PORT=8000
+WORKERS=2
 TIER4_CACHE=8
 WEBAUTO_PROJECT_ID="${WEBAUTO_PROJECT_ID:-}"
 VENV_DIR=".venv"
@@ -50,6 +52,7 @@ while [[ $# -gt 0 ]]; do
         --search-depth)  SEARCH_DEPTH="$2";       shift 2 ;;
         --host)          HOST="$2";               shift 2 ;;
         --port)          PORT="$2";               shift 2 ;;
+        --workers)       WORKERS="$2";            shift 2 ;;
         --tier4-cache)   TIER4_CACHE="$2";        shift 2 ;;
         --project-id)    WEBAUTO_PROJECT_ID="$2"; shift 2 ;;
         --venv)          VENV_DIR="$2";           shift 2 ;;
@@ -126,6 +129,7 @@ echo "  データディレクトリ : $DATA_DIR"
 echo "  Search depth      : $SEARCH_DEPTH"
 echo "  ホスト            : $HOST"
 echo "  ポート            : $PORT"
+echo "  ワーカー数        : $WORKERS"
 echo "  Tier4 キャッシュ  : $TIER4_CACHE"
 echo "============================================================"
 echo ""
@@ -146,4 +150,5 @@ exec "$T4SERVER" \
     --data-dir "$DATA_DIR" \
     --search-depth "$SEARCH_DEPTH" \
     --port "$PORT" \
+    --workers "$WORKERS" \
     --tier4-cache "$TIER4_CACHE"

@@ -1,0 +1,267 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>TLR Viewer</title>
+  <link rel="icon" href="/static/favicon.svg" type="image/svg+xml">
+  <style>
+    :root{
+      --bg:#f5f3ec; --panel:#fffdf8; --text:#1f1b16; --muted:#6b6257; --line:#d9cfbf;
+      --accent:#c55200; --ok:#1d8f50; --warn:#b9382f; --shadow:rgba(69,45,18,.12);
+    }
+    *{box-sizing:border-box}
+    body{
+      margin:0; color:var(--text); background:
+        radial-gradient(90rem 30rem at 10% -10%, rgba(197,82,0,.10), transparent 65%),
+        radial-gradient(70rem 26rem at 100% 0%, rgba(29,143,80,.08), transparent 62%),
+        var(--bg);
+      font-family:ui-sans-serif,system-ui,-apple-system,Segoe UI,sans-serif;
+    }
+    .wrap{max-width:1600px;margin:0 auto;padding:1rem}
+    .hero{display:flex;justify-content:space-between;align-items:end;gap:1rem;margin-bottom:1rem}
+    h1{margin:0;font-size:1.4rem}
+    .muted{color:var(--muted)}
+    .card{
+      background:var(--panel); border:1px solid var(--line); border-radius:16px; padding:1rem;
+      box-shadow:0 10px 30px var(--shadow);
+    }
+    .toolbar{display:flex;flex-wrap:wrap;gap:.6rem;align-items:center;margin-bottom:1rem}
+    .toolbar input,.toolbar select,.toolbar button,.toolbar a{
+      border:1px solid var(--line); border-radius:10px; padding:.6rem .75rem; background:#fffaf2;
+      color:var(--text); text-decoration:none; font:inherit;
+    }
+    .toolbar button{cursor:pointer;background:var(--accent);border-color:var(--accent);color:#fff7ef}
+    .toolbar button[disabled]{opacity:.45;cursor:not-allowed}
+    .meta{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:.75rem;margin-bottom:1rem}
+    .stat{padding:.75rem;border:1px solid var(--line);border-radius:12px;background:#fffaf2}
+    .stat .k{font-size:.8rem;color:var(--muted);text-transform:uppercase;letter-spacing:.04em}
+    .stat .v{font-weight:700;margin-top:.25rem;word-break:break-word}
+    .viewer-grid{display:grid;grid-template-columns:minmax(0,1fr) 320px;gap:1rem}
+    .frame-shell{position:relative;border:1px solid var(--line);border-radius:16px;overflow:hidden;background:#221d17}
+    .frame-shell img{display:block;width:100%;height:auto}
+    .frame-shell svg{position:absolute;inset:0;width:100%;height:100%}
+    .side{display:flex;flex-direction:column;gap:1rem}
+    .anno-list{max-height:70vh;overflow:auto;border:1px solid var(--line);border-radius:12px;background:#fffaf2}
+    .anno-row{padding:.75rem;border-bottom:1px solid var(--line)}
+    .anno-row:last-child{border-bottom:none}
+    .anno-head{display:flex;justify-content:space-between;gap:.5rem;font-weight:700}
+    .pill{display:inline-block;padding:.15rem .55rem;border-radius:999px;background:#f7e7d6;color:var(--accent);font-size:.78rem}
+    .empty,.error,.loading{padding:1rem;border:1px dashed var(--line);border-radius:12px;color:var(--muted)}
+    .error{color:var(--warn)}
+    .footer-links{display:flex;gap:.75rem;flex-wrap:wrap;margin-top:.75rem}
+    .footer-links a{color:var(--accent);text-decoration:none}
+    @media (max-width:1100px){.viewer-grid{grid-template-columns:1fr}}
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <div class="hero">
+      <div>
+        <h1>Traffic Light Viewer</h1>
+        <div class="muted">2D ROI viewer for TLR-style local T4 datasets.</div>
+      </div>
+      <div class="muted"><code id="heroDataset">__DATASET_ID__</code></div>
+    </div>
+
+    <section class="card">
+      <div class="toolbar">
+        <button id="prevBtn">Prev</button>
+        <button id="nextBtn">Next</button>
+        <input id="frameInput" type="number" min="0" value="__FRAME_INDEX__" style="width:8rem">
+        <button id="jumpBtn">Jump</button>
+        <select id="cameraSelect"></select>
+        <a id="jsonLink" href="#">Frame JSON</a>
+      </div>
+
+      <div id="stateBox" class="loading">Loading frame...</div>
+
+      <div id="content" style="display:none">
+        <div class="meta">
+          <div class="stat"><div class="k">Scenario</div><div class="v" id="scenarioValue">__SCENARIO_NAME__</div></div>
+          <div class="stat"><div class="k">Frame</div><div class="v" id="frameValue"></div></div>
+          <div class="stat"><div class="k">Timestamp</div><div class="v" id="timestampValue"></div></div>
+          <div class="stat"><div class="k">Camera</div><div class="v" id="cameraValue"></div></div>
+          <div class="stat"><div class="k">Annotations</div><div class="v" id="countValue"></div></div>
+          <div class="stat"><div class="k">Sample Token</div><div class="v" id="sampleValue"></div></div>
+        </div>
+
+        <div class="viewer-grid">
+          <div class="frame-shell">
+            <img id="frameImage" alt="TLR frame">
+            <svg id="overlay" preserveAspectRatio="xMidYMid meet"></svg>
+          </div>
+          <div class="side">
+            <div class="card" style="padding:.85rem">
+              <div style="font-weight:700;margin-bottom:.5rem">Annotations</div>
+              <div id="annoList" class="anno-list"></div>
+            </div>
+          </div>
+        </div>
+
+        <div class="footer-links">
+          <a id="renderLink" href="#" target="_blank" rel="noopener">Open generic render</a>
+          <a id="browserLink" href="/datasets/browser" target="_blank" rel="noopener">Dataset browser</a>
+        </div>
+      </div>
+    </section>
+  </div>
+
+  <script>
+    const initialQs = "__QS__";
+    const initial = new URLSearchParams(initialQs);
+    const state = {
+      datasetId: initial.get("t4dataset_id") || "__DATASET_ID__",
+      scenarioName: initial.get("scenario_name") || "",
+      frameIndex: Number(initial.get("frame_index") || "0"),
+      camera: initial.get("camera") || "",
+      version: initial.get("version") || "",
+      totalFrames: 0
+    };
+
+    const el = (id) => document.getElementById(id);
+
+    function frameApiUrl(){
+      const qs = new URLSearchParams();
+      qs.set("t4dataset_id", state.datasetId);
+      qs.set("frame_index", String(state.frameIndex));
+      if (state.scenarioName) qs.set("scenario_name", state.scenarioName);
+      if (state.camera) qs.set("camera", state.camera);
+      if (state.version) qs.set("version", state.version);
+      return `/viewer/tlr/frame?${qs.toString()}`;
+    }
+
+    function pageUrl(){
+      const qs = new URLSearchParams();
+      qs.set("t4dataset_id", state.datasetId);
+      qs.set("frame_index", String(state.frameIndex));
+      if (state.scenarioName) qs.set("scenario_name", state.scenarioName);
+      if (state.camera) qs.set("camera", state.camera);
+      if (state.version) qs.set("version", state.version);
+      return `/viewer/tlr?${qs.toString()}`;
+    }
+
+    function renderOverlay(data){
+      const svg = el("overlay");
+      svg.setAttribute("viewBox", `0 0 ${data.image_width} ${data.image_height}`);
+      const rows = Array.isArray(data.annotations) ? data.annotations : [];
+      const colorForLabel = (label) => {
+        const key = String(label || "").trim().toLowerCase();
+        if (key === "red") return { stroke: "#ff4d4f", fill: "rgba(255,77,79,.88)", pill: "#ffe1e1", text: "#8a1113" };
+        if (key === "green") return { stroke: "#22c55e", fill: "rgba(34,197,94,.88)", pill: "#daf7e5", text: "#0f5c2d" };
+        if (key === "yellow" || key === "amber") return { stroke: "#f59e0b", fill: "rgba(245,158,11,.88)", pill: "#ffefcc", text: "#7a4900" };
+        return { stroke: "#ffb703", fill: "rgba(25,20,12,.82)", pill: "#f7e7d6", text: "#c55200" };
+      };
+      svg.innerHTML = rows.map((row, idx) => {
+        const w = Math.max(0, Number(row.x1) - Number(row.x0));
+        const h = Math.max(0, Number(row.y1) - Number(row.y0));
+        const label = `${row.label || "unknown"} #${idx + 1}`;
+        const color = colorForLabel(row.label);
+        return `
+          <g>
+            <rect x="${row.x0}" y="${row.y0}" width="${w}" height="${h}"
+              fill="none" stroke="${color.stroke}" stroke-width="5"></rect>
+            <rect x="${row.x0}" y="${Math.max(0, Number(row.y0) - 42)}" width="${Math.max(150, label.length * 15)}" height="34"
+              fill="${color.fill}"></rect>
+            <text x="${Number(row.x0) + 10}" y="${Math.max(22, Number(row.y0) - 18)}"
+              fill="#fff3d7" font-size="26" font-family="ui-monospace,monospace">${label}</text>
+          </g>
+        `;
+      }).join("");
+
+      const annoList = el("annoList");
+      if (!rows.length) {
+        annoList.innerHTML = '<div class="empty">No TLR annotations on this frame.</div>';
+        return;
+      }
+      annoList.innerHTML = rows.map((row, idx) => `
+        <div class="anno-row">
+          <div class="anno-head">
+            <span>${row.label || "unknown"} #${idx + 1}</span>
+            <span class="pill" style="background:${colorForLabel(row.label).pill};color:${colorForLabel(row.label).text}">${row.automatic_annotation ? "auto" : "manual"}</span>
+          </div>
+          <div class="muted">bbox: [${Math.round(row.x0)}, ${Math.round(row.y0)}] → [${Math.round(row.x1)}, ${Math.round(row.y1)}]</div>
+          <div class="muted">instance: ${row.instance_token || "-"}</div>
+        </div>
+      `).join("");
+    }
+
+    function syncControls(data){
+      state.scenarioName = data.scenario_name || state.scenarioName;
+      state.frameIndex = Number(data.frame_index || 0);
+      state.totalFrames = Number(data.total_frames || 0);
+      state.camera = data.camera || "";
+      el("frameInput").value = String(state.frameIndex);
+      el("frameValue").textContent = `${state.frameIndex} / ${Math.max(0, state.totalFrames - 1)}`;
+      el("timestampValue").textContent = String(data.timestamp_us || "");
+      el("cameraValue").textContent = data.camera || "";
+      el("countValue").textContent = String(data.annotation_count || 0);
+      el("sampleValue").textContent = data.sample_token || "";
+      el("scenarioValue").textContent = data.scenario_name || "";
+      el("heroDataset").textContent = state.datasetId;
+
+      const select = el("cameraSelect");
+      const cams = Array.isArray(data.available_cameras) ? data.available_cameras : [];
+      select.innerHTML = cams.map((cam) =>
+        `<option value="${cam}" ${cam === data.camera ? "selected" : ""}>${cam}</option>`
+      ).join("");
+
+      el("prevBtn").disabled = state.frameIndex <= 0;
+      el("nextBtn").disabled = state.totalFrames > 0 ? state.frameIndex >= state.totalFrames - 1 : false;
+      el("jsonLink").href = frameApiUrl();
+
+      const renderQs = new URLSearchParams();
+      renderQs.set("t4dataset_id", state.datasetId);
+      renderQs.set("scenario_name", state.scenarioName);
+      renderQs.set("frame_index", String(state.frameIndex));
+      renderQs.set("cameras", state.camera);
+      el("renderLink").href = `/render/html?${renderQs.toString()}`;
+
+      history.replaceState(null, "", pageUrl());
+    }
+
+    async function loadFrame(){
+      el("stateBox").className = "loading";
+      el("stateBox").style.display = "block";
+      el("content").style.display = "none";
+      el("stateBox").textContent = "Loading frame...";
+      try {
+        const res = await fetch(frameApiUrl(), { headers: { "Accept": "application/json" } });
+        const data = await res.json();
+        if (!res.ok) {
+          throw new Error((data && (data.message || (data.detail && data.detail.message))) || `HTTP ${res.status}`);
+        }
+        el("frameImage").src = `data:image/jpeg;base64,${data.image_jpeg_base64}`;
+        syncControls(data);
+        renderOverlay(data);
+        el("stateBox").style.display = "none";
+        el("content").style.display = "block";
+      } catch (err) {
+        el("stateBox").className = "error";
+        el("stateBox").textContent = `Failed to load frame: ${err.message}`;
+      }
+    }
+
+    el("prevBtn").addEventListener("click", () => {
+      if (state.frameIndex <= 0) return;
+      state.frameIndex -= 1;
+      loadFrame();
+    });
+    el("nextBtn").addEventListener("click", () => {
+      state.frameIndex += 1;
+      loadFrame();
+    });
+    el("jumpBtn").addEventListener("click", () => {
+      const value = Number(el("frameInput").value || "0");
+      state.frameIndex = Math.max(0, value);
+      loadFrame();
+    });
+    el("cameraSelect").addEventListener("change", (ev) => {
+      state.camera = ev.target.value || "";
+      loadFrame();
+    });
+
+    loadFrame();
+  </script>
+</body>
+</html>

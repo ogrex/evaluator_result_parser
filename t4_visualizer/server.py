@@ -342,6 +342,31 @@ try:
         available: bool
         dataset_path: Optional[str] = None
 
+    class TlrFrameAnnotationOut(BaseModel):
+        x0: float
+        y0: float
+        x1: float
+        y1: float
+        label: str = ""
+        instance_token: str = ""
+        category_token: str = ""
+        automatic_annotation: bool = False
+
+    class TlrFrameResponse(BaseModel):
+        t4dataset_id: str
+        scenario_name: str
+        frame_index: int
+        total_frames: int
+        sample_token: str
+        timestamp_us: int
+        camera: str
+        available_cameras: List[str] = _Field(default_factory=list)
+        image_width: int
+        image_height: int
+        image_jpeg_base64: str
+        annotation_count: int = 0
+        annotations: List[TlrFrameAnnotationOut] = _Field(default_factory=list)
+
     class CameraOverlayExtrasBody(BaseModel):
         """Optional GT/EST boxes (same schema as viewer ``bbox_layers`` postMessage) to project onto the image."""
 
@@ -391,6 +416,15 @@ def _build_app(
     )
 
     app = FastAPI(title="T4 Visualizer", version="0.1.0")
+    _static_dir = Path(__file__).resolve().parent / "static"
+    if _static_dir.is_dir():
+        from starlette.staticfiles import StaticFiles
+
+        app.mount(
+            "/static",
+            StaticFiles(directory=str(_static_dir)),
+            name="static",
+        )
     _vehicle_mesh_dir = Path(__file__).resolve().parent.parent / "assets" / "sample_vehicle_description" / "mesh"
     if _vehicle_mesh_dir.is_dir():
         from starlette.staticfiles import StaticFiles
@@ -757,6 +791,230 @@ def _build_app(
                 message="Failed to resolve sample for scenario/frame.",
                 exc=exc,
             )
+
+    def _record_get(record: Any, key: str, default: Any = None) -> Any:
+        if isinstance(record, dict):
+            return record.get(key, default)
+        return getattr(record, key, default)
+
+    def _category_name_map(t4) -> Dict[str, str]:
+        out: Dict[str, str] = {}
+        for row in list(getattr(t4, "category", []) or []):
+            token = str(_record_get(row, "token", "") or "")
+            if not token:
+                continue
+            name = str(_record_get(row, "name", "") or "")
+            out[token] = name
+        return out
+
+    def _preferred_tlr_camera(available_cameras: List[str], requested: Optional[str]) -> str:
+        if requested:
+            wanted = str(requested).strip()
+            if wanted in available_cameras:
+                return wanted
+            _public_error(
+                404,
+                "camera_not_found",
+                f"Camera '{wanted}' was not found in this sample.",
+                hint=f"Available cameras: {', '.join(available_cameras)}",
+            )
+        ranked = sorted(
+            available_cameras,
+            key=lambda name: (
+                0 if "TRAFFIC_LIGHT" in str(name).upper() else 1,
+                str(name),
+            ),
+        )
+        return ranked[0]
+
+    def _dataset_profile_payload(
+        t4dataset_id: str,
+        dataset_path: Path,
+        t4,
+        version: Optional[str],
+    ) -> Dict[str, object]:
+        from t4_visualizer.visualize import list_camera_channels, list_lidar_channels
+
+        scenes = list(getattr(t4, "scene", []) or [])
+        samples = list(getattr(t4, "sample", []) or [])
+        sample_annotation_count = len(list(getattr(t4, "sample_annotation", []) or []))
+        object_ann_count = len(list(getattr(t4, "object_ann", []) or []))
+
+        first_sample = samples[0] if samples else None
+        camera_channels = list_camera_channels(t4, first_sample) if first_sample is not None else []
+        lidar_channels = list_lidar_channels(t4, first_sample) if first_sample is not None else []
+        scene_descriptions = [
+            str(_record_get(scene, "description", "") or "")
+            for scene in scenes
+            if str(_record_get(scene, "description", "") or "")
+        ]
+        category_names = sorted(
+            {
+                str(_record_get(cat, "name", "") or "")
+                for cat in list(getattr(t4, "category", []) or [])
+                if str(_record_get(cat, "name", "") or "")
+            }
+        )
+        scene_text = " ".join(scene_descriptions).upper()
+        has_traffic_light_camera = any("TRAFFIC_LIGHT" in str(ch).upper() for ch in camera_channels)
+        is_tlr = (
+            object_ann_count > 0
+            and (has_traffic_light_camera or "TLR" in scene_text or "TRAFFIC LIGHT" in scene_text)
+            and sample_annotation_count == 0
+        )
+        kind = "tlr" if is_tlr else "standard"
+        preferred_viewer = "tlr" if is_tlr else ("three" if lidar_channels else "render")
+
+        return {
+            "t4dataset_id": t4dataset_id,
+            "available": True,
+            "dataset_path": str(dataset_path.resolve()) if _debug_visibility else None,
+            "version": version,
+            "kind": kind,
+            "preferred_viewer": preferred_viewer,
+            "scene_count": len(scenes),
+            "sample_count": len(samples),
+            "camera_channels": camera_channels,
+            "lidar_channels": lidar_channels,
+            "has_lidar": bool(lidar_channels),
+            "sample_annotation_count": sample_annotation_count,
+            "object_ann_count": object_ann_count,
+            "has_2d_annotations": object_ann_count > 0,
+            "has_3d_annotations": sample_annotation_count > 0,
+            "scene_descriptions": scene_descriptions,
+            "categories": category_names,
+            "supports": {
+                "render": bool(camera_channels),
+                "three": bool(lidar_channels),
+                "tlr": is_tlr and bool(camera_channels),
+            },
+        }
+
+    def _tlr_frame_payload(
+        t4dataset_id: str,
+        dataset_path: Path,
+        t4,
+        scenario_name: Optional[str],
+        frame_index: int,
+        camera: Optional[str],
+        version: Optional[str],
+    ) -> TlrFrameResponse:
+        from PIL import Image
+        from t4_visualizer.visualize import list_camera_channels, list_scene_summaries
+
+        resolved_scenario = _resolve_viewer_scenario_name(t4, scenario_name)
+        sample = _get_scenario_sample(t4, resolved_scenario, frame_index)
+        available_cameras = list_camera_channels(t4, sample)
+        if not available_cameras:
+            _public_error(
+                404,
+                "camera_not_found",
+                "No camera channels are available for this frame.",
+            )
+        selected_camera = _preferred_tlr_camera(available_cameras, camera)
+        sample_data_token = sample.data.get(selected_camera)
+        if sample_data_token is None:
+            _public_error(
+                404,
+                "sample_data_not_found",
+                f"Camera '{selected_camera}' is not available in this frame.",
+            )
+
+        try:
+            data_path, boxes_2d, _ = t4.get_sample_data(
+                sample_data_token,
+                as_3d=False,
+                as_sensor_coord=True,
+            )
+        except Exception as exc:
+            _safe_error(
+                500,
+                "tlr_frame_load_failed",
+                "Failed to load TLR camera frame.",
+                exc=exc,
+            )
+
+        category_names = _category_name_map(t4)
+        annotations: List[TlrFrameAnnotationOut] = []
+        object_ann_rows = list(getattr(t4, "object_ann", []) or [])
+        for row in object_ann_rows:
+            if str(_record_get(row, "sample_data_token", "") or "") != str(sample_data_token):
+                continue
+            bbox = _record_get(row, "bbox", None)
+            if not isinstance(bbox, (list, tuple)) or len(bbox) != 4:
+                continue
+            try:
+                x0, y0, x1, y1 = [float(v) for v in bbox]
+            except (TypeError, ValueError):
+                continue
+            category_token = str(_record_get(row, "category_token", "") or "")
+            label = category_names.get(category_token, category_token)
+            annotations.append(
+                TlrFrameAnnotationOut(
+                    x0=x0,
+                    y0=y0,
+                    x1=x1,
+                    y1=y1,
+                    label=label,
+                    instance_token=str(_record_get(row, "instance_token", "") or ""),
+                    category_token=category_token,
+                    automatic_annotation=bool(_record_get(row, "automatic_annotation", False)),
+                )
+            )
+
+        if not annotations:
+            for idx, box in enumerate(list(boxes_2d or [])):
+                roi = getattr(box, "roi", None)
+                if not isinstance(roi, (list, tuple)) or len(roi) != 4:
+                    continue
+                try:
+                    x0, y0, x1, y1 = [float(v) for v in roi]
+                except (TypeError, ValueError):
+                    continue
+                annotations.append(
+                    TlrFrameAnnotationOut(
+                        x0=x0,
+                        y0=y0,
+                        x1=x1,
+                        y1=y1,
+                        label=str(getattr(box, "label", "") or ""),
+                        instance_token=str(idx),
+                        category_token="",
+                        automatic_annotation=False,
+                    )
+                )
+
+        scenes = list_scene_summaries(t4)
+        scene_meta = next((s for s in scenes if s.get("name") == resolved_scenario), None)
+        total_frames = int(scene_meta.get("nbr_samples") or 0) if scene_meta else 0
+
+        try:
+            with Image.open(data_path) as img:
+                width, height = img.size
+            image_bytes = Path(data_path).read_bytes()
+        except Exception as exc:
+            _safe_error(
+                500,
+                "tlr_image_read_failed",
+                "Failed to read TLR camera image.",
+                exc=exc,
+            )
+
+        return TlrFrameResponse(
+            t4dataset_id=t4dataset_id,
+            scenario_name=resolved_scenario,
+            frame_index=frame_index,
+            total_frames=total_frames,
+            sample_token=str(sample.token),
+            timestamp_us=int(sample.timestamp),
+            camera=selected_camera,
+            available_cameras=available_cameras,
+            image_width=int(width),
+            image_height=int(height),
+            image_jpeg_base64=base64.b64encode(image_bytes).decode(),
+            annotation_count=len(annotations),
+            annotations=annotations,
+        )
 
     def _resolve_viewer_scenario_name(t4, scenario_name: Optional[str]) -> str:
         """Resolve scenario for viewer endpoints.
@@ -1635,6 +1893,7 @@ def _build_app(
             "<!DOCTYPE html>"
             '<html lang="en"><head><meta charset="utf-8">'
             '<meta name="viewport" content="width=device-width, initial-scale=1">'
+            '<link rel="icon" href="/static/favicon.svg" type="image/svg+xml">'
             f"<title>{esc(title)} — frame {q.frame_index}</title>"
             f"<style>{_RENDER_VIEW_CSS}</style>"
             "</head><body>"
@@ -1653,6 +1912,17 @@ def _build_app(
     # ------------------------------------------------------------------
     # Routes
     # ------------------------------------------------------------------
+
+    @app.get("/favicon.ico", include_in_schema=False)
+    def favicon():
+        favicon_path = _static_dir / "favicon.svg"
+        if not favicon_path.is_file():
+            _public_error(404, "favicon_not_found", "Favicon asset is not available.")
+        return Response(
+            content=favicon_path.read_text(encoding="utf-8"),
+            media_type="image/svg+xml",
+            headers={"Cache-Control": "public, max-age=86400"},
+        )
 
     @app.get("/datasets/browser")
     def datasets_browser_page():
@@ -1701,6 +1971,7 @@ def _build_app(
             "<!DOCTYPE html>"
             '<html lang="en"><head><meta charset="utf-8">'
             '<meta name="viewport" content="width=device-width, initial-scale=1">'
+            '<link rel="icon" href="/static/favicon.svg" type="image/svg+xml">'
             "<title>T4 Visualizer Server</title>"
             "<style>"
             ":root{color-scheme:light dark;--bg:#f6f7fb;--fg:#111318;--card:#fff;--border:#d9deea;--muted:#566072;--link:#1f5fe0;}"
@@ -1839,6 +2110,29 @@ def _build_app(
             available=False,
             dataset_path=None,
         )
+
+    @app.get(
+        "/datasets/{t4dataset_id}/profile",
+        tags=["datasets"],
+        summary="Inspect dataset modality and viewer capabilities",
+    )
+    def dataset_profile(
+        t4dataset_id: str,
+        version: Optional[str] = None,
+    ):
+        dataset_path = _resolve_dataset(t4dataset_id)
+        try:
+            t4 = _cache.load(dataset_path, version=version)
+            return _dataset_profile_payload(t4dataset_id, dataset_path, t4, version)
+        except HTTPException:
+            raise
+        except Exception as exc:
+            _safe_error(
+                500,
+                "dataset_profile_failed",
+                "Failed to inspect dataset profile.",
+                exc=exc,
+            )
 
     @app.get(
         "/datasets/{t4dataset_id}/scenarios",
@@ -2589,6 +2883,72 @@ def _build_app(
         )
         return HTMLResponse(content=page, media_type="text/html; charset=utf-8")
 
+    @app.get(
+        "/viewer/tlr/frame",
+        response_model=TlrFrameResponse,
+        tags=["viewer"],
+        summary="Traffic-light frame payload with image and 2D annotations",
+    )
+    def viewer_tlr_frame(
+        t4dataset_id: str,
+        scenario_name: Optional[str] = None,
+        frame_index: int = Query(0, ge=0),
+        camera: Optional[str] = None,
+        version: Optional[str] = None,
+    ):
+        dataset_path = _resolve_dataset(t4dataset_id)
+        try:
+            t4 = _cache.load(dataset_path, version=version)
+            return _tlr_frame_payload(
+                t4dataset_id=t4dataset_id,
+                dataset_path=dataset_path,
+                t4=t4,
+                scenario_name=scenario_name,
+                frame_index=frame_index,
+                camera=camera,
+                version=version,
+            )
+        except HTTPException:
+            raise
+        except Exception as exc:
+            _safe_error(
+                500,
+                "tlr_viewer_failed",
+                "Failed to build the TLR frame payload.",
+                exc=exc,
+            )
+
+    @app.get("/viewer/tlr")
+    def viewer_tlr_page(
+        t4dataset_id: str = Query(...),
+        scenario_name: Optional[str] = Query(None),
+        frame_index: int = Query(0, ge=0),
+        camera: Optional[str] = Query(None),
+        version: Optional[str] = Query(None),
+    ):
+        esc = html.escape
+        qs_params = {
+            "t4dataset_id": t4dataset_id,
+            "frame_index": frame_index,
+        }
+        if scenario_name:
+            qs_params["scenario_name"] = scenario_name
+        if camera:
+            qs_params["camera"] = camera
+        if version:
+            qs_params["version"] = version
+        qs = urlencode(qs_params)
+        scenario_label = scenario_name or "(auto)"
+        tmpl = _load_template("viewer_tlr.html")
+        page = (
+            tmpl
+            .replace("__DATASET_ID__", esc(t4dataset_id))
+            .replace("__SCENARIO_NAME__", esc(scenario_label))
+            .replace("__FRAME_INDEX__", str(frame_index))
+            .replace("__QS__", qs)
+        )
+        return HTMLResponse(content=page, media_type="text/html; charset=utf-8")
+
     @app.post("/render", response_model=RenderResponse)
     def render_post(body: RenderRequest):
         """Render a single frame and return base64-encoded PNG images.
@@ -2735,6 +3095,37 @@ def _build_app(
 # CLI entry point
 # ---------------------------------------------------------------------------
 
+_ENV_PREFIX = "T4_SERVER_"
+
+
+def _env_key(name: str) -> str:
+    return f"{_ENV_PREFIX}{name}"
+
+
+def _set_server_runtime_env(args) -> None:
+    """Expose app-construction settings for uvicorn worker subprocesses."""
+    os.environ[_env_key("DATA_DIR")] = str(Path(args.data_dir).expanduser().resolve())
+    os.environ[_env_key("SEARCH_DEPTH")] = str(args.search_depth)
+    os.environ[_env_key("TIER4_CACHE")] = str(args.tier4_cache)
+    os.environ[_env_key("DATASET_PATH_CACHE_TTL")] = str(args.dataset_path_cache_ttl)
+    os.environ[_env_key("VISIBILITY_MODE")] = str(args.visibility_mode)
+
+
+def create_app_from_env():
+    """Uvicorn app factory used for multi-worker and reload mode."""
+    data_dir = Path(os.environ.get(_env_key("DATA_DIR"), "./t4datasets")).expanduser().resolve()
+    search_depth = int(os.environ.get(_env_key("SEARCH_DEPTH"), "1"))
+    tier4_cache_size = int(os.environ.get(_env_key("TIER4_CACHE"), "8"))
+    dataset_path_cache_ttl_s = float(os.environ.get(_env_key("DATASET_PATH_CACHE_TTL"), "30.0"))
+    visibility_mode = os.environ.get(_env_key("VISIBILITY_MODE"), "public")
+    return _build_app(
+        data_dir=data_dir,
+        search_depth=search_depth,
+        tier4_cache_size=tier4_cache_size,
+        dataset_path_cache_ttl_s=dataset_path_cache_ttl_s,
+        visibility_mode=visibility_mode,
+    )
+
 def _parse_args(argv=None):
     parser = argparse.ArgumentParser(
         description="Serve the T4 Visualizer render API over HTTP."
@@ -2754,6 +3145,10 @@ def _parse_args(argv=None):
     parser.add_argument(
         "--port", type=int, default=8000, metavar="PORT",
         help="Bind port (default: 8000).",
+    )
+    parser.add_argument(
+        "--workers", type=int, default=1, metavar="N",
+        help="Number of uvicorn worker processes (default: 1).",
     )
     parser.add_argument(
         "--tier4-cache", type=int, default=8, metavar="N",
@@ -2779,7 +3174,12 @@ def _parse_args(argv=None):
             "'public' redacts sensitive host paths; 'debug' exposes internals."
         ),
     )
-    return parser.parse_args(argv)
+    args = parser.parse_args(argv)
+    if args.workers < 1:
+        parser.error("--workers must be >= 1")
+    if args.reload and args.workers != 1:
+        parser.error("--reload cannot be used together with --workers > 1")
+    return args
 
 
 def main(argv=None):
@@ -2801,6 +3201,7 @@ def main(argv=None):
         data_dir.mkdir(parents=True, exist_ok=True)
     print(f"  Data directory : {data_dir}")
     print(f"  Search depth   : {args.search_depth}")
+    print(f"  Workers        : {args.workers}")
     print(f"  Tier4 cache    : {args.tier4_cache} datasets")
     print(f"  Visibility mode: {args.visibility_mode}")
     ttl = args.dataset_path_cache_ttl
@@ -2810,18 +3211,14 @@ def main(argv=None):
     )
     print(f"  Listening on   : http://{args.host}:{args.port}")
 
-    app = _build_app(
-        data_dir=data_dir,
-        search_depth=args.search_depth,
-        tier4_cache_size=args.tier4_cache,
-        dataset_path_cache_ttl_s=ttl,
-        visibility_mode=args.visibility_mode,
-    )
+    _set_server_runtime_env(args)
 
     uvicorn.run(
-        app,
+        "t4_visualizer.server:create_app_from_env",
+        factory=True,
         host=args.host,
         port=args.port,
+        workers=args.workers,
         reload=args.reload,
     )
 

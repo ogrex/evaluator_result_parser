@@ -4,6 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>T4 Dataset Browser</title>
+  <link rel="icon" href="/static/favicon.svg" type="image/svg+xml">
   <style>
     :root{
       color-scheme: light dark;
@@ -85,7 +86,10 @@
         <div id="detailsState" class="empty">Select a dataset from the left.</div>
         <div id="detailsPanel" style="display:none">
           <div class="row"><div class="k">dataset_id</div><div id="dId" class="v"></div></div>
+          <div class="row"><div class="k">kind</div><div id="dKind" class="v"></div></div>
           <div class="row"><div class="k">availability</div><div id="dAvail" class="v"></div></div>
+          <div class="row"><div class="k">cameras</div><div id="dCams" class="v"></div></div>
+          <div class="row"><div class="k">annotations</div><div id="dAnn" class="v"></div></div>
           <div class="row"><div class="k">dataset_path</div><div id="dPath" class="v"></div></div>
           <div class="row"><div class="k">quick links</div><div id="dLinks" class="v"></div></div>
         </div>
@@ -138,6 +142,7 @@
       dataDir: "",
       datasets: [],
       selectedId: null,
+      selectedProfile: null,
       scenarios: [],
       selectedScenario: null,
       scenarioMeta: { total_scenarios: 0, total_frames: 0, min_frames: 0, max_frames: 0 }
@@ -177,20 +182,36 @@
       return data;
     }
 
-    function renderDetails({ id, avail, path }){
+    function renderDetails({ id, avail, path, profile }){
       el("detailsState").style.display = "none";
       el("detailsPanel").style.display = "block";
       el("dId").innerHTML = `<code>${id}</code>`;
+      el("dKind").innerHTML = profile && profile.kind
+        ? `<span class="pill">${profile.kind}</span>`
+        : '<span class="muted">(unknown)</span>';
       el("dAvail").innerHTML = avail ? '<span class="status ok">available</span>' : '<span class="status warn">not found</span>';
+      const cams = profile && Array.isArray(profile.camera_channels) ? profile.camera_channels : [];
+      const ann2d = profile ? Number(profile.object_ann_count || 0) : 0;
+      const ann3d = profile ? Number(profile.sample_annotation_count || 0) : 0;
+      el("dCams").innerHTML = cams.length ? cams.map((c) => `<code>${c}</code>`).join(" · ") : '<span class="muted">(none)</span>';
+      el("dAnn").innerHTML = `<code>object_ann=${ann2d}</code> · <code>sample_annotation=${ann3d}</code>`;
       el("dPath").innerHTML = path
         ? `<code style="display:block;max-width:100%;overflow:auto;white-space:nowrap">${path}</code>`
         : '<span class="muted">(none)</span>';
       const qs = `?t4dataset_id=${encodeURIComponent(id)}`;
-      el("dLinks").innerHTML =
-        `<a href="/datasets/${encodeURIComponent(id)}/availability" target="_blank" rel="noopener">availability</a> · ` +
-        `<a href="/datasets/${encodeURIComponent(id)}/scenarios" target="_blank" rel="noopener">scenarios</a> · ` +
-        `<a href="/render/html${qs}&scenario_name=...&frame_index=0" target="_blank" rel="noopener">render/html template</a> · ` +
-        `<a href="/viewer/three${qs}&scenario_name=...&frame_index=0" target="_blank" rel="noopener">3d template</a>`;
+      const links = [
+        `<a href="/datasets/${encodeURIComponent(id)}/availability" target="_blank" rel="noopener">availability</a>`,
+        `<a href="/datasets/${encodeURIComponent(id)}/profile" target="_blank" rel="noopener">profile</a>`,
+        `<a href="/datasets/${encodeURIComponent(id)}/scenarios" target="_blank" rel="noopener">scenarios</a>`,
+        `<a href="/render/html${qs}&scenario_name=...&frame_index=0" target="_blank" rel="noopener">render/html template</a>`
+      ];
+      if (profile && profile.supports && profile.supports.tlr) {
+        links.push(`<a href="/viewer/tlr${qs}&scenario_name=...&frame_index=0" target="_blank" rel="noopener">tlr template</a>`);
+      }
+      if (profile && profile.supports && profile.supports.three) {
+        links.push(`<a href="/viewer/three${qs}&scenario_name=...&frame_index=0" target="_blank" rel="noopener">3d template</a>`);
+      }
+      el("dLinks").innerHTML = links.join(" · ");
     }
 
     function showDetailsError(err, id){
@@ -267,14 +288,16 @@
         if (!rows.length){
           tbody.innerHTML = `<tr><td colspan="4" class="muted">No frame rows in selected window.</td></tr>`;
         } else {
+          const supports = (state.selectedProfile && state.selectedProfile.supports) || {};
           tbody.innerHTML = rows.map((f) =>
             `<tr>
               <td>${f.frame_index ?? ""}</td>
               <td>${f.timestamp_us ?? ""}</td>
               <td class="mono">${f.sample_token ?? ""}</td>
               <td>
-                <a href="/render/html?t4dataset_id=${encodeURIComponent(state.selectedId)}&scenario_name=${encodeURIComponent(state.selectedScenario)}&frame_index=${encodeURIComponent(String(f.frame_index ?? 0))}" target="_blank" rel="noopener">render</a> ·
-                <a href="/viewer/three?t4dataset_id=${encodeURIComponent(state.selectedId)}&scenario_name=${encodeURIComponent(state.selectedScenario)}&frame_index=${encodeURIComponent(String(f.frame_index ?? 0))}" target="_blank" rel="noopener">3d</a>
+                <a href="/render/html?t4dataset_id=${encodeURIComponent(state.selectedId)}&scenario_name=${encodeURIComponent(state.selectedScenario)}&frame_index=${encodeURIComponent(String(f.frame_index ?? 0))}" target="_blank" rel="noopener">render</a>
+                ${supports.tlr ? ` · <a href="/viewer/tlr?t4dataset_id=${encodeURIComponent(state.selectedId)}&scenario_name=${encodeURIComponent(state.selectedScenario)}&frame_index=${encodeURIComponent(String(f.frame_index ?? 0))}" target="_blank" rel="noopener">tlr</a>` : ""}
+                ${supports.three ? ` · <a href="/viewer/three?t4dataset_id=${encodeURIComponent(state.selectedId)}&scenario_name=${encodeURIComponent(state.selectedScenario)}&frame_index=${encodeURIComponent(String(f.frame_index ?? 0))}" target="_blank" rel="noopener">3d</a>` : ""}
               </td>
             </tr>`
           ).join("");
@@ -303,6 +326,7 @@
 
     async function selectDataset(id){
       state.selectedId = id;
+      state.selectedProfile = null;
       filterDatasets();
 
       el("detailsState").className = "loading";
@@ -323,7 +347,12 @@
 
       try {
         const avail = await getJson(`/datasets/${encodeURIComponent(id)}/availability`);
-        renderDetails({ id, avail: !!avail.available, path: avail.dataset_path || "" });
+        let profile = null;
+        try {
+          profile = await getJson(`/datasets/${encodeURIComponent(id)}/profile`);
+        } catch (_) {}
+        state.selectedProfile = profile;
+        renderDetails({ id, avail: !!avail.available, path: avail.dataset_path || "", profile });
       } catch (err) {
         showDetailsError(err, id);
       }
