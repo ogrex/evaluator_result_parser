@@ -352,11 +352,25 @@ try:
         category_token: str = ""
         automatic_annotation: bool = False
 
+    class TlrFrameViewOut(BaseModel):
+        camera: str
+        sample_token: str
+        sample_data_token: str
+        timestamp_us: int
+        image_width: int
+        image_height: int
+        image_jpeg_base64: str
+        annotation_count: int = 0
+        annotations: List[TlrFrameAnnotationOut] = _Field(default_factory=list)
+
     class TlrFrameResponse(BaseModel):
         t4dataset_id: str
         scenario_name: str
         frame_index: int
         total_frames: int
+        logical_frame_index: int = 0
+        total_logical_frames: int = 0
+        frame_mode: str = "sample"
         sample_token: str
         timestamp_us: int
         camera: str
@@ -366,6 +380,7 @@ try:
         image_jpeg_base64: str
         annotation_count: int = 0
         annotations: List[TlrFrameAnnotationOut] = _Field(default_factory=list)
+        views: List[TlrFrameViewOut] = _Field(default_factory=list)
 
     class CameraOverlayExtrasBody(BaseModel):
         """Optional GT/EST boxes (same schema as viewer ``bbox_layers`` postMessage) to project onto the image."""
@@ -827,6 +842,233 @@ def _build_app(
         )
         return ranked[0]
 
+    def _scenario_sample_rows(t4, scenario_name: str) -> List[Any]:
+        scenes = list(getattr(t4, "scene", []) or [])
+        scene_row = next(
+            (row for row in scenes if str(_record_get(row, "name", "") or "") == scenario_name),
+            None,
+        )
+        if scene_row is None:
+            _public_error(
+                404,
+                "scenario_not_found",
+                f"Scenario '{scenario_name}' was not found.",
+                hint="Call GET /datasets/{id}/scenarios to inspect valid scenario names.",
+            )
+
+        ordered: List[Any] = []
+        seen: set[str] = set()
+        cur_token = str(_record_get(scene_row, "first_sample_token", "") or "")
+        while cur_token:
+            if cur_token in seen:
+                break
+            try:
+                row = t4.get("sample", cur_token)
+            except Exception:
+                row = None
+            if row is None:
+                break
+            ordered.append(row)
+            seen.add(cur_token)
+            cur_token = str(_record_get(row, "next", "") or "")
+        if ordered:
+            return ordered
+
+        samples = list(getattr(t4, "sample", []) or [])
+        scene_token = str(_record_get(scene_row, "token", "") or "")
+        fallback = [
+            row
+            for row in samples
+            if str(_record_get(row, "scene_token", "") or "") == scene_token
+        ]
+        fallback.sort(key=lambda row: int(_record_get(row, "timestamp", 0) or 0))
+        out: List[Any] = []
+        for row in fallback:
+            token = str(_record_get(row, "token", "") or "")
+            if not token:
+                continue
+            try:
+                sample = t4.get("sample", token)
+            except Exception:
+                sample = row
+            out.append(sample)
+        return out
+
+    def _sample_camera_names(t4, sample) -> List[str]:
+        from t4_visualizer.visualize import list_camera_channels
+
+        try:
+            return list_camera_channels(t4, sample)
+        except Exception:
+            return []
+
+    def _sample_primary_camera(t4, sample) -> str:
+        channels = _sample_camera_names(t4, sample)
+        if not channels:
+            return ""
+        return channels[0]
+
+    def _tlr_logical_frames(t4, scenario_name: str) -> List[List[Any]]:
+        ordered_samples = _scenario_sample_rows(t4, scenario_name)
+        if not ordered_samples:
+            return []
+
+        primary_channels = [_sample_primary_camera(t4, sample) for sample in ordered_samples]
+        valid_channels = [ch for ch in primary_channels if ch]
+        unique_channels = sorted(set(valid_channels))
+        all_single_camera = all(len(_sample_camera_names(t4, sample)) == 1 for sample in ordered_samples)
+        all_traffic_light = bool(valid_channels) and all("TRAFFIC_LIGHT" in ch.upper() for ch in valid_channels)
+
+        if not (all_single_camera and all_traffic_light and len(unique_channels) >= 2):
+            return [[sample] for sample in ordered_samples]
+
+        by_camera: Dict[str, List[Any]] = {cam: [] for cam in unique_channels}
+        for sample, cam in zip(ordered_samples, primary_channels):
+            if cam:
+                by_camera.setdefault(cam, []).append(sample)
+
+        lengths = [len(rows) for rows in by_camera.values() if rows]
+        if not lengths:
+            return [[sample] for sample in ordered_samples]
+
+        logical_count = min(lengths)
+        pair_gap_us = 50_000
+        logical_frames: List[List[Any]] = []
+        for idx in range(logical_count):
+            frame_samples: List[Any] = []
+            timestamps: List[int] = []
+            for cam in unique_channels:
+                rows = by_camera.get(cam) or []
+                if idx >= len(rows):
+                    continue
+                sample = rows[idx]
+                frame_samples.append(sample)
+                timestamps.append(int(_record_get(sample, "timestamp", 0) or 0))
+            if not frame_samples:
+                continue
+            if timestamps and (max(timestamps) - min(timestamps) > pair_gap_us):
+                # If camera streams drift too much, fall back to raw per-sample frames.
+                return [[sample] for sample in ordered_samples]
+            frame_samples.sort(
+                key=lambda sample: (
+                    0 if "FAR" in _sample_primary_camera(t4, sample).upper() else 1,
+                    _sample_primary_camera(t4, sample),
+                    int(_record_get(sample, "timestamp", 0) or 0),
+                )
+            )
+            logical_frames.append(frame_samples)
+
+        if logical_frames and sum(len(frame) for frame in logical_frames) >= len(ordered_samples):
+            return logical_frames
+
+        return logical_frames or [[sample] for sample in ordered_samples]
+
+    def _tlr_annotations_for_sample_data(t4, sample_data_token: str, boxes_2d) -> List[TlrFrameAnnotationOut]:
+        category_names = _category_name_map(t4)
+        annotations: List[TlrFrameAnnotationOut] = []
+        object_ann_rows = list(getattr(t4, "object_ann", []) or [])
+        for row in object_ann_rows:
+            if str(_record_get(row, "sample_data_token", "") or "") != str(sample_data_token):
+                continue
+            bbox = _record_get(row, "bbox", None)
+            if not isinstance(bbox, (list, tuple)) or len(bbox) != 4:
+                continue
+            try:
+                x0, y0, x1, y1 = [float(v) for v in bbox]
+            except (TypeError, ValueError):
+                continue
+            category_token = str(_record_get(row, "category_token", "") or "")
+            label = category_names.get(category_token, category_token)
+            annotations.append(
+                TlrFrameAnnotationOut(
+                    x0=x0,
+                    y0=y0,
+                    x1=x1,
+                    y1=y1,
+                    label=label,
+                    instance_token=str(_record_get(row, "instance_token", "") or ""),
+                    category_token=category_token,
+                    automatic_annotation=bool(_record_get(row, "automatic_annotation", False)),
+                )
+            )
+
+        if annotations:
+            return annotations
+
+        for idx, box in enumerate(list(boxes_2d or [])):
+            roi = getattr(box, "roi", None)
+            if not isinstance(roi, (list, tuple)) or len(roi) != 4:
+                continue
+            try:
+                x0, y0, x1, y1 = [float(v) for v in roi]
+            except (TypeError, ValueError):
+                continue
+            annotations.append(
+                TlrFrameAnnotationOut(
+                    x0=x0,
+                    y0=y0,
+                    x1=x1,
+                    y1=y1,
+                    label=str(getattr(box, "label", "") or ""),
+                    instance_token=str(idx),
+                    category_token="",
+                    automatic_annotation=False,
+                )
+            )
+        return annotations
+
+    def _build_tlr_view(t4, sample, camera_name: str) -> TlrFrameViewOut:
+        from PIL import Image
+
+        sample_data = _record_get(sample, "data", {}) or {}
+        sample_data_token = sample_data.get(camera_name)
+        if sample_data_token is None:
+            _public_error(
+                404,
+                "sample_data_not_found",
+                f"Camera '{camera_name}' is not available in this frame.",
+            )
+
+        try:
+            data_path, boxes_2d, _ = t4.get_sample_data(
+                sample_data_token,
+                as_3d=False,
+                as_sensor_coord=True,
+            )
+        except Exception as exc:
+            _safe_error(
+                500,
+                "tlr_frame_load_failed",
+                "Failed to load TLR camera frame.",
+                exc=exc,
+            )
+
+        annotations = _tlr_annotations_for_sample_data(t4, str(sample_data_token), boxes_2d)
+
+        try:
+            with Image.open(data_path) as img:
+                width, height = img.size
+            image_bytes = Path(data_path).read_bytes()
+        except Exception as exc:
+            _safe_error(
+                500,
+                "tlr_image_read_failed",
+                "Failed to read TLR camera image.",
+                exc=exc,
+            )
+
+        return TlrFrameViewOut(
+            camera=camera_name,
+            sample_token=str(_record_get(sample, "token", "") or ""),
+            sample_data_token=str(sample_data_token),
+            timestamp_us=int(_record_get(sample, "timestamp", 0) or 0),
+            image_width=int(width),
+            image_height=int(height),
+            image_jpeg_base64=base64.b64encode(image_bytes).decode(),
+            annotation_count=len(annotations),
+            annotations=annotations,
+        )
+
     def _dataset_profile_payload(
         t4dataset_id: str,
         dataset_path: Path,
@@ -899,121 +1141,61 @@ def _build_app(
         camera: Optional[str],
         version: Optional[str],
     ) -> TlrFrameResponse:
-        from PIL import Image
-        from t4_visualizer.visualize import list_camera_channels, list_scene_summaries
+        from t4_visualizer.visualize import list_scene_summaries
 
         resolved_scenario = _resolve_viewer_scenario_name(t4, scenario_name)
-        sample = _get_scenario_sample(t4, resolved_scenario, frame_index)
-        available_cameras = list_camera_channels(t4, sample)
-        if not available_cameras:
+        logical_frames = _tlr_logical_frames(t4, resolved_scenario)
+        if not logical_frames:
+            _public_error(
+                404,
+                "frame_index_out_of_range",
+                "No TLR frames were found for this scenario.",
+            )
+        if frame_index < 0 or frame_index >= len(logical_frames):
+            _public_error(
+                400,
+                "frame_index_out_of_range",
+                f"Frame index {frame_index} is out of range (0..{len(logical_frames) - 1}).",
+            )
+        samples_for_frame = logical_frames[frame_index]
+        views: List[TlrFrameViewOut] = []
+        available_cameras: List[str] = []
+        for sample in samples_for_frame:
+            for cam_name in _sample_camera_names(t4, sample):
+                if cam_name not in available_cameras:
+                    available_cameras.append(cam_name)
+                views.append(_build_tlr_view(t4, sample, cam_name))
+        if not available_cameras or not views:
             _public_error(
                 404,
                 "camera_not_found",
                 "No camera channels are available for this frame.",
             )
         selected_camera = _preferred_tlr_camera(available_cameras, camera)
-        sample_data_token = sample.data.get(selected_camera)
-        if sample_data_token is None:
-            _public_error(
-                404,
-                "sample_data_not_found",
-                f"Camera '{selected_camera}' is not available in this frame.",
-            )
-
-        try:
-            data_path, boxes_2d, _ = t4.get_sample_data(
-                sample_data_token,
-                as_3d=False,
-                as_sensor_coord=True,
-            )
-        except Exception as exc:
-            _safe_error(
-                500,
-                "tlr_frame_load_failed",
-                "Failed to load TLR camera frame.",
-                exc=exc,
-            )
-
-        category_names = _category_name_map(t4)
-        annotations: List[TlrFrameAnnotationOut] = []
-        object_ann_rows = list(getattr(t4, "object_ann", []) or [])
-        for row in object_ann_rows:
-            if str(_record_get(row, "sample_data_token", "") or "") != str(sample_data_token):
-                continue
-            bbox = _record_get(row, "bbox", None)
-            if not isinstance(bbox, (list, tuple)) or len(bbox) != 4:
-                continue
-            try:
-                x0, y0, x1, y1 = [float(v) for v in bbox]
-            except (TypeError, ValueError):
-                continue
-            category_token = str(_record_get(row, "category_token", "") or "")
-            label = category_names.get(category_token, category_token)
-            annotations.append(
-                TlrFrameAnnotationOut(
-                    x0=x0,
-                    y0=y0,
-                    x1=x1,
-                    y1=y1,
-                    label=label,
-                    instance_token=str(_record_get(row, "instance_token", "") or ""),
-                    category_token=category_token,
-                    automatic_annotation=bool(_record_get(row, "automatic_annotation", False)),
-                )
-            )
-
-        if not annotations:
-            for idx, box in enumerate(list(boxes_2d or [])):
-                roi = getattr(box, "roi", None)
-                if not isinstance(roi, (list, tuple)) or len(roi) != 4:
-                    continue
-                try:
-                    x0, y0, x1, y1 = [float(v) for v in roi]
-                except (TypeError, ValueError):
-                    continue
-                annotations.append(
-                    TlrFrameAnnotationOut(
-                        x0=x0,
-                        y0=y0,
-                        x1=x1,
-                        y1=y1,
-                        label=str(getattr(box, "label", "") or ""),
-                        instance_token=str(idx),
-                        category_token="",
-                        automatic_annotation=False,
-                    )
-                )
+        primary_view = next((view for view in views if view.camera == selected_camera), views[0])
 
         scenes = list_scene_summaries(t4)
         scene_meta = next((s for s in scenes if s.get("name") == resolved_scenario), None)
-        total_frames = int(scene_meta.get("nbr_samples") or 0) if scene_meta else 0
-
-        try:
-            with Image.open(data_path) as img:
-                width, height = img.size
-            image_bytes = Path(data_path).read_bytes()
-        except Exception as exc:
-            _safe_error(
-                500,
-                "tlr_image_read_failed",
-                "Failed to read TLR camera image.",
-                exc=exc,
-            )
+        raw_total_frames = int(scene_meta.get("nbr_samples") or 0) if scene_meta else len(logical_frames)
 
         return TlrFrameResponse(
             t4dataset_id=t4dataset_id,
             scenario_name=resolved_scenario,
             frame_index=frame_index,
-            total_frames=total_frames,
-            sample_token=str(sample.token),
-            timestamp_us=int(sample.timestamp),
-            camera=selected_camera,
+            total_frames=len(logical_frames),
+            logical_frame_index=frame_index,
+            total_logical_frames=len(logical_frames),
+            frame_mode="paired" if len(samples_for_frame) > 1 else ("logical" if len(logical_frames) != raw_total_frames else "sample"),
+            sample_token=primary_view.sample_token,
+            timestamp_us=primary_view.timestamp_us,
+            camera=primary_view.camera,
             available_cameras=available_cameras,
-            image_width=int(width),
-            image_height=int(height),
-            image_jpeg_base64=base64.b64encode(image_bytes).decode(),
-            annotation_count=len(annotations),
-            annotations=annotations,
+            image_width=primary_view.image_width,
+            image_height=primary_view.image_height,
+            image_jpeg_base64=primary_view.image_jpeg_base64,
+            annotation_count=primary_view.annotation_count,
+            annotations=primary_view.annotations,
+            views=views,
         )
 
     def _resolve_viewer_scenario_name(t4, scenario_name: Optional[str]) -> str:

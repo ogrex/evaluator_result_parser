@@ -18,7 +18,7 @@
         var(--bg);
       font-family:ui-sans-serif,system-ui,-apple-system,Segoe UI,sans-serif;
     }
-    .wrap{max-width:1600px;margin:0 auto;padding:1rem}
+    .wrap{max-width:1800px;margin:0 auto;padding:1rem}
     .hero{display:flex;justify-content:space-between;align-items:end;gap:1rem;margin-bottom:1rem}
     h1{margin:0;font-size:1.4rem}
     .muted{color:var(--muted)}
@@ -27,9 +27,16 @@
       box-shadow:0 10px 30px var(--shadow);
     }
     .toolbar{display:flex;flex-wrap:wrap;gap:.6rem;align-items:center;margin-bottom:1rem}
-    .toolbar input,.toolbar select,.toolbar button,.toolbar a{
+    .toolbar input,.toolbar button,.toolbar a{
       border:1px solid var(--line); border-radius:10px; padding:.6rem .75rem; background:#fffaf2;
       color:var(--text); text-decoration:none; font:inherit;
+    }
+    .toolbar .frame-range{
+      flex:1 1 320px; min-width:220px; accent-color:var(--accent); padding:.1rem 0; background:transparent; border:none;
+    }
+    .toolbar .speed-select{
+      border:1px solid var(--line); border-radius:10px; padding:.6rem .75rem; background:#fffaf2;
+      color:var(--text); font:inherit;
     }
     .toolbar button{cursor:pointer;background:var(--accent);border-color:var(--accent);color:#fff7ef}
     .toolbar button[disabled]{opacity:.45;cursor:not-allowed}
@@ -37,18 +44,26 @@
     .stat{padding:.75rem;border:1px solid var(--line);border-radius:12px;background:#fffaf2}
     .stat .k{font-size:.8rem;color:var(--muted);text-transform:uppercase;letter-spacing:.04em}
     .stat .v{font-weight:700;margin-top:.25rem;word-break:break-word}
-    .viewer-grid{display:grid;grid-template-columns:minmax(0,1fr) 320px;gap:1rem}
+    .viewer-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(420px,1fr));gap:1rem}
+    .view-card{display:flex;flex-direction:column;gap:.85rem}
+    .view-head{display:flex;justify-content:space-between;gap:1rem;align-items:center}
+    .view-title{font-weight:700;font-size:1rem}
     .frame-shell{position:relative;border:1px solid var(--line);border-radius:16px;overflow:hidden;background:#221d17}
     .frame-shell img{display:block;width:100%;height:auto}
     .frame-shell svg{position:absolute;inset:0;width:100%;height:100%}
-    .side{display:flex;flex-direction:column;gap:1rem}
-    .anno-list{max-height:70vh;overflow:auto;border:1px solid var(--line);border-radius:12px;background:#fffaf2}
+    .anno-list{max-height:28rem;overflow:auto;border:1px solid var(--line);border-radius:12px;background:#fffaf2}
     .anno-row{padding:.75rem;border-bottom:1px solid var(--line)}
     .anno-row:last-child{border-bottom:none}
     .anno-head{display:flex;justify-content:space-between;gap:.5rem;font-weight:700}
     .pill{display:inline-block;padding:.15rem .55rem;border-radius:999px;background:#f7e7d6;color:var(--accent);font-size:.78rem}
+    .camera-strip{display:flex;gap:.5rem;flex-wrap:wrap}
+    .camera-chip{padding:.3rem .7rem;border-radius:999px;border:1px solid var(--line);background:#fffaf2;font-size:.82rem}
     .empty,.error,.loading{padding:1rem;border:1px dashed var(--line);border-radius:12px;color:var(--muted)}
     .error{color:var(--warn)}
+    .loading-inline{
+      margin-bottom:1rem; padding:.55rem .8rem; border:1px solid var(--line); border-radius:10px;
+      background:#fffaf2; color:var(--muted); min-height:44px; visibility:hidden;
+    }
     .footer-links{display:flex;gap:.75rem;flex-wrap:wrap;margin-top:.75rem}
     .footer-links a{color:var(--accent);text-decoration:none}
     @media (max-width:1100px){.viewer-grid{grid-template-columns:1fr}}
@@ -59,7 +74,7 @@
     <div class="hero">
       <div>
         <h1>Traffic Light Viewer</h1>
-        <div class="muted">2D ROI viewer for TLR-style local T4 datasets.</div>
+        <div class="muted">Paired 2D ROI viewer for TLR-style local T4 datasets.</div>
       </div>
       <div class="muted"><code id="heroDataset">__DATASET_ID__</code></div>
     </div>
@@ -67,37 +82,36 @@
     <section class="card">
       <div class="toolbar">
         <button id="prevBtn">Prev</button>
+        <button id="playBtn">Play</button>
+        <input id="frameSlider" class="frame-range" type="range" min="0" max="0" value="__FRAME_INDEX__">
         <button id="nextBtn">Next</button>
         <input id="frameInput" type="number" min="0" value="__FRAME_INDEX__" style="width:8rem">
         <button id="jumpBtn">Jump</button>
-        <select id="cameraSelect"></select>
+        <select id="speedSelect" class="speed-select" aria-label="Playback speed">
+          <option value="500">2 fps</option>
+          <option value="250" selected>4 fps</option>
+          <option value="125">8 fps</option>
+        </select>
         <a id="jsonLink" href="#">Frame JSON</a>
       </div>
 
       <div id="stateBox" class="loading">Loading frame...</div>
 
       <div id="content" style="display:none">
+        <div id="loadingInline" class="loading-inline">Loading frame...</div>
         <div class="meta">
+          <div class="stat"><div class="k">t4dataset_id</div><div class="v" id="datasetValue"></div></div>
           <div class="stat"><div class="k">Scenario</div><div class="v" id="scenarioValue">__SCENARIO_NAME__</div></div>
           <div class="stat"><div class="k">Frame</div><div class="v" id="frameValue"></div></div>
+          <div class="stat"><div class="k">Mode</div><div class="v" id="modeValue"></div></div>
           <div class="stat"><div class="k">Timestamp</div><div class="v" id="timestampValue"></div></div>
-          <div class="stat"><div class="k">Camera</div><div class="v" id="cameraValue"></div></div>
+          <div class="stat"><div class="k">Cameras</div><div class="v" id="cameraValue"></div></div>
           <div class="stat"><div class="k">Annotations</div><div class="v" id="countValue"></div></div>
           <div class="stat"><div class="k">Sample Token</div><div class="v" id="sampleValue"></div></div>
         </div>
 
-        <div class="viewer-grid">
-          <div class="frame-shell">
-            <img id="frameImage" alt="TLR frame">
-            <svg id="overlay" preserveAspectRatio="xMidYMid meet"></svg>
-          </div>
-          <div class="side">
-            <div class="card" style="padding:.85rem">
-              <div style="font-weight:700;margin-bottom:.5rem">Annotations</div>
-              <div id="annoList" class="anno-list"></div>
-            </div>
-          </div>
-        </div>
+        <div id="cameraStrip" class="camera-strip" style="margin-bottom:1rem"></div>
+        <div id="viewerGrid" class="viewer-grid"></div>
 
         <div class="footer-links">
           <a id="renderLink" href="#" target="_blank" rel="noopener">Open generic render</a>
@@ -114,11 +128,16 @@
       datasetId: initial.get("t4dataset_id") || "__DATASET_ID__",
       scenarioName: initial.get("scenario_name") || "",
       frameIndex: Number(initial.get("frame_index") || "0"),
-      camera: initial.get("camera") || "",
       version: initial.get("version") || "",
       totalFrames: 0
     };
 
+    let sliderTimer = null;
+    let inFlightController = null;
+    let requestSeq = 0;
+    let hasLoadedOnce = false;
+    let playTimer = null;
+    let isPlaying = false;
     const el = (id) => document.getElementById(id);
 
     function frameApiUrl(){
@@ -126,7 +145,6 @@
       qs.set("t4dataset_id", state.datasetId);
       qs.set("frame_index", String(state.frameIndex));
       if (state.scenarioName) qs.set("scenario_name", state.scenarioName);
-      if (state.camera) qs.set("camera", state.camera);
       if (state.version) qs.set("version", state.version);
       return `/viewer/tlr/frame?${qs.toString()}`;
     }
@@ -136,26 +154,40 @@
       qs.set("t4dataset_id", state.datasetId);
       qs.set("frame_index", String(state.frameIndex));
       if (state.scenarioName) qs.set("scenario_name", state.scenarioName);
-      if (state.camera) qs.set("camera", state.camera);
       if (state.version) qs.set("version", state.version);
       return `/viewer/tlr?${qs.toString()}`;
     }
 
-    function renderOverlay(data){
-      const svg = el("overlay");
-      svg.setAttribute("viewBox", `0 0 ${data.image_width} ${data.image_height}`);
-      const rows = Array.isArray(data.annotations) ? data.annotations : [];
-      const colorForLabel = (label) => {
-        const key = String(label || "").trim().toLowerCase();
-        if (key === "red") return { stroke: "#ff4d4f", fill: "rgba(255,77,79,.88)", pill: "#ffe1e1", text: "#8a1113" };
-        if (key === "green") return { stroke: "#22c55e", fill: "rgba(34,197,94,.88)", pill: "#daf7e5", text: "#0f5c2d" };
-        if (key === "yellow" || key === "amber") return { stroke: "#f59e0b", fill: "rgba(245,158,11,.88)", pill: "#ffefcc", text: "#7a4900" };
-        return { stroke: "#ffb703", fill: "rgba(25,20,12,.82)", pill: "#f7e7d6", text: "#c55200" };
-      };
-      svg.innerHTML = rows.map((row, idx) => {
+    function colorForLabel(label) {
+      const key = String(label || "").trim().toLowerCase();
+      if (key === "red") return { stroke: "#ff4d4f", fill: "rgba(255,77,79,.88)", pill: "#ffe1e1", text: "#8a1113" };
+      if (key === "green") return { stroke: "#22c55e", fill: "rgba(34,197,94,.88)", pill: "#daf7e5", text: "#0f5c2d" };
+      if (key === "yellow" || key === "amber") return { stroke: "#f59e0b", fill: "rgba(245,158,11,.88)", pill: "#ffefcc", text: "#7a4900" };
+      return { stroke: "#ffb703", fill: "rgba(25,20,12,.82)", pill: "#f7e7d6", text: "#c55200" };
+    }
+
+    function formatTimestampUs(timestampUs) {
+      const ts = Number(timestampUs || 0);
+      if (!Number.isFinite(ts) || ts <= 0) return String(timestampUs || "");
+      const millis = ts / 1000;
+      const dt = new Date(millis);
+      if (Number.isNaN(dt.getTime())) return String(timestampUs || "");
+      const y = dt.getFullYear();
+      const m = String(dt.getMonth() + 1).padStart(2, "0");
+      const d = String(dt.getDate()).padStart(2, "0");
+      const hh = String(dt.getHours()).padStart(2, "0");
+      const mm = String(dt.getMinutes()).padStart(2, "0");
+      const ss = String(dt.getSeconds()).padStart(2, "0");
+      const micros = String(ts % 1000000).padStart(6, "0");
+      return `${y}-${m}-${d} ${hh}:${mm}:${ss}.${micros}`;
+    }
+
+    function renderView(view, idx){
+      const rows = Array.isArray(view.annotations) ? view.annotations : [];
+      const overlay = rows.map((row, annoIdx) => {
         const w = Math.max(0, Number(row.x1) - Number(row.x0));
         const h = Math.max(0, Number(row.y1) - Number(row.y0));
-        const label = `${row.label || "unknown"} #${idx + 1}`;
+        const label = `${row.label || "unknown"} #${annoIdx + 1}`;
         const color = colorForLabel(row.label);
         return `
           <g>
@@ -168,97 +200,218 @@
           </g>
         `;
       }).join("");
-
-      const annoList = el("annoList");
-      if (!rows.length) {
-        annoList.innerHTML = '<div class="empty">No TLR annotations on this frame.</div>';
-        return;
-      }
-      annoList.innerHTML = rows.map((row, idx) => `
-        <div class="anno-row">
-          <div class="anno-head">
-            <span>${row.label || "unknown"} #${idx + 1}</span>
-            <span class="pill" style="background:${colorForLabel(row.label).pill};color:${colorForLabel(row.label).text}">${row.automatic_annotation ? "auto" : "manual"}</span>
+      const annoHtml = rows.length ? rows.map((row, annoIdx) => {
+        const color = colorForLabel(row.label);
+        return `
+          <div class="anno-row">
+            <div class="anno-head">
+              <span>${row.label || "unknown"} #${annoIdx + 1}</span>
+              <span class="pill" style="background:${color.pill};color:${color.text}">${row.automatic_annotation ? "auto" : "manual"}</span>
+            </div>
+            <div class="muted">bbox: [${Math.round(row.x0)}, ${Math.round(row.y0)}] → [${Math.round(row.x1)}, ${Math.round(row.y1)}]</div>
+            <div class="muted">instance: ${row.instance_token || "-"}</div>
           </div>
-          <div class="muted">bbox: [${Math.round(row.x0)}, ${Math.round(row.y0)}] → [${Math.round(row.x1)}, ${Math.round(row.y1)}]</div>
-          <div class="muted">instance: ${row.instance_token || "-"}</div>
+        `;
+      }).join("") : '<div class="empty">No TLR annotations on this camera view.</div>';
+
+      return `
+        <div class="card view-card">
+          <div class="view-head">
+            <div>
+              <div class="view-title">${view.camera || `Camera ${idx + 1}`}</div>
+              <div class="muted">sample ${view.sample_token || "-"}</div>
+            </div>
+            <div class="pill">${rows.length} annos</div>
+          </div>
+          <div class="frame-shell">
+            <img alt="${view.camera || "TLR"} frame" src="data:image/jpeg;base64,${view.image_jpeg_base64}">
+            <svg preserveAspectRatio="xMidYMid meet" viewBox="0 0 ${view.image_width} ${view.image_height}">${overlay}</svg>
+          </div>
+          <div class="anno-list">${annoHtml}</div>
         </div>
-      `).join("");
+      `;
     }
 
     function syncControls(data){
       state.scenarioName = data.scenario_name || state.scenarioName;
-      state.frameIndex = Number(data.frame_index || 0);
-      state.totalFrames = Number(data.total_frames || 0);
-      state.camera = data.camera || "";
+      state.frameIndex = Number(data.logical_frame_index ?? data.frame_index ?? 0);
+      state.totalFrames = Number(data.total_logical_frames ?? data.total_frames ?? 0);
       el("frameInput").value = String(state.frameIndex);
+      el("frameSlider").value = String(state.frameIndex);
+      el("frameSlider").max = String(Math.max(0, state.totalFrames - 1));
       el("frameValue").textContent = `${state.frameIndex} / ${Math.max(0, state.totalFrames - 1)}`;
-      el("timestampValue").textContent = String(data.timestamp_us || "");
-      el("cameraValue").textContent = data.camera || "";
-      el("countValue").textContent = String(data.annotation_count || 0);
+      el("modeValue").textContent = String(data.frame_mode || "sample");
+      const rawTs = String(data.timestamp_us || "");
+      el("timestampValue").textContent = `${formatTimestampUs(data.timestamp_us)} (${rawTs})`;
+      el("cameraValue").textContent = Array.isArray(data.available_cameras) && data.available_cameras.length
+        ? data.available_cameras.join(", ")
+        : (data.camera || "");
+      const totalAnnos = (Array.isArray(data.views) ? data.views : []).reduce((sum, view) => sum + Number(view.annotation_count || 0), 0);
+      el("countValue").textContent = String(totalAnnos);
       el("sampleValue").textContent = data.sample_token || "";
       el("scenarioValue").textContent = data.scenario_name || "";
+      el("datasetValue").textContent = state.datasetId;
       el("heroDataset").textContent = state.datasetId;
-
-      const select = el("cameraSelect");
-      const cams = Array.isArray(data.available_cameras) ? data.available_cameras : [];
-      select.innerHTML = cams.map((cam) =>
-        `<option value="${cam}" ${cam === data.camera ? "selected" : ""}>${cam}</option>`
-      ).join("");
-
       el("prevBtn").disabled = state.frameIndex <= 0;
       el("nextBtn").disabled = state.totalFrames > 0 ? state.frameIndex >= state.totalFrames - 1 : false;
+      el("playBtn").textContent = isPlaying ? "Pause" : "Play";
       el("jsonLink").href = frameApiUrl();
 
       const renderQs = new URLSearchParams();
       renderQs.set("t4dataset_id", state.datasetId);
       renderQs.set("scenario_name", state.scenarioName);
       renderQs.set("frame_index", String(state.frameIndex));
-      renderQs.set("cameras", state.camera);
+      const cams = Array.isArray(data.available_cameras) ? data.available_cameras : [];
+      if (cams.length) renderQs.set("cameras", cams.join(","));
       el("renderLink").href = `/render/html?${renderQs.toString()}`;
 
+      const strip = el("cameraStrip");
+      strip.innerHTML = cams.map((cam) => `<div class="camera-chip">${cam}</div>`).join("");
       history.replaceState(null, "", pageUrl());
     }
 
+    function renderViews(data){
+      const views = Array.isArray(data.views) && data.views.length ? data.views : [data];
+      el("viewerGrid").innerHTML = views.map((view, idx) => renderView(view, idx)).join("");
+    }
+
     async function loadFrame(){
-      el("stateBox").className = "loading";
-      el("stateBox").style.display = "block";
-      el("content").style.display = "none";
-      el("stateBox").textContent = "Loading frame...";
+      const reqId = ++requestSeq;
+      if (inFlightController) inFlightController.abort();
+      inFlightController = new AbortController();
+      const inline = el("loadingInline");
+      if (!hasLoadedOnce) {
+        el("stateBox").className = "loading";
+        el("stateBox").style.display = "block";
+        el("content").style.display = "none";
+        el("stateBox").textContent = "Loading frame...";
+      } else {
+        inline.textContent = `Loading frame ${state.frameIndex}...`;
+        inline.style.visibility = "visible";
+      }
       try {
-        const res = await fetch(frameApiUrl(), { headers: { "Accept": "application/json" } });
+        const res = await fetch(frameApiUrl(), {
+          headers: { "Accept": "application/json" },
+          signal: inFlightController.signal,
+        });
         const data = await res.json();
+        if (reqId !== requestSeq) return;
         if (!res.ok) {
           throw new Error((data && (data.message || (data.detail && data.detail.message))) || `HTTP ${res.status}`);
         }
-        el("frameImage").src = `data:image/jpeg;base64,${data.image_jpeg_base64}`;
         syncControls(data);
-        renderOverlay(data);
+        renderViews(data);
+        hasLoadedOnce = true;
         el("stateBox").style.display = "none";
         el("content").style.display = "block";
+        inline.style.visibility = "hidden";
       } catch (err) {
+        if (err && err.name === "AbortError") return;
+        if (reqId !== requestSeq) return;
         el("stateBox").className = "error";
-        el("stateBox").textContent = `Failed to load frame: ${err.message}`;
+        if (!hasLoadedOnce) {
+          el("stateBox").textContent = `Failed to load frame: ${err.message}`;
+        } else {
+          inline.textContent = `Failed to load frame: ${err.message}`;
+          inline.style.visibility = "visible";
+        }
+      } finally {
+        if (reqId === requestSeq) {
+          inFlightController = null;
+        }
       }
     }
 
+    function scheduleSliderLoad(){
+      if (sliderTimer) window.clearTimeout(sliderTimer);
+      sliderTimer = window.setTimeout(() => {
+        sliderTimer = null;
+        loadFrame();
+      }, 120);
+    }
+
+    function stopPlayback(){
+      isPlaying = false;
+      if (playTimer) {
+        window.clearTimeout(playTimer);
+        playTimer = null;
+      }
+      el("playBtn").textContent = "Play";
+    }
+
+    function schedulePlaybackTick(){
+      if (!isPlaying) return;
+      const delay = Math.max(50, Number(el("speedSelect").value || "250"));
+      if (playTimer) window.clearTimeout(playTimer);
+      playTimer = window.setTimeout(async () => {
+        if (!isPlaying) return;
+        if (state.totalFrames > 0 && state.frameIndex >= state.totalFrames - 1) {
+          stopPlayback();
+          return;
+        }
+        state.frameIndex += 1;
+        el("frameSlider").value = String(state.frameIndex);
+        el("frameInput").value = String(state.frameIndex);
+        await loadFrame();
+        schedulePlaybackTick();
+      }, delay);
+    }
+
+    function togglePlayback(){
+      if (isPlaying) {
+        stopPlayback();
+        return;
+      }
+      if (state.totalFrames > 0 && state.frameIndex >= state.totalFrames - 1) {
+        state.frameIndex = 0;
+        el("frameSlider").value = "0";
+        el("frameInput").value = "0";
+      }
+      isPlaying = true;
+      el("playBtn").textContent = "Pause";
+      schedulePlaybackTick();
+    }
+
     el("prevBtn").addEventListener("click", () => {
+      stopPlayback();
       if (state.frameIndex <= 0) return;
       state.frameIndex -= 1;
       loadFrame();
     });
     el("nextBtn").addEventListener("click", () => {
+      stopPlayback();
       state.frameIndex += 1;
       loadFrame();
     });
+    el("playBtn").addEventListener("click", () => {
+      togglePlayback();
+    });
     el("jumpBtn").addEventListener("click", () => {
+      stopPlayback();
       const value = Number(el("frameInput").value || "0");
       state.frameIndex = Math.max(0, value);
       loadFrame();
     });
-    el("cameraSelect").addEventListener("change", (ev) => {
-      state.camera = ev.target.value || "";
+    el("frameInput").addEventListener("change", () => {
+      stopPlayback();
+      const value = Number(el("frameInput").value || "0");
+      state.frameIndex = Math.max(0, value);
       loadFrame();
+    });
+    el("frameSlider").addEventListener("input", (ev) => {
+      stopPlayback();
+      state.frameIndex = Math.max(0, Number(ev.target.value || "0"));
+      el("frameInput").value = String(state.frameIndex);
+      scheduleSliderLoad();
+    });
+    el("frameSlider").addEventListener("change", (ev) => {
+      stopPlayback();
+      state.frameIndex = Math.max(0, Number(ev.target.value || "0"));
+      el("frameInput").value = String(state.frameIndex);
+      loadFrame();
+    });
+    el("speedSelect").addEventListener("change", () => {
+      if (isPlaying) schedulePlaybackTick();
     });
 
     loadFrame();

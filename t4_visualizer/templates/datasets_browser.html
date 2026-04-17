@@ -85,7 +85,7 @@
         <div class="title">Dataset Details</div>
         <div id="detailsState" class="empty">Select a dataset from the left.</div>
         <div id="detailsPanel" style="display:none">
-          <div class="row"><div class="k">dataset_id</div><div id="dId" class="v"></div></div>
+          <div class="row"><div class="k">t4dataset_id</div><div id="dId" class="v"></div></div>
           <div class="row"><div class="k">kind</div><div id="dKind" class="v"></div></div>
           <div class="row"><div class="k">availability</div><div id="dAvail" class="v"></div></div>
           <div class="row"><div class="k">cameras</div><div id="dCams" class="v"></div></div>
@@ -127,6 +127,7 @@
           <button class="retry" id="loadFramesBtn" disabled>Load</button>
         </div>
         <div id="frameState" class="empty">Select a scenario action to load frame summaries.</div>
+        <div id="frameMeta" class="tiny" style="display:none;margin:.5rem 0"></div>
         <div id="framePanel" style="display:none;max-height:42vh;overflow:auto">
           <table>
             <thead><tr><th>idx</th><th>timestamp_us</th><th>sample_token</th><th>render</th></tr></thead>
@@ -276,6 +277,7 @@
       const limit = Math.max(1, Math.min(500, Number(el("frameLimit").value || 50)));
       el("frameState").className = "loading";
       el("frameState").style.display = "block";
+      el("frameMeta").style.display = "none";
       el("framePanel").style.display = "none";
       el("frameState").textContent =
         `Loading frames for ${state.selectedScenario} (offset=${offset}, limit=${limit})...`;
@@ -302,9 +304,13 @@
             </tr>`
           ).join("");
         }
+        el("frameMeta").textContent =
+          `t4dataset_id=${state.selectedId} scenario_name=${state.selectedScenario}`;
+        el("frameMeta").style.display = "block";
         el("frameState").style.display = "none";
         el("framePanel").style.display = "block";
       } catch (err) {
+        el("frameMeta").style.display = "none";
         el("framePanel").style.display = "none";
         el("frameState").className = "error";
         el("frameState").style.display = "block";
