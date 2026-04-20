@@ -36,8 +36,16 @@ evaluator_result_parser/
 # 環境構築（初回のみ）
 bash setup.sh
 
-# サーバー起動
+# サーバー起動（フォアグラウンド）
 bash serve.sh
+
+# サーバー起動（SSH 切断後も継続）
+bash serve.sh start
+
+# 再起動 / 停止 / 状態確認
+bash serve.sh restart
+bash serve.sh stop
+bash serve.sh status
 ```
 
 `setup.sh` は仮想環境の作成・依存ライブラリのインストール・動作確認を自動で行います。
@@ -47,6 +55,7 @@ bash serve.sh
 # オプション例
 bash setup.sh --python 3.11 --venv .venv
 bash serve.sh --data-dir /path/to/datasets --port 8080
+bash serve.sh start --data-dir /path/to/datasets --port 8080
 ```
 
 詳細は各スクリプトの `--help` を参照してください。
@@ -476,11 +485,16 @@ with ThreadPoolExecutor(max_workers=4) as ex:
 ```bash
 # serve.sh を使う場合（推奨）
 bash serve.sh
+bash serve.sh start
+bash serve.sh restart
 bash serve.sh --data-dir /mnt/t4data --port 8080
 
 # t4-server を直接使う場合
 t4-server --data-dir /mnt/t4data --port 8080 --tier4-cache 4
 ```
+
+`bash serve.sh start` は PID ファイルとログファイルを `.run/` 配下に作成し、SSH を切断してもサーバーが継続するようにバックグラウンド起動します。
+停止や再起動は `bash serve.sh stop` / `bash serve.sh restart`、ログ確認は `bash serve.sh logs` で行えます。
 
 起動すると接続先 URL が表示されます:
 
@@ -501,8 +515,12 @@ t4-server --data-dir /mnt/t4data --port 8080 --tier4-cache 4
 | `--search-depth` | `1` | サブディレクトリ探索の深さ |
 | `--host` | `0.0.0.0` | バインドホスト |
 | `--port` | `8000` | バインドポート |
+| `--workers` | `8` | uvicorn ワーカープロセス数 |
 | `--tier4-cache` | `8` | メモリ上に保持する Tier4 インスタンス数 |
-| `--reload` | off | uvicorn auto-reload（開発用） |
+| `--project-id` | 環境変数依存 | webauto プロジェクト ID |
+| `--venv` | `.venv` | 仮想環境ディレクトリ |
+| `--pid-file` | `.run/t4-server.pid` | PID ファイル |
+| `--log-file` | `.run/t4-server.log` | ログファイル |
 
 #### エンドポイント
 
