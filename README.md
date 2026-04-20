@@ -549,6 +549,89 @@ curl http://localhost:8000/health
 # {"status": "ok"}
 ```
 
+#### 負荷試験 / 同時アクセス確認
+
+`t4-load-test` は `POST /render` に対して段階的に並列リクエストを送り、**同時アクセス数ごとの応答時間・スループット・失敗率**を比較します。サーバーが返す `elapsed_ms` / `render_ms` / `tier4_load_ms` も一緒に集計するため、クライアント側待ち時間とサーバー内部処理時間の両方を見られます。
+
+```bash
+# まずサーバー起動
+t4-server --data-dir /mnt/t4data --port 8000 --workers 1
+
+# データセット/シナリオを自動検出して 1,2,4,8,16 並列で比較
+t4-load-test --base-url http://127.0.0.1:8000 \
+  --requests-per-level 20 \
+  --csv-out benchmark.csv
+
+# 対象を明示して比較（より再現しやすい）
+t4-load-test --base-url http://127.0.0.1:8000 \
+  --dataset-id abc123 \
+  --scenario-name scene-0001 \
+  --frame-index 5 \
+  --concurrency 1,2,4,8,16,32 \
+  --requests-per-level 30
+```
+
+出力は Markdown テーブル形式で、例えば以下を比較できます。
+
+- `client_p95_ms` / `client_p99_ms`: 利用者が体感する待ち時間が同時アクセス数でどう増えるか
+- `throughput_rps`: 並列数を上げた時に処理量がどこで頭打ちになるか
+- `server_render_avg_ms`: 純粋な描画処理時間が負荷で悪化しているか
+- `tier4_load_avg_ms`: キャッシュ未命中やデータロードがボトルネックになっているか
+
+`--request-file request.json` を使うと、`target_objects` を含む完全な `POST /render` ボディをそのまま再利用できます。
+
+3D / TLR ビューア相当のサーバー負荷を見たい場合は `--mode` を切り替えます。
+
+```bash
+# frame.bin だけを継続的に取得するケース
+t4-load-test --mode viewer-three-frame-bin \
+  --base-url http://127.0.0.1:8000 \
+  --dataset-id abc123 \
+  --scenario-name scene-0001 \
+  --frame-index 5 \
+  --concurrency 1,2,4,8,16,32 \
+  --requests-per-level 30 \
+  --csv-out viewer_three_framebin.csv \
+  --plot-out viewer_three_framebin.png
+
+# Three.js viewer の代表的なサーバー処理:
+# /viewer/three -> /viewer/three/meta -> /viewer/three/frame.bin
+t4-load-test --mode viewer-three \
+  --base-url http://127.0.0.1:8000 \
+  --dataset-id abc123 \
+  --scenario-name scene-0001 \
+  --frame-index 5 \
+  --concurrency 1,2,4,8,16 \
+  --requests-per-level 20
+
+# カメラオーバーレイと lanelet も含めて、より実運用に近づける
+t4-load-test --mode viewer-three \
+  --base-url http://127.0.0.1:8000 \
+  --dataset-id abc123 \
+  --scenario-name scene-0001 \
+  --frame-index 5 \
+  --viewer-three-include-camera-overlay \
+  --viewer-three-include-lanelet \
+  --viewer-three-all-cameras \
+  --concurrency 1,2,4,8
+
+# TLR viewer の代表的なサーバー処理:
+# /viewer/tlr -> /viewer/tlr/frame
+t4-load-test --mode viewer-tlr \
+  --base-url http://127.0.0.1:8000 \
+  --dataset-id abc123 \
+  --scenario-name scene-0001 \
+  --frame-index 5 \
+  --camera CAM_FRONT \
+  --concurrency 1,2,4,8,16
+```
+
+注意:
+
+- `viewer-three` / `viewer-tlr` は**ビューアが呼ぶサーバー API 群の性能**を測定します。
+- これはブラウザ内の WebGL FPS や描画負荷そのものではありません。クライアント GPU を含めた体感性能を測るには、別途ブラウザ自動操作ベンチマークが必要です。
+- `--plot-out` を付けると、並列数に対する `RPS` と `p50/p95/p99` 遅延の推移を PNG で保存できます。
+
 **`GET /datasets`** — 利用可能なデータセット一覧
 
 ```bash

@@ -26,6 +26,7 @@ t4-inspect = "t4_visualizer.inspect:main"
 t4-cache = "t4_visualizer.downloader:cache_main"
 t4-multi = "t4_visualizer.batch:multi_main"
 t4-server = "t4_visualizer.server:main"
+t4-load-test = "t4_visualizer.load_test:main"
 
 [tool.setuptools.packages.find]
 where = ["."]
