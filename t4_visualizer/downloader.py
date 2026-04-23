@@ -32,10 +32,12 @@ import os
 import re
 import shutil
 import subprocess
+import sys
 from contextlib import contextmanager
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Dict, List, Optional
+from typing import Any, Dict, List, Optional, Tuple
+from urllib.parse import parse_qs, urlparse
 
 
 # ---------------------------------------------------------------------------
@@ -489,6 +491,449 @@ def list_webauto_annotation_dataset_ids(data_dir: Path) -> List[str]:
         except OSError:
             continue
     return sorted(out)
+
+
+def parse_vehicle_catalog_url(
+    catalog_url: str,
+    *,
+    fallback_project_id: Optional[str] = None,
+) -> Tuple[str, str]:
+    """Return ``(project_id, vehicle_catalog_id)`` parsed from a catalog URL.
+
+    Accepted URL shape example::
+
+        https://evaluation.tier4.jp/evaluation/vehicle_catalogs/<catalog_id>?project_id=x2_dev
+
+    Args:
+        catalog_url: Full URL from the Evaluator UI.
+        fallback_project_id: Used when query string has no ``project_id``.
+
+    Raises:
+        ValueError: If a UUID-like catalog id cannot be found or project_id is missing.
+    """
+    parsed = urlparse(str(catalog_url).strip())
+    if not parsed.scheme or not parsed.netloc:
+        raise ValueError("catalog_url must be a full URL.")
+
+    m = re.search(
+        r"/vehicle_catalogs/([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})",
+        parsed.path,
+        flags=re.IGNORECASE,
+    )
+    if not m:
+        raise ValueError("Could not parse vehicle_catalog_id from catalog_url.")
+
+    q = parse_qs(parsed.query)
+    project_id = (q.get("project_id") or [""])[0].strip() or (fallback_project_id or "").strip()
+    if not project_id:
+        raise ValueError("project_id is required (query parameter or explicit argument).")
+    return project_id, m.group(1)
+
+
+def _extract_json_blob(text: str) -> Optional[Any]:
+    """Best-effort JSON extraction from CLI stdout that may contain logs."""
+    raw = (text or "").strip()
+    if not raw:
+        return None
+    try:
+        return json.loads(raw)
+    except json.JSONDecodeError:
+        pass
+
+    first_obj = raw.find("{")
+    last_obj = raw.rfind("}")
+    if first_obj >= 0 and last_obj > first_obj:
+        snippet = raw[first_obj:last_obj + 1]
+        try:
+            return json.loads(snippet)
+        except json.JSONDecodeError:
+            pass
+
+    first_arr = raw.find("[")
+    last_arr = raw.rfind("]")
+    if first_arr >= 0 and last_arr > first_arr:
+        snippet = raw[first_arr:last_arr + 1]
+        try:
+            return json.loads(snippet)
+        except json.JSONDecodeError:
+            pass
+    return None
+
+
+def _collect_catalog_dataset_ids(payload: Any) -> List[str]:
+    """Recursively collect UUID-like dataset IDs from a catalog payload."""
+    keys = {
+        "t4_dataset_id",
+        "t4DatasetId",
+        "t4_dataset_ids",
+        "t4DatasetIds",
+        "annotation_dataset_id",
+        "annotationDatasetId",
+        "annotation_dataset_ids",
+        "annotationDatasetIds",
+        "dataset_id",
+        "datasetId",
+        "dataset_ids",
+        "datasetIds",
+    }
+    seen: set[str] = set()
+    out: List[str] = []
+
+    def add_id(value: Any) -> None:
+        if isinstance(value, str) and _is_uuid_shaped_dirname(value) and value not in seen:
+            seen.add(value)
+            out.append(value)
+
+    def visit(node: Any) -> None:
+        if isinstance(node, dict):
+            for k, v in node.items():
+                if k in keys:
+                    if isinstance(v, list):
+                        for item in v:
+                            add_id(item)
+                    elif isinstance(v, dict):
+                        add_id(v.get("id"))
+                    else:
+                        add_id(v)
+                visit(v)
+            return
+        if isinstance(node, list):
+            for item in node:
+                visit(item)
+
+    visit(payload)
+    return out
+
+
+def _make_webautoauth_session() -> Any:
+    """Create an authenticated webauto HTTP session.
+
+    Raises RuntimeError when webautoauth is unavailable or cannot initialize.
+    """
+    try:
+        import webautoauth.requests
+        from webautoauth.token import HttpService, TokenSource, load_config
+    except ImportError as exc:
+        raise RuntimeError(
+            "webautoauth is required for suite-based catalog fallback. "
+            f"python_executable={sys.executable}. "
+            "Install in the same runtime: pip install webautoauth"
+        ) from exc
+
+    try:
+        config = load_config()
+        token_source = TokenSource(HttpService(config))
+        return webautoauth.requests.make_session(token_source)
+    except Exception as exc:
+        raise RuntimeError(f"Failed to initialize webautoauth session: {exc}") from exc
+
+
+def _http_get_json(session: Any, url: str, params: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+    resp = session.get(url, params=params or {}, headers={"accept": "application/json"})
+    if getattr(resp, "status_code", None) != 200:
+        body = getattr(resp, "text", "")
+        raise RuntimeError(f"HTTP {getattr(resp, 'status_code', 'unknown')} for {url}: {body[:400]}")
+    try:
+        data = json.loads(resp.content)
+    except Exception as exc:
+        raise RuntimeError(f"Invalid JSON response from {url}: {exc}") from exc
+    return data if isinstance(data, dict) else {}
+
+
+def _get_vehicle_catalog_payload(project_id: str, vehicle_catalog_id: str) -> Tuple[Dict[str, Any], str]:
+    """Fetch vehicle catalog JSON payload directly via authenticated APIs."""
+    session = _make_webautoauth_session()
+    urls = [
+        f"https://evaluation.ci.web.auto/v3/projects/{project_id}/vehicle-catalogs/{vehicle_catalog_id}",
+        f"https://evaluation.ci.web.auto/v3/projects/{project_id}/vehicle_catalogs/{vehicle_catalog_id}",
+    ]
+    errors: List[str] = []
+    for url in urls:
+        try:
+            return _http_get_json(session, url), url
+        except Exception as exc:
+            errors.append(f"{url}: {exc}")
+    raise RuntimeError("Failed to fetch vehicle catalog via API. " + " | ".join(errors))
+
+
+def _list_catalog_suite_ids(project_id: str, vehicle_catalog_id: str) -> List[str]:
+    """List suite IDs belonging to a vehicle catalog.
+
+    Reuses list_catalog_suites (which handles the broken catalogId filter + attachments
+    filtering) and returns only the IDs.
+    """
+    suites = list_catalog_suites(project_id, vehicle_catalog_id)
+    return [str(s.get("id", "")).strip() for s in suites]
+
+
+def get_suite_info(project_id: str, suite_id: str) -> Dict[str, Any]:
+    """Fetch detailed information for a single suite.
+
+    Returns a dict with keys: id, name, description, catalog_id, created_at,
+    updated_at, specs (list of scenario refs), and any other fields from the API.
+    """
+    print(f"[downloader] Fetching suite {suite_id}...")
+    session = _make_webautoauth_session()
+    url = f"https://evaluation.ci.web.auto/v3/projects/{project_id}/suites/{suite_id}"
+    data = _http_get_json(session, url)
+    return data if isinstance(data, dict) else {}
+
+
+def list_catalog_suites(project_id: str, vehicle_catalog_id: str) -> List[Dict[str, Any]]:
+    """List all suites belonging to a vehicle catalog with their details.
+
+    The /suites API does not filter by catalogId, so we fetch all suites and
+    filter them by checking the attachments[*].catalog_id field.
+
+    Args:
+        project_id: The project ID (e.g., "x2_dev").
+        vehicle_catalog_id: The vehicle catalog UUID.
+
+    Returns:
+        List of suite information dictionaries.
+    """
+    session = _make_webautoauth_session()
+    base = f"https://evaluation.ci.web.auto/v3/projects/{project_id}/suites"
+
+    # Fetch ALL suites first (catalogId filter is broken in the API)
+    all_suites: List[Dict[str, Any]] = []
+    seen_ids: set[str] = set()
+    next_token = ""
+    loops = 0
+    while True:
+        loops += 1
+        params: Dict[str, Any] = {"size": 100}
+        if next_token:
+            params["next_token"] = next_token
+        print(f"[downloader] list_catalog_suites: fetching page {loops}, total fetched so far: {len(all_suites)}...")
+        data = _http_get_json(session, base, params=params)
+        suites = data.get("suites") or []
+        for suite in suites:
+            if not isinstance(suite, dict):
+                continue
+            sid = str(suite.get("id", "")).strip()
+            if sid and sid not in seen_ids:
+                seen_ids.add(sid)
+                all_suites.append(suite)
+        next_token = str(data.get("next_token", "") or "").strip()
+        if not next_token or loops >= 200:
+            break
+
+    print(f"[downloader] list_catalog_suites: fetched {len(all_suites)} suites total, now filtering by catalog_id...")
+
+    # Filter by checking attachments[*].catalog_id
+    vehicle_catalog_id = str(vehicle_catalog_id).strip().lower()
+    filtered: List[Dict[str, Any]] = []
+    for suite in all_suites:
+        atts = suite.get("attachments") or []
+        if not isinstance(atts, list):
+            atts = []
+        for att in atts:
+            att_cat_id = str(att.get("catalog_id", "")).strip().lower()
+            if att_cat_id == vehicle_catalog_id:
+                suite["catalog_id"] = vehicle_catalog_id
+                filtered.append(suite)
+                break
+
+    print(f"[downloader] list_catalog_suites: filtered to {len(filtered)} suites in catalog {vehicle_catalog_id}")
+    return filtered
+
+
+def _list_suite_scenario_refs(project_id: str, suite_ids: List[str]) -> List[Tuple[str, Optional[int]]]:
+    session = _make_webautoauth_session()
+    refs: List[Tuple[str, Optional[int]]] = []
+    seen: set[Tuple[str, Optional[int]]] = set()
+
+    for suite_id in suite_ids:
+        suite_url = f"https://evaluation.ci.web.auto/v3/projects/{project_id}/suites/{suite_id}"
+        try:
+            data = _http_get_json(session, suite_url)
+        except Exception as exc:
+            print(f"[downloader] warning: failed to describe suite {suite_id}: {exc}")
+            continue
+        specs = data.get("specs") or []
+        for spec in specs:
+            if not isinstance(spec, dict):
+                continue
+            scenario_id = str(spec.get("scenario_id", "")).strip()
+            if not scenario_id:
+                continue
+            raw_ver = spec.get("scenario_version_id")
+            if isinstance(raw_ver, int):
+                scenario_version_id = raw_ver
+            elif isinstance(raw_ver, str) and raw_ver.strip().isdigit():
+                scenario_version_id = int(raw_ver.strip())
+            else:
+                scenario_version_id = None
+            key = (scenario_id, scenario_version_id)
+            if key not in seen:
+                seen.add(key)
+                refs.append(key)
+
+    return refs
+
+
+def _list_scenario_dataset_ids(project_id: str, scenario_refs: List[Tuple[str, Optional[int]]]) -> List[str]:
+    session = _make_webautoauth_session()
+    seen: set[str] = set()
+    out: List[str] = []
+
+    for scenario_id, scenario_version_id in scenario_refs:
+        url = f"https://scenario.ci.web.auto/v1/projects/{project_id}/scenarios/{scenario_id}"
+        params = {"scenario_version_id": scenario_version_id} if scenario_version_id is not None else None
+        try:
+            data = _http_get_json(session, url, params=params)
+        except Exception as exc:
+            print(
+                f"[downloader] warning: failed to describe scenario {scenario_id}"
+                f" (version={scenario_version_id}): {exc}"
+            )
+            continue
+        ids = data.get("t4_dataset_ids") or []
+        if isinstance(ids, list):
+            for did in ids:
+                if isinstance(did, str) and _is_uuid_shaped_dirname(did) and did not in seen:
+                    seen.add(did)
+                    out.append(did)
+
+    return out
+
+
+def get_scenario_info(project_id: str, scenario_id: str, scenario_version_id: Optional[int] = None) -> Dict[str, Any]:
+    """Fetch detailed information for a single scenario.
+
+    Returns a dict with all fields from the scenario API, including t4_dataset_ids.
+    """
+    print(f"[downloader] Fetching scenario {scenario_id} (version={scenario_version_id})...")
+    session = _make_webautoauth_session()
+    url = f"https://scenario.ci.web.auto/v1/projects/{project_id}/scenarios/{scenario_id}"
+    params = {"scenario_version_id": scenario_version_id} if scenario_version_id is not None else None
+    try:
+        data = _http_get_json(session, url, params=params)
+    except Exception as exc:
+        print(f"[downloader] warning: failed to describe scenario {scenario_id} (version={scenario_version_id}): {exc}")
+        return {}
+    return data if isinstance(data, dict) else {}
+
+
+def _list_vehicle_catalog_dataset_ids_via_suites(project_id: str, vehicle_catalog_id: str) -> List[str]:
+    suite_ids = _list_catalog_suite_ids(project_id, vehicle_catalog_id)
+    if not suite_ids:
+        return []
+    scenario_refs = _list_suite_scenario_refs(project_id, suite_ids)
+    if not scenario_refs:
+        return []
+    return sorted(_list_scenario_dataset_ids(project_id, scenario_refs))
+
+
+def list_vehicle_catalog_dataset_ids(project_id: str, vehicle_catalog_id: str) -> List[str]:
+    """List T4 dataset IDs that appear in a vehicle catalog.
+
+    Strategy:
+    1) Try direct catalog API (webautoauth session).
+    2) If no dataset IDs are present (common for suite-based catalogs),
+       resolve suites -> scenarios -> t4_dataset_ids via authenticated APIs.
+    """
+    project_id = str(project_id).strip()
+    vehicle_catalog_id = str(vehicle_catalog_id).strip()
+    if not project_id or not vehicle_catalog_id:
+        raise ValueError("project_id and vehicle_catalog_id are required.")
+
+    direct_error: Optional[Exception] = None
+    direct_ids: List[str] = []
+    try:
+        payload, _url = _get_vehicle_catalog_payload(project_id, vehicle_catalog_id)
+        direct_ids = sorted(_collect_catalog_dataset_ids(payload))
+        if direct_ids:
+            return direct_ids
+    except Exception as exc:
+        direct_error = exc
+
+    try:
+        return _list_vehicle_catalog_dataset_ids_via_suites(project_id, vehicle_catalog_id)
+    except Exception as suite_exc:
+        if direct_error is not None:
+            raise RuntimeError(
+                "Catalog dataset lookup failed for both direct and suite-based paths. "
+                f"direct_error={direct_error}; suite_error={suite_exc}"
+            ) from suite_exc
+        raise
+
+
+def inspect_vehicle_catalog_dataset_lookup(project_id: str, vehicle_catalog_id: str) -> Dict[str, Any]:
+    """Return step-by-step debug info for catalog→dataset resolution."""
+    project_id = str(project_id).strip()
+    vehicle_catalog_id = str(vehicle_catalog_id).strip()
+    if not project_id or not vehicle_catalog_id:
+        raise ValueError("project_id and vehicle_catalog_id are required.")
+
+    out: Dict[str, Any] = {
+        "project_id": project_id,
+        "vehicle_catalog_id": vehicle_catalog_id,
+        "steps": {},
+        "dataset_ids": [],
+        "source": "none",
+    }
+
+    direct_step: Dict[str, Any] = {
+        "api_candidates": [
+            f"https://evaluation.ci.web.auto/v3/projects/{project_id}/vehicle-catalogs/{vehicle_catalog_id}",
+            f"https://evaluation.ci.web.auto/v3/projects/{project_id}/vehicle_catalogs/{vehicle_catalog_id}",
+        ]
+    }
+    out["steps"]["direct_api"] = direct_step
+
+    direct_ids: List[str] = []
+    direct_error: Optional[str] = None
+    try:
+        payload, used_url = _get_vehicle_catalog_payload(project_id, vehicle_catalog_id)
+        direct_step["used_url"] = used_url
+        if isinstance(payload, dict):
+            direct_step["top_keys"] = sorted(payload.keys())
+        direct_ids = sorted(_collect_catalog_dataset_ids(payload))
+        direct_step["dataset_ids_count"] = len(direct_ids)
+        direct_step["dataset_ids_preview"] = direct_ids[:20]
+    except Exception as exc:
+        direct_error = str(exc)
+        direct_step["error"] = direct_error
+
+    if direct_ids:
+        out["dataset_ids"] = direct_ids
+        out["source"] = "direct"
+        return out
+
+    suite_step: Dict[str, Any] = {}
+    out["steps"]["suite_fallback"] = suite_step
+    try:
+        suite_ids = _list_catalog_suite_ids(project_id, vehicle_catalog_id)
+        suite_step["suite_count"] = len(suite_ids)
+        suite_step["suite_ids_preview"] = suite_ids[:20]
+
+        scenario_refs = _list_suite_scenario_refs(project_id, suite_ids)
+        suite_step["scenario_ref_count"] = len(scenario_refs)
+        suite_step["scenario_refs_preview"] = [
+            {"scenario_id": sid, "scenario_version_id": ver}
+            for sid, ver in scenario_refs[:20]
+        ]
+
+        suite_ids_final = sorted(_list_scenario_dataset_ids(project_id, scenario_refs))
+        suite_step["dataset_ids_count"] = len(suite_ids_final)
+        suite_step["dataset_ids_preview"] = suite_ids_final[:20]
+
+        out["dataset_ids"] = suite_ids_final
+        out["source"] = "suite"
+    except Exception as exc:
+        suite_step["error"] = str(exc)
+        out["source"] = "none"
+        if direct_error:
+            out["error"] = (
+                "Catalog dataset lookup failed for both direct and suite-based paths. "
+                f"direct_error={direct_error}; suite_error={exc}"
+            )
+        else:
+            out["error"] = f"Suite-based lookup failed: {exc}"
+
+    return out
 
 
 def _try_flatten(root: Path, t4dataset_id: str, dst: Optional[Path] = None) -> bool:

@@ -26,6 +26,7 @@
 #   --venv PATH            仮想環境ディレクトリ (デフォルト: .venv)
 #   --pid-file PATH        PID ファイル (デフォルト: .run/t4-server.pid)
 #   --log-file PATH        ログファイル (デフォルト: .run/t4-server.log)
+#   --attach               start時にログを端末へ追従表示 (Ctrl+Cで終了)
 #   -h, --help             このヘルプを表示
 #
 # 事前に setup.sh を実行して環境を構築してください。
@@ -44,13 +45,14 @@ DATA_DIR="/mnt/qnapdata/internal/t4datasets"
 SEARCH_DEPTH=1
 HOST="0.0.0.0"
 PORT=8000
-WORKERS=8
-TIER4_CACHE=8
+WORKERS=32
+TIER4_CACHE=32
 WEBAUTO_PROJECT_ID="${WEBAUTO_PROJECT_ID:-}"
 VENV_DIR=".venv"
 PID_FILE="$RUN_DIR/t4-server.pid"
 LOG_FILE="$RUN_DIR/t4-server.log"
 STATE_FILE="$RUN_DIR/t4-server.env"
+ATTACH_TERMINAL=0
 
 # ---------------------------------------------------------------------------
 # ヘルパー
@@ -259,6 +261,10 @@ start_background() {
             success "バックグラウンドで起動しました (PID: $pid)"
             info "状態確認: bash serve.sh status"
             info "ログ確認  : bash serve.sh logs"
+            if [[ "$ATTACH_TERMINAL" -eq 1 ]]; then
+                info "端末へログを接続します (Ctrl+C で終了)"
+                exec tail -f "$LOG_FILE"
+            fi
             return 0
         fi
         sleep 0.5
@@ -356,6 +362,7 @@ while [[ $# -gt 0 ]]; do
         --venv)          VENV_DIR="$2";            shift 2 ;;
         --pid-file)      PID_FILE="$2";            shift 2 ;;
         --log-file)      LOG_FILE="$2";            shift 2 ;;
+        --attach)        ATTACH_TERMINAL=1;         shift ;;
         -h|--help)
             usage
             exit 0
