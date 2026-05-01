@@ -138,10 +138,20 @@ def main():
         # Generate dataset table + download script
         if not args.no_download_script:
             print()
-            dataset_rows = build_dataset_table(
+            dataset_rows, stats = build_dataset_table(
                 testcases_csv, download_project_id,
                 exclude_existing_ids=exclude_existing_ids
             )
+
+            # Print filtering summary
+            print(f"\n[get_suite_info] Dataset filtering summary:")
+            print(f"  - Testcases total: {stats['total_testcases']}")
+            print(f"  - Testcases without datasets: {stats['testcases_without_datasets']}")
+            print(f"  - Unique datasets found: {stats['total_datasets_before_filter']}")
+            if stats['datasets_excluded'] > 0:
+                print(f"  - Datasets excluded (already downloaded): {stats['datasets_excluded']}")
+            print(f"  - Datasets to download: {stats['datasets_remaining']}")
+
             if dataset_rows:
                 datasets_csv = os.path.join(output_dir, "t4datasets.csv")
                 save_dataset_csv(dataset_rows, datasets_csv)

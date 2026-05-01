@@ -128,28 +128,38 @@ def build_dataset_table(
     testcases_csv_path: str,
     project_id: str,
     exclude_existing_ids: set[str] = None,
-) -> list[dict]:
+) -> tuple[list[dict], dict]:
     """Build a table of unique t4_dataset_ids with rich context from testcases.csv.
 
     Args:
         testcases_csv_path: Path to the testcases.csv file
         project_id: Project ID for download commands
         exclude_existing_ids: Optional set of dataset IDs to exclude (e.g., already downloaded)
+
+    Returns:
+        Tuple of (rows list, stats dict with counts)
     """
     exclude_set = exclude_existing_ids or set()
     dataset_map: dict = defaultdict(lambda: {"scenarios": [], "suites": set()})
+    total_testcases = 0
+    testcases_without_datasets = 0
+    total_datasets_before_filter = 0
 
     with open(testcases_csv_path, newline="", encoding="utf-8") as f:
         reader = csv.DictReader(f)
         for row in reader:
+            total_testcases += 1
             t4_ids_str = row.get("t4_dataset_ids", "")
             if not t4_ids_str:
+                testcases_without_datasets += 1
                 continue
             try:
                 t4_ids = json.loads(t4_ids_str)
             except json.JSONDecodeError:
+                testcases_without_datasets += 1
                 continue
-            if not isinstance(t4_ids, list):
+            if not isinstance(t4_ids, list) or len(t4_ids) == 0:
+                testcases_without_datasets += 1
                 continue
 
             suite_id = row.get("suite_id", "").strip()
@@ -166,6 +176,7 @@ def build_dataset_table(
                 if not isinstance(ds_id, str) or not ds_id.strip():
                     continue
                 ds_id = ds_id.strip()
+                total_datasets_before_filter += 1
                 if ds_id in exclude_set:
                     continue
                 entry = dataset_map[ds_id]
@@ -219,7 +230,15 @@ def build_dataset_table(
                 sorted(set(s["scenario_desc"] for s in scenarios if s["scenario_desc"]))
             ),
         })
-    return rows
+
+    stats = {
+        "total_testcases": total_testcases,
+        "testcases_without_datasets": testcases_without_datasets,
+        "total_datasets_before_filter": total_datasets_before_filter,
+        "datasets_excluded": len(exclude_set),
+        "datasets_remaining": len(rows),
+    }
+    return rows, stats
 
 
 def save_dataset_csv(rows: list[dict], output_path: str):
@@ -355,13 +374,22 @@ def export_all(
             exclude_existing_ids = set()
             if exclude_data_dir:
                 exclude_existing_ids = set(list_webauto_annotation_dataset_ids(Path(exclude_data_dir)))
-                print(f"[suite_info] Excluding {len(exclude_existing_ids)} existing datasets from {exclude_data_dir}")
 
             dp_id = download_project_id or project_id
-            dataset_rows = build_dataset_table(
+            dataset_rows, stats = build_dataset_table(
                 testcases_csv, dp_id,
                 exclude_existing_ids=exclude_existing_ids
             )
+
+            # Print filtering summary
+            print(f"\n[suite_info] Dataset filtering summary:")
+            print(f"  - Testcases total: {stats['total_testcases']}")
+            print(f"  - Testcases without datasets: {stats['testcases_without_datasets']}")
+            print(f"  - Unique datasets found: {stats['total_datasets_before_filter']}")
+            if stats['datasets_excluded'] > 0:
+                print(f"  - Datasets excluded (already downloaded): {stats['datasets_excluded']}")
+            print(f"  - Datasets to download: {stats['datasets_remaining']}")
+
             if dataset_rows:
                 datasets_csv = os.path.join(output_dir, "t4datasets.csv")
                 save_dataset_csv(dataset_rows, datasets_csv)
