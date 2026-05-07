@@ -198,6 +198,9 @@
   .view-panels__body{margin-top:.35rem;padding:.55rem .65rem;border-radius:10px;border:1px solid rgba(90,110,180,.4);background:rgba(10,14,28,.95);display:grid;gap:.45rem;min-width:15rem;box-shadow:0 8px 28px rgba(0,0,0,.4)}
   .view-panels__body label{display:flex;align-items:center;gap:.5rem;font-size:.78rem;cursor:pointer;user-select:none}
   .view-panels__body input{accent-color:#8ab4ff}
+  #colorbarWrap{position:absolute;left:14px;bottom:14px;pointer-events:none;display:none}
+  #colorbarWrap.visible{display:block}
+  .colorbar-canvas{display:block}
   #hudRevealBtn{
     position:fixed;right:10px;top:50%;transform:translateY(-50%);z-index:20;
     width:40px;height:40px;border-radius:12px;border:1px solid rgba(120,160,255,.4);
@@ -318,6 +321,9 @@
     </div>
   </div>
   <div id="canvasWrap"><canvas id="canvas"></canvas>
+    <div id="colorbarWrap" title="Intensity colorbar">
+      <canvas id="colorbarCanvas" style="display:block;border-radius:6px;border:1px solid rgba(90,110,180,.4);"></canvas>
+    </div>
     <div id="cameraViewportWrap" class="cam-viewport-wrap cam-mode-single" hidden>
       <div class="cam-viewport-head" id="cameraViewportDragHandle" title="Drag to move">Camera images</div>
       <div class="cam-viewport-toolbar">
@@ -380,6 +386,7 @@
           <option value="classic">Classic (blue→amber)</option>
         </select></label>
         <label title="Use min/max of this frame so intensity uses the full palette (helps flat/binary channels)"><input id="pointIntensityNormalize" type="checkbox" checked> normalize intensity (frame)</label>
+        <label title="Show a color scale bar mapping intensity values to colors"><input id="showColorbar" type="checkbox"> show colorbar</label>
         <label>box opacity <input id="boxOpacity" type="range" min="0.2" max="1.0" step="0.05" value="0.9"></label>
       </div>
       <hr class="hud-rule">
@@ -4589,6 +4596,7 @@ async function showFrame(i){
   setStatus(`loading frame ${frame} ...`);
   const data = await fetchFrame(frame);
   setFrameData(data);
+  updateColorbar();
   if (followEgo) {
     controls.target.set(0, 0, 0);
     controls.update();
@@ -4716,15 +4724,70 @@ document.getElementById("intensityGain").addEventListener("input", async (e) => 
   intensityGain = Number(e.target.value || "1.0");
   const data = cache.get(frame);
   if (data) setFrameData(data);
+  updateColorbar();
 });
 document.getElementById("pointColormap").addEventListener("change", () => {
   const data = cache.get(frame);
   if (data) setFrameData(data);
+  updateColorbar();
 });
 document.getElementById("pointIntensityNormalize").addEventListener("change", () => {
   const data = cache.get(frame);
   if (data) setFrameData(data);
+  updateColorbar();
 });
+document.getElementById("showColorbar").addEventListener("change", () => {
+  updateColorbar();
+});
+
+/** Draw a vertical colorbar showing the current intensity map. */
+function updateColorbar(){
+  const wrap = document.getElementById("colorbarWrap");
+  const canvas = document.getElementById("colorbarCanvas");
+  if (!wrap || !canvas) return;
+  const show = document.getElementById("showColorbar") && document.getElementById("showColorbar").checked;
+  if (!show) { wrap.classList.remove("visible"); return; }
+  const mapName = getPointColormapName();
+  const W = 28, H = 140;
+  canvas.width = W; canvas.height = H;
+  canvas.style.width = W + "px"; canvas.style.height = H + "px";
+  const ctx = canvas.getContext("2d");
+  const data = cache.get(frame);
+  const normalize = getPointIntensityNormalize();
+  let minI = 0, maxI = 1, rng = 1;
+  if (data && normalize) {
+    const n = data.pointCount;
+    minI = Infinity; maxI = -Infinity;
+    for (let i = 0; i < n; i++) {
+      const s = data.pts[i * 4 + 3] * intensityGain;
+      if (s < minI) minI = s;
+      if (s > maxI) maxI = s;
+    }
+    rng = maxI - minI || 1e-9;
+  }
+  const img = ctx.createImageData(W, H);
+  for (let y = 0; y < H; y++) {
+    const t = 1 - y / (H - 1);
+    const rgb = intensityToRgb(t, mapName);
+    for (let x = 0; x < W; x++) {
+      const idx = (y * W + x) * 4;
+      img.data[idx] = Math.round(rgb[0] * 255);
+      img.data[idx + 1] = Math.round(rgb[1] * 255);
+      img.data[idx + 2] = Math.round(rgb[2] * 255);
+      img.data[idx + 3] = 255;
+    }
+  }
+  ctx.putImageData(img, 0, 0);
+  // Labels
+  ctx.fillStyle = "#94a3c8"; ctx.font = "9px JetBrains Mono, monospace";
+  ctx.textAlign = "right";
+  const labelMin = minI === Infinity ? "0.00" : minI.toFixed(2);
+  const labelMax = maxI === -Infinity ? "1.00" : maxI.toFixed(2);
+  ctx.fillText(labelMax, W - 3, 10);
+  ctx.fillText(labelMin, W - 3, H - 2);
+  wrap.classList.add("visible");
+}
+
 /** GT meshes + nested edge outlines; EST line segments — scale by userData.opacityFactor. */
 function applyOpacityToEvalLayerGroup(grp, v){
   grp.traverse((o) => {
