@@ -264,6 +264,18 @@ def find_dataset_in_dir(data_dir: Path, t4dataset_id: str, search_depth: int = 1
     return _search_under(data_dir, search_depth)
 
 
+def find_dataset_in_dirs(data_dirs: List[Path], t4dataset_id: str, search_depth: int = 1) -> Optional[Path]:
+    """Return the path to *t4dataset_id* under any of *data_dirs*, or None if not found.
+
+    Searches each directory in order until the dataset is found.
+    """
+    for data_dir in data_dirs:
+        path = find_dataset_in_dir(data_dir, t4dataset_id, search_depth)
+        if path is not None:
+            return path
+    return None
+
+
 def _unique_datasets(frames: List[FrameRow]) -> List[FrameRow]:
     """Return one representative FrameRow per unique t4dataset_id (for prompts)."""
     seen: Dict[str, FrameRow] = {}

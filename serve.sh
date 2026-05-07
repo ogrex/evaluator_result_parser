@@ -15,7 +15,7 @@
 #   logs                 ログを表示 (tail -f)
 #
 # オプション:
-#   --data-dir PATH        データセット保管ディレクトリ
+#   --data-dir PATH        データセット保管ディレクトリ (複数指定可能)
 #                          (デフォルト: /mnt/qnapdata/internal/t4datasets)
 #   --search-depth N       サブディレクトリ探索深さ (デフォルト: 1)
 #   --host HOST            バインドアドレス (デフォルト: 0.0.0.0)
@@ -41,7 +41,7 @@ RUN_DIR="$REPO_DIR/.run"
 # デフォルト値
 # ---------------------------------------------------------------------------
 COMMAND="run"
-DATA_DIR="/mnt/qnapdata/internal/t4datasets"
+DATA_DIRS=("/mnt/qnapdata/internal/t4datasets")
 SEARCH_DEPTH=1
 HOST="0.0.0.0"
 PORT=8000
@@ -93,8 +93,18 @@ cleanup_stale_pid() {
 
 save_state() {
     mkdir -p "$(dirname "$STATE_FILE")"
+    local data_dirs_json="["
+    local first=1
+    for d in "${DATA_DIRS[@]}"; do
+        if [[ $first -eq 0 ]]; then
+            data_dirs_json+=","
+        fi
+        data_dirs_json+="$(shell_quote "$d")"
+        first=0
+    done
+    data_dirs_json+="]"
     cat > "$STATE_FILE" <<EOF
-DATA_DIR=$(shell_quote "$DATA_DIR")
+DATA_DIRS_JSON=${data_dirs_json}
 SEARCH_DEPTH=$(shell_quote "$SEARCH_DEPTH")
 HOST=$(shell_quote "$HOST")
 PORT=$(shell_quote "$PORT")
@@ -111,6 +121,14 @@ load_state_if_present() {
     [[ -f "$STATE_FILE" ]] || return 0
     # shellcheck disable=SC1090
     source "$STATE_FILE"
+    # Parse DATA_DIRS_JSON back to array
+    if [[ -n "$DATA_DIRS_JSON" ]]; then
+        DATA_DIRS=()
+        # Use python to parse JSON array safely
+        while IFS= read -r item; do
+            DATA_DIRS+=("$item")
+        done < <(python3 -c "import json,sys; print('\n'.join(json.loads('$DATA_DIRS_JSON')))" 2>/dev/null || echo "${DATA_DIR:-/mnt/qnapdata/internal/t4datasets}")
+    fi
 }
 
 ensure_runtime_dirs() {
@@ -131,7 +149,7 @@ print_banner() {
     echo "============================================================"
     echo "  t4-server ${mode_label}"
     echo "============================================================"
-    echo "  データディレクトリ : $DATA_DIR"
+    echo "  データディレクトリ : ${DATA_DIRS[*]}"
     echo "  Search depth      : $SEARCH_DEPTH"
     echo "  ホスト            : $HOST"
     echo "  ポート            : $PORT"
@@ -166,26 +184,32 @@ check_runtime_requirements() {
         warn "--no-download で既存データを使う場合は不要です。"
     fi
 
-    mkdir -p "$DATA_DIR"
+    local data_dir=""
+    for data_dir in "${DATA_DIRS[@]}"; do
+        mkdir -p "$data_dir"
+    done
 
     local dataset_count=0
     local d=""
     local group=""
-    for d in "$DATA_DIR"/*/; do
-        [[ -d "$d" ]] && [[ -d "${d}annotation" || -d "${d}data" ]] && dataset_count=$((dataset_count + 1))
-    done
-    if [[ "$SEARCH_DEPTH" -ge 1 ]]; then
-        for group in "$DATA_DIR"/*/; do
-            for d in "$group"*/; do
-                [[ -d "$d" ]] && [[ -d "${d}annotation" || -d "${d}data" ]] && dataset_count=$((dataset_count + 1))
-            done
+    local data_dir=""
+    for data_dir in "${DATA_DIRS[@]}"; do
+        for d in "$data_dir"/*/; do
+            [[ -d "$d" ]] && [[ -d "${d}annotation" || -d "${d}data" ]] && dataset_count=$((dataset_count + 1))
         done
-    fi
+        if [[ "$SEARCH_DEPTH" -ge 1 ]]; then
+            for group in "$data_dir"/*/; do
+                for d in "$group"*/; do
+                    [[ -d "$d" ]] && [[ -d "${d}annotation" || -d "${d}data" ]] && dataset_count=$((dataset_count + 1))
+                done
+            done
+        fi
+    done
 
     if [[ "$dataset_count" -gt 0 ]]; then
         success "検出済みデータセット数: ${dataset_count} (search_depth=${SEARCH_DEPTH})"
     else
-        warn "データセットが見つかりません (${DATA_DIR})"
+        warn "データセットが見つかりません (${DATA_DIRS[*]})"
         warn "サーバー起動後、webauto でダウンロードするか --data-dir を確認してください。"
     fi
 }
@@ -193,6 +217,7 @@ check_runtime_requirements() {
 run_foreground() {
     local venv_path="$REPO_DIR/$VENV_DIR"
     local t4server="$venv_path/bin/t4-server"
+    local data_dir=""
 
     check_runtime_requirements
     print_banner "起動"
@@ -200,13 +225,11 @@ run_foreground() {
     echo "============================================================"
     echo ""
 
-    exec "$t4server" \
-        --host "$HOST" \
-        --data-dir "$DATA_DIR" \
-        --search-depth "$SEARCH_DEPTH" \
-        --port "$PORT" \
-        --workers "$WORKERS" \
-        --tier4-cache "$TIER4_CACHE"
+    local cmd=("$t4server" --host "$HOST" --search-depth "$SEARCH_DEPTH" --port "$PORT" --workers "$WORKERS" --tier4-cache "$TIER4_CACHE")
+    for data_dir in "${DATA_DIRS[@]}"; do
+        cmd+=(--data-dir "$data_dir")
+    done
+    exec "${cmd[@]}"
 }
 
 start_background() {
@@ -233,7 +256,6 @@ start_background() {
 
     cmd=(
         bash "$REPO_DIR/serve.sh" run
-        --data-dir "$DATA_DIR"
         --search-depth "$SEARCH_DEPTH"
         --host "$HOST"
         --port "$PORT"
@@ -243,6 +265,10 @@ start_background() {
         --pid-file "$PID_FILE"
         --log-file "$LOG_FILE"
     )
+    local data_dir=""
+    for data_dir in "${DATA_DIRS[@]}"; do
+        cmd+=(--data-dir "$data_dir")
+    done
     if [[ -n "$WEBAUTO_PROJECT_ID" ]]; then
         cmd+=(--project-id "$WEBAUTO_PROJECT_ID")
     fi
@@ -326,7 +352,7 @@ show_status() {
     echo "PID file : $PID_FILE"
     if [[ -f "$STATE_FILE" ]]; then
         echo "Port     : $PORT"
-        echo "Data dir : $DATA_DIR"
+        echo "Data dirs: ${DATA_DIRS[*]}"
     fi
 }
 
@@ -349,10 +375,17 @@ if [[ $# -gt 0 ]]; then
 fi
 
 user_provided_options=0
+_data_dirs_provided=0
 while [[ $# -gt 0 ]]; do
     user_provided_options=1
     case "$1" in
-        --data-dir)      DATA_DIR="$2";            shift 2 ;;
+        --data-dir)
+            # Clear defaults on first --data-dir provided by user
+            if [[ $_data_dirs_provided -eq 0 ]]; then
+                DATA_DIRS=()
+                _data_dirs_provided=1
+            fi
+            DATA_DIRS+=("$2");       shift 2 ;;
         --search-depth)  SEARCH_DEPTH="$2";        shift 2 ;;
         --host)          HOST="$2";                shift 2 ;;
         --port)          PORT="$2";                shift 2 ;;

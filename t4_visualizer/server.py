@@ -209,12 +209,14 @@ class _DatasetPathCache:
         self._evictions = 0
 
     @staticmethod
-    def _key(data_dir: Path, search_depth: int, t4dataset_id: str) -> str:
-        return f"{data_dir.resolve()}|{search_depth}|{t4dataset_id}"
+    def _key(data_dirs: List[Path], search_depth: int, t4dataset_id: str) -> str:
+        # Create a unique key based on all data_dirs
+        dirs_str = "|".join(sorted(str(d.resolve()) for d in data_dirs))
+        return f"{dirs_str}|{search_depth}|{t4dataset_id}"
 
     def resolve(
         self,
-        data_dir: Path,
+        data_dirs: List[Path],
         search_depth: int,
         t4dataset_id: str,
         find_fn,
@@ -223,7 +225,7 @@ class _DatasetPathCache:
         if self._ttl_s <= 0:
             return find_fn()
 
-        key = self._key(data_dir, search_depth, t4dataset_id)
+        key = self._key(data_dirs, search_depth, t4dataset_id)
         now = time.monotonic()
 
         with self._lock:
@@ -405,13 +407,15 @@ except ImportError:
 # ---------------------------------------------------------------------------
 
 def _build_app(
-    data_dir: Path,
+    data_dirs: List[Path],
     search_depth: int,
     tier4_cache_size: int,
     dataset_path_cache_ttl_s: float = 30.0,
     visibility_mode: str = "public",
 ):
     """Construct and return the FastAPI application."""
+    # For backward compatibility, also expose the first data_dir as data_dir
+    data_dir = data_dirs[0] if data_dirs else Path("./t4datasets")
     try:
         from fastapi import Body, Depends, FastAPI, Header, HTTPException, Query
         from fastapi.encoders import jsonable_encoder
@@ -422,8 +426,8 @@ def _build_app(
             "Install with: pip install fastapi uvicorn"
         ) from exc
 
-    from t4_visualizer.batch import find_dataset_in_dir
-    from t4_visualizer.downloader import list_webauto_annotation_dataset_ids
+    from t4_visualizer.batch import find_dataset_in_dirs
+    from t4_visualizer.downloader import list_webauto_annotation_dataset_ids_multi
     from t4_visualizer.visualize import (
         TargetObject,
         VisualizationRequest,
@@ -458,7 +462,8 @@ def _build_app(
     env_session_dir = os.environ.get("T4_VIEWER_SESSION_DIR", "").strip()
     if env_session_dir:
         _viewer_session_candidates.append(Path(env_session_dir).expanduser())
-    _viewer_session_candidates.append(data_dir / ".viewer_sessions")
+    for dd in data_dirs:
+        _viewer_session_candidates.append(dd / ".viewer_sessions")
     _viewer_session_candidates.append(Path("/tmp/t4_viewer_sessions"))
     for cand in _viewer_session_candidates:
         try:
@@ -700,10 +705,10 @@ def _build_app(
 
     def _resolve_dataset(t4dataset_id: str) -> Path:
         path = _path_cache.resolve(
-            data_dir,
+            data_dirs,
             search_depth,
             t4dataset_id,
-            lambda: find_dataset_in_dir(data_dir, t4dataset_id, search_depth),
+            lambda: find_dataset_in_dirs(data_dirs, t4dataset_id, search_depth),
         )
         if path is None:
             _public_error(
@@ -749,10 +754,15 @@ def _build_app(
             result = render_frame(request, t4=t4)
             t2 = time.perf_counter()
         except Exception as exc:
+            exc_msg = str(exc)
+            if "rosbag" in exc_msg.lower() or "invalid" in exc_msg.lower() or "not a t4" in exc_msg.lower():
+                hint = f"The path '{dataset_path}' exists but may not be a valid T4 dataset."
+            else:
+                hint = f"Dataset path: {dataset_path}"
             _safe_error(
                 status_code=500,
                 code="render_failed",
-                message="Failed to render the requested frame.",
+                message=f"Failed to render frame: {exc_msg}",
                 exc=exc,
             )
 
@@ -2116,15 +2126,19 @@ def _build_app(
     def index_page():
         """Human-friendly landing page for quick server introspection."""
         esc = html.escape
+        # Collect top-level dirs from all data directories
+        top_level_dirs_all = []
+        for dd in data_dirs:
+            try:
+                top_level_dirs_all.extend(
+                    p.name for p in dd.iterdir()
+                    if p.is_dir() and not p.name.startswith(".")
+                )
+            except OSError:
+                pass
+        top_level_dirs = sorted(set(top_level_dirs_all))[:12]
         try:
-            top_level_dirs = sorted(
-                p.name for p in data_dir.iterdir()
-                if p.is_dir() and not p.name.startswith(".")
-            )[:12]
-        except OSError:
-            top_level_dirs = []
-        try:
-            dataset_ids = list_webauto_annotation_dataset_ids(data_dir)
+            dataset_ids = list_webauto_annotation_dataset_ids_multi(data_dirs)
         except OSError:
             dataset_ids = []
         dataset_count = len(dataset_ids)
@@ -2149,6 +2163,7 @@ def _build_app(
             for label, href in links
         )
         top_dirs = "<br>".join(esc(name) for name in top_level_dirs) if top_level_dirs else "(none)"
+        data_dirs_html = "<br>".join(f"<code>{esc(str(dd))}</code>" for dd in data_dirs)
         page = (
             "<!DOCTYPE html>"
             '<html lang="en"><head><meta charset="utf-8">'
@@ -2173,7 +2188,7 @@ def _build_app(
             "<p>Quick status and links for operators and API users.</p>"
             '<div class="grid">'
             '<section class="card"><h2>Runtime</h2>'
-            f"<div><strong>data_dir</strong><br><code>{esc(str(data_dir))}</code></div>"
+            f"<div><strong>data_dirs</strong><br>{data_dirs_html}</div>"
             f'<div style="margin-top:.55rem;"><strong>search_depth</strong> <code>{search_depth}</code></div>'
             f'<div style="margin-top:.55rem;"><strong>dataset_path_cache_ttl_s</strong> <code>{dataset_path_cache_ttl_s:g}</code></div>'
             "</section>"
@@ -2203,37 +2218,44 @@ def _build_app(
 
     @app.get("/datasets")
     def list_datasets():
-        """Return dataset IDs plus discovery diagnostics under the configured data_dir."""
-        resolved = str(data_dir.resolve())
-        try:
-            all_top_level_dirs = sorted(
-                p.name for p in data_dir.iterdir()
-                if p.is_dir() and not p.name.startswith(".")
-            )
-        except OSError:
-            all_top_level_dirs = []
-        top_level_dirs = all_top_level_dirs[:32]
-        top_level_dir_count = len(all_top_level_dirs)
-        ann_present = (data_dir / "annotation_dataset").is_dir()
-        if not data_dir.exists():
+        """Return dataset IDs plus discovery diagnostics under the configured data_dirs."""
+        resolved = [str(dd.resolve()) for dd in data_dirs]
+        # Collect top-level dirs from all data directories
+        all_top_level_dirs = set()
+        for dd in data_dirs:
+            try:
+                all_top_level_dirs.update(
+                    p.name for p in dd.iterdir()
+                    if p.is_dir() and not p.name.startswith(".")
+                )
+            except OSError:
+                pass
+        all_top_level_dirs_list = sorted(all_top_level_dirs)
+        top_level_dirs = all_top_level_dirs_list[:32]
+        top_level_dir_count = len(all_top_level_dirs_list)
+        # Check if any data_dir has annotation_dataset
+        ann_present = any((dd / "annotation_dataset").is_dir() for dd in data_dirs)
+        # Check if any data_dir exists
+        any_exists = any(dd.exists() for dd in data_dirs)
+        if not any_exists:
             out: Dict[str, object] = {
-                "data_dir": str(data_dir),
-                "data_dir_resolved": resolved if _debug_visibility else "(redacted)",
+                "data_dirs": [str(dd) for dd in data_dirs],
+                "data_dirs_resolved": resolved if _debug_visibility else ["(redacted)"] * len(data_dirs),
                 "datasets": [],
                 "top_level_dirs": [],
                 "top_level_dir_count": 0,
                 "annotation_dataset_present": False,
-                "hint": "data_dir does not exist on this host — check --data-dir.",
+                "hint": "None of the data_dirs exist on this host — check --data-dir.",
             }
             return out
 
         try:
-            uniq = list_webauto_annotation_dataset_ids(data_dir)
+            uniq = list_webauto_annotation_dataset_ids_multi(data_dirs)
         except OSError:
             uniq = []
         payload: Dict[str, object] = {
-            "data_dir": str(data_dir),
-            "data_dir_resolved": resolved if _debug_visibility else "(redacted)",
+            "data_dirs": [str(dd) for dd in data_dirs],
+            "data_dirs_resolved": resolved if _debug_visibility else ["(redacted)"] * len(data_dirs),
             "datasets": uniq,
             "top_level_dirs": top_level_dirs,
             "top_level_dir_count": top_level_dir_count,
@@ -2247,7 +2269,7 @@ def _build_app(
         if not uniq:
             if not top_level_dirs:
                 payload["hint"] = (
-                    "No subdirectories under data_dir — confirm --data-dir on this host."
+                    "No subdirectories under any data_dir — confirm --data-dir on this host."
                 )
             elif not ann_present and len(top_level_dirs) <= 8:
                 payload["hint"] = (
@@ -2257,7 +2279,7 @@ def _build_app(
                 )
             else:
                 payload["hint"] = (
-                    "No UUID-shaped folder names found under data_dir or "
+                    "No UUID-shaped folder names found under data_dirs or "
                     "one level inside grouped folders (see top_level_dirs)."
                 )
         return payload
@@ -2266,20 +2288,20 @@ def _build_app(
         "/datasets/{t4dataset_id}/availability",
         response_model=DatasetAvailabilityResponse,
         tags=["datasets"],
-        summary="Check whether a dataset id is available under data_dir",
+        summary="Check whether a dataset id is available under data_dirs",
     )
     def dataset_availability(t4dataset_id: str):
-        """Return whether *t4dataset_id* resolves under the configured ``data_dir``.
+        """Return whether *t4dataset_id* resolves under any of the configured ``data_dirs``.
 
         Uses the same lookup as ``POST /render`` and ``GET /datasets/.../scenarios``
-        (:func:`t4_visualizer.batch.find_dataset_in_dir`). Does not load Tier4.
+        (:func:`t4_visualizer.batch.find_dataset_in_dirs`). Does not load Tier4.
         Results are cached briefly (see ``--dataset-path-cache-ttl``).
         """
         found = _path_cache.resolve(
-            data_dir,
+            data_dirs,
             search_depth,
             t4dataset_id,
-            lambda: find_dataset_in_dir(data_dir, t4dataset_id, search_depth),
+            lambda: find_dataset_in_dirs(data_dirs, t4dataset_id, search_depth),
         )
         if found is not None:
             return DatasetAvailabilityResponse(
@@ -2309,10 +2331,15 @@ def _build_app(
         except HTTPException:
             raise
         except Exception as exc:
+            exc_msg = str(exc)
+            if "rosbag" in exc_msg.lower() or "invalid" in exc_msg.lower() or "not a t4" in exc_msg.lower():
+                hint = f"The path '{dataset_path}' exists but may not be a valid T4 dataset."
+            else:
+                hint = f"Dataset path: {dataset_path}"
             _safe_error(
                 500,
                 "dataset_profile_failed",
-                "Failed to inspect dataset profile.",
+                message=f"Failed to inspect dataset profile: {exc_msg}",
                 exc=exc,
             )
 
@@ -2334,10 +2361,16 @@ def _build_app(
             t4 = _cache.load(dataset_path, version=version)
             raw = list_scene_summaries(t4)
         except Exception as exc:
+            # Check if this is not a valid T4 dataset (e.g., rosbag folder)
+            exc_msg = str(exc)
+            if "rosbag" in exc_msg.lower() or "invalid" in exc_msg.lower() or "not a t4" in exc_msg.lower():
+                hint = f"The path '{dataset_path}' exists but may not be a valid T4 dataset."
+            else:
+                hint = f"Dataset path: {dataset_path}"
             _safe_error(
                 status_code=500,
                 code="scenarios_list_failed",
-                message="Failed to list scenarios for dataset.",
+                message=f"Failed to load scenarios: {exc_msg}",
                 exc=exc,
             )
 
@@ -2377,10 +2410,15 @@ def _build_app(
                 "dataset_path_cache": _path_cache.stats(),
                 "tier4_cache": tier4_stats,
             },
+            "note": (
+                "tier4_cache shows datasets that were successfully loaded. "
+                "If a dataset fails to load, it will not appear here. "
+                "Use GET /datasets/{id}/availability to check if a dataset path exists."
+            ),
         }
         if _debug_visibility:
-            out["runtime"]["data_dir"] = str(data_dir)
-            out["runtime"]["data_dir_resolved"] = str(data_dir.resolve())
+            out["runtime"]["data_dirs"] = [str(dd) for dd in data_dirs]
+            out["runtime"]["data_dirs_resolved"] = [str(dd.resolve()) for dd in data_dirs]
         return out
 
     @app.get(
@@ -2442,10 +2480,15 @@ def _build_app(
         except HTTPException:
             raise
         except Exception as exc:
+            exc_msg = str(exc)
+            if "rosbag" in exc_msg.lower() or "invalid" in exc_msg.lower() or "not a t4" in exc_msg.lower():
+                hint = f"The path '{dataset_path}' exists but may not be a valid T4 dataset."
+            else:
+                hint = f"Dataset path: {dataset_path}"
             _safe_error(
                 status_code=500,
                 code="frame_summary_failed",
-                message="Failed to list frame summary for scenario.",
+                message=f"Failed to load frame summary: {exc_msg}",
                 exc=exc,
             )
 
@@ -3323,7 +3366,11 @@ def _env_key(name: str) -> str:
 
 def _set_server_runtime_env(args) -> None:
     """Expose app-construction settings for uvicorn worker subprocesses."""
-    os.environ[_env_key("DATA_DIR")] = str(Path(args.data_dir).expanduser().resolve())
+    # Handle multiple data directories - serialize as JSON list
+    data_dirs_input = args.data_dir if args.data_dir else ["./t4datasets"]
+    data_dirs = [str(Path(d).expanduser().resolve()) for d in data_dirs_input]
+    import json
+    os.environ[_env_key("DATA_DIRS")] = json.dumps(data_dirs)
     os.environ[_env_key("SEARCH_DEPTH")] = str(args.search_depth)
     os.environ[_env_key("TIER4_CACHE")] = str(args.tier4_cache)
     os.environ[_env_key("DATASET_PATH_CACHE_TTL")] = str(args.dataset_path_cache_ttl)
@@ -3332,13 +3379,19 @@ def _set_server_runtime_env(args) -> None:
 
 def create_app_from_env():
     """Uvicorn app factory used for multi-worker and reload mode."""
-    data_dir = Path(os.environ.get(_env_key("DATA_DIR"), "./t4datasets")).expanduser().resolve()
+    import json
+    data_dirs_raw = os.environ.get(_env_key("DATA_DIRS"), "[]")
+    try:
+        data_dirs_raw_list = json.loads(data_dirs_raw)
+    except (json.JSONDecodeError, TypeError):
+        data_dirs_raw_list = ["./t4datasets"]
+    data_dirs = [Path(d).expanduser().resolve() for d in data_dirs_raw_list]
     search_depth = int(os.environ.get(_env_key("SEARCH_DEPTH"), "1"))
     tier4_cache_size = int(os.environ.get(_env_key("TIER4_CACHE"), "8"))
     dataset_path_cache_ttl_s = float(os.environ.get(_env_key("DATASET_PATH_CACHE_TTL"), "30.0"))
     visibility_mode = os.environ.get(_env_key("VISIBILITY_MODE"), "public")
     return _build_app(
-        data_dir=data_dir,
+        data_dirs=data_dirs,
         search_depth=search_depth,
         tier4_cache_size=tier4_cache_size,
         dataset_path_cache_ttl_s=dataset_path_cache_ttl_s,
@@ -3350,8 +3403,8 @@ def _parse_args(argv=None):
         description="Serve the T4 Visualizer render API over HTTP."
     )
     parser.add_argument(
-        "--data-dir", default="./t4datasets", metavar="PATH",
-        help="Directory that contains T4 datasets (default: ./t4datasets).",
+        "--data-dir", action="append", default=[], metavar="PATH",
+        help="Directory that contains T4 datasets (default: ./t4datasets). Can be specified multiple times.",
     )
     parser.add_argument(
         "--search-depth", type=int, default=1, metavar="N",
@@ -3415,11 +3468,14 @@ def main(argv=None):
         )
         sys.exit(1)
 
-    data_dir = Path(args.data_dir).expanduser().resolve()
-    if not data_dir.exists():
-        data_dir.mkdir(parents=True, exist_ok=True)
-    print(f"  Data directory : {data_dir}")
-    print(f"  Search depth   : {args.search_depth}")
+    # Use provided data dirs or default
+    data_dirs_input = args.data_dir if args.data_dir else ["./t4datasets"]
+    data_dirs = [Path(d).expanduser().resolve() for d in data_dirs_input]
+    for data_dir in data_dirs:
+        if not data_dir.exists():
+            data_dir.mkdir(parents=True, exist_ok=True)
+    print(f"  Data directories : {data_dirs}")
+    print(f"  Search depth      : {args.search_depth}")
     print(f"  Workers        : {args.workers}")
     print(f"  Tier4 cache    : {args.tier4_cache} datasets")
     print(f"  Visibility mode: {args.visibility_mode}")

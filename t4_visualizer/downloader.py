@@ -493,6 +493,22 @@ def list_webauto_annotation_dataset_ids(data_dir: Path) -> List[str]:
     return sorted(out)
 
 
+def list_webauto_annotation_dataset_ids_multi(data_dirs: List[Path]) -> List[str]:
+    """List annotation-dataset id strings from multiple directories.
+
+    Combines results from all directories, removing duplicates.
+    """
+    seen: set[str] = set()
+    out: List[str] = []
+    for data_dir in data_dirs:
+        ids = list_webauto_annotation_dataset_ids(data_dir)
+        for id_ in ids:
+            if id_ not in seen:
+                seen.add(id_)
+                out.append(id_)
+    return sorted(out)
+
+
 def parse_vehicle_catalog_url(
     catalog_url: str,
     *,
