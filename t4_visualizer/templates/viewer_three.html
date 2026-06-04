@@ -2743,6 +2743,7 @@ function readEvalBoxPose(box){
 
 /** Mesh GT boxes need center+size; pure 24-float corners use wireframe fallback. */
 function canBuildGtMeshFromBox(box){
+  if (box && box.force_wireframe === true) return false;
   if (box && box._normalized_eval && Array.isArray(box.center) && Array.isArray(box.size)) {
     const l0 = Number(box.size[0] || 0);
     const w0 = Number(box.size[1] || 0);
@@ -3705,6 +3706,21 @@ function setExternalLayerPayload(payload, opts){
   const norm = normalizeExternalLayerPayload(payload, frame);
   const gt = Array.isArray(norm.gt) ? norm.gt : [];
   const pred = Array.isArray(norm.pred) ? norm.pred : [];
+  if (gt.length) {
+    const b0 = gt[0];
+    window.__t4EvalDebugFirstGt = {
+      frame,
+      uuid: b0.uuid,
+      status: b0.status,
+      force_wireframe: b0.force_wireframe === true,
+      size: b0.size,
+      yaw: b0.yaw,
+      corners0: Array.isArray(b0.corners) ? b0.corners.slice(0, 6) : null,
+    };
+    console.info("[viewer-debug] first normalized GT", {
+      ...window.__t4EvalDebugFirstGt,
+    });
+  }
   externalLayers = { gt, pred };
   renderExternalLayers();
   updateEvalHud();
@@ -4887,6 +4903,39 @@ window.addEventListener("message", (ev) => {
 window.T4ViewerAPI = {
   setLayers(payload){ bboxLayersByFrame = null; setExternalLayerPayload(payload || {}); },
   clearLayers(){ clearCurrentViewerLayers({ clearMetrics: false }); },
+  debugState(){
+    const firstGt = Array.isArray(externalLayers.gt) && externalLayers.gt.length ? externalLayers.gt[0] : null;
+    const firstPred = Array.isArray(externalLayers.pred) && externalLayers.pred.length ? externalLayers.pred[0] : null;
+    const summarize = (b) => b ? ({
+      uuid: b.uuid,
+      status: b.status,
+      force_wireframe: b.force_wireframe === true,
+      length: b.length,
+      width: b.width,
+      height: b.height,
+      size: b.size,
+      yaw: b.yaw,
+      meta_length: b.meta && b.meta.length,
+      meta_width: b.meta && b.meta.width,
+      meta_yaw: b.meta && b.meta.yaw,
+      corners0: Array.isArray(b.corners) ? b.corners.slice(0, 6) : null,
+    }) : null;
+    return {
+      frame,
+      params: {
+        external_bbox_yaw_offset: params.get("external_bbox_yaw_offset"),
+        external_bbox_swap_lw: params.get("external_bbox_swap_lw"),
+        external_bbox_alignment_version: params.get("external_bbox_alignment_version"),
+      },
+      bboxLayersByFrameCount: bboxLayersByFrame && typeof bboxLayersByFrame === "object" ? Object.keys(bboxLayersByFrame).length : 0,
+      externalGtCount: Array.isArray(externalLayers.gt) ? externalLayers.gt.length : 0,
+      externalPredCount: Array.isArray(externalLayers.pred) ? externalLayers.pred.length : 0,
+      gtLayerChildren: gtLayerGroup.children.length,
+      predLayerChildren: predLayerGroup.children.length,
+      firstGt: summarize(firstGt),
+      firstPred: summarize(firstPred),
+    };
+  },
   setMetricsSeries(obj){
     if (!obj || typeof obj !== "object") return;
     metricsSeriesOverride = normalizeMetricsSeriesPayload(obj);
