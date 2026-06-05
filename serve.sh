@@ -93,18 +93,14 @@ cleanup_stale_pid() {
 
 save_state() {
     mkdir -p "$(dirname "$STATE_FILE")"
-    local data_dirs_json="["
-    local first=1
-    for d in "${DATA_DIRS[@]}"; do
-        if [[ $first -eq 0 ]]; then
-            data_dirs_json+=","
-        fi
-        data_dirs_json+="$(shell_quote "$d")"
-        first=0
-    done
-    data_dirs_json+="]"
-    cat > "$STATE_FILE" <<EOF
-DATA_DIRS_JSON=${data_dirs_json}
+    {
+        printf "DATA_DIRS=("
+        local d=""
+        for d in "${DATA_DIRS[@]}"; do
+            printf " %s" "$(shell_quote "$d")"
+        done
+        printf " )\n"
+        cat <<EOF
 SEARCH_DEPTH=$(shell_quote "$SEARCH_DEPTH")
 HOST=$(shell_quote "$HOST")
 PORT=$(shell_quote "$PORT")
@@ -115,19 +111,21 @@ VENV_DIR=$(shell_quote "$VENV_DIR")
 PID_FILE=$(shell_quote "$PID_FILE")
 LOG_FILE=$(shell_quote "$LOG_FILE")
 EOF
+    } > "$STATE_FILE"
 }
 
 load_state_if_present() {
     [[ -f "$STATE_FILE" ]] || return 0
     # shellcheck disable=SC1090
     source "$STATE_FILE"
-    # Parse DATA_DIRS_JSON back to array
-    if [[ -n "$DATA_DIRS_JSON" ]]; then
+    # Backward compatibility for older state files.
+    if [[ -n "${DATA_DIRS_JSON:-}" ]]; then
         DATA_DIRS=()
-        # Use python to parse JSON array safely
         while IFS= read -r item; do
             DATA_DIRS+=("$item")
-        done < <(python3 -c "import json,sys; print('\n'.join(json.loads('$DATA_DIRS_JSON')))" 2>/dev/null || echo "${DATA_DIR:-/mnt/qnapdata/internal/t4datasets}")
+        done < <(python3 -c "import json,sys; print('\n'.join(json.loads(sys.argv[1])))" "$DATA_DIRS_JSON" 2>/dev/null || echo "${DATA_DIR:-/mnt/qnapdata/internal/t4datasets}")
+    elif [[ -n "${DATA_DIR:-}" ]]; then
+        DATA_DIRS=("$DATA_DIR")
     fi
 }
 
