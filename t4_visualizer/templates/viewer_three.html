@@ -605,7 +605,7 @@ const initialCompareViewMode = (() => {
   if (raw === "side_by_side" || raw === "side-by-side" || raw === "sidebyside") return "side_by_side";
   if (raw === "curtain") return "curtain";
   if (raw === "overlay") return "overlay";
-  return "side_by_side";
+  return "overlay";
 })();
 const qv = version ? `&version=${encodeURIComponent(version)}` : "";
 const metaUrl = `/viewer/three/meta?t4dataset_id=${encodeURIComponent(dataset)}&scenario_name=${encodeURIComponent(scenario)}${qv}`;

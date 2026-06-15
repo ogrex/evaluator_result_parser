@@ -3084,6 +3084,8 @@ def _build_app(
         frame_index: int = Query(0, ge=0),
         version: Optional[str] = Query(None),
         session_id: Optional[str] = Query(None),
+        compare_view: Optional[str] = Query(None),
+        compare_mode: Optional[str] = Query(None),
     ):
         esc = html.escape
         qs_params = {
@@ -3096,6 +3098,10 @@ def _build_app(
             qs_params["version"] = version
         if session_id:
             qs_params["session_id"] = session_id
+        if compare_view:
+            qs_params["compare_view"] = compare_view
+        if compare_mode:
+            qs_params["compare_mode"] = compare_mode
         qs = urlencode(qs_params)
         scenario_label = scenario_name or "(auto)"
         tmpl = _load_template("viewer_three.html")
