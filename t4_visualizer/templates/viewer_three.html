@@ -604,7 +604,8 @@ const initialCompareViewMode = (() => {
   const raw = String(params.get("compare_view") || params.get("compare_mode") || "").toLowerCase();
   if (raw === "side_by_side" || raw === "side-by-side" || raw === "sidebyside") return "side_by_side";
   if (raw === "curtain") return "curtain";
-  return "overlay";
+  if (raw === "overlay") return "overlay";
+  return "side_by_side";
 })();
 const qv = version ? `&version=${encodeURIComponent(version)}` : "";
 const metaUrl = `/viewer/three/meta?t4dataset_id=${encodeURIComponent(dataset)}&scenario_name=${encodeURIComponent(scenario)}${qv}`;
@@ -798,6 +799,10 @@ let spotlightJumpInFlight = false;
 let compareCurtainRatio = 0.5;
 let compareRenderRunFilter = null;
 let compareCurtainDragging = false;
+const EVAL_FAST_RENDER_BOX_THRESHOLD = 450;
+const SCENE_BOX_BATCH_THRESHOLD = 180;
+const MAX_RENDER_POINTS = 180000;
+let evalFastRenderMode = false;
 
 function lerp(a, b, u){ return a + (b - a) * u; }
 
@@ -2925,6 +2930,7 @@ function addTpQualityAura(parent, box, layerId){
  * FN: lighter fill so TP reads as “solid match”; edges stay visible.
  */
 function addGtEvalBoxMesh(group, box, layerId){
+  if (evalFastRenderMode) return addEvalWireframeLinesOnly(group, box, layerId);
   const pose = readEvalBoxPose(box);
   const col = evalLineColor(box, layerId);
   const st = normalizeEvalStatus(box);
@@ -3005,7 +3011,7 @@ function addEstEvalWireframe(group, box, layerId){
   });
   const seg = new THREE.LineSegments(g, m);
   seg.userData.opacityFactor = edgeMul;
-  if (isFp) {
+  if (!evalFastRenderMode && isFp) {
     const meta = getInspectableBoxMeta(box, layerId);
     if (meta && meta.center && fxEnabled("fxFpPulse")) {
       if (selectedInspectState && selectedInspectState.current && selectionRelationForMeta(meta.meta || meta, selectedInspectState.current) === "none") {
@@ -3022,8 +3028,8 @@ function addEstEvalWireframe(group, box, layerId){
       }
     }
   }
-  addVelocityVectorArrow(group, getInspectableBoxMeta(box, layerId), col);
-  addTpQualityAura(seg, box, layerId);
+  if (!evalFastRenderMode) addVelocityVectorArrow(group, getInspectableBoxMeta(box, layerId), col);
+  if (!evalFastRenderMode) addTpQualityAura(seg, box, layerId);
   group.add(seg);
   return seg;
 }
@@ -3635,7 +3641,7 @@ function addEvalWireframeLinesOnly(group, box, layerId){
   const seg = new THREE.LineSegments(g, m);
   seg.userData.opacityFactor = 1;
   const st = normalizeEvalStatus(box);
-  if (layerId === "gt" && st === "FN" && fxEnabled("fxFnRing")) {
+  if (!evalFastRenderMode && layerId === "gt" && st === "FN" && fxEnabled("fxFnRing")) {
     const hot = currentFrameIsSpotlightHot();
     const meta = getInspectableBoxMeta(box, layerId);
     if (meta && meta.center) {
@@ -3662,9 +3668,9 @@ function addEvalWireframeLinesOnly(group, box, layerId){
       }
     }
   }
-  addTpQualityAura(seg, box, layerId);
+  if (!evalFastRenderMode) addTpQualityAura(seg, box, layerId);
   group.add(seg);
-  addVelocityVectorArrow(group, getInspectableBoxMeta(box, layerId), col);
+  if (!evalFastRenderMode) addVelocityVectorArrow(group, getInspectableBoxMeta(box, layerId), col);
   return seg;
 }
 
@@ -3681,6 +3687,15 @@ function isEvalTupleVisible(box, layerId){
   if (kind === "EST" && st === "FP") return showEstFp;
   if (layerId === "gt") return showGtTp || showGtFn;
   return showEstTp || showEstFp;
+}
+
+function countVisibleEvalBoxes(boxes, layerId){
+  if (!Array.isArray(boxes)) return 0;
+  let n = 0;
+  for (const b of boxes) {
+    if (isEvalTupleVisible(b, layerId)) n++;
+  }
+  return n;
 }
 
 function drawLayerBoxes(group, boxes, layerId){
@@ -3719,6 +3734,8 @@ function drawLayerBoxes(group, boxes, layerId){
 }
 
 function renderExternalLayers(){
+  const visibleEvalCount = countVisibleEvalBoxes(externalLayers.gt, "gt") + countVisibleEvalBoxes(externalLayers.pred, "pred");
+  evalFastRenderMode = visibleEvalCount > EVAL_FAST_RENDER_BOX_THRESHOLD;
   drawLayerBoxes(gtLayerGroup, externalLayers.gt, "gt");
   drawLayerBoxes(predLayerGroup, externalLayers.pred, "pred");
   const gtOn = !!(document.getElementById("showGtTp") && document.getElementById("showGtTp").checked)
@@ -4697,8 +4714,10 @@ function wireInspectPanelResize(){
 function setFrameData(data){
   sceneSelectionCandidates = buildSceneCandidatesFromFrameData(data, frame);
   const n = data.pointCount;
-  const pos = new Float32Array(n * 3);
-  const col = new Float32Array(n * 3);
+  const pointStep = n > MAX_RENDER_POINTS ? Math.ceil(n / MAX_RENDER_POINTS) : 1;
+  const renderPointCount = Math.ceil(n / pointStep);
+  const pos = new Float32Array(renderPointCount * 3);
+  const col = new Float32Array(renderPointCount * 3);
   const mapName = getPointColormapName();
   const normalize = getPointIntensityNormalize();
   let minI = Infinity;
@@ -4712,14 +4731,16 @@ function setFrameData(data){
   }
   const rng = maxI - minI;
   const eps = 1e-9;
-  for (let i = 0; i < n; i++) {
+  let outPointIndex = 0;
+  for (let i = 0; i < n; i += pointStep) {
     const x = data.pts[i * 4];
     const y = data.pts[i * 4 + 1];
     const z = data.pts[i * 4 + 2];
     const inten = data.pts[i * 4 + 3];
-    pos[i * 3] = x;
-    pos[i * 3 + 1] = y;
-    pos[i * 3 + 2] = z;
+    const outBase = outPointIndex * 3;
+    pos[outBase] = x;
+    pos[outBase + 1] = y;
+    pos[outBase + 2] = z;
     const scaled = inten * intensityGain;
     let tNorm;
     if (normalize && n > 0) {
@@ -4729,19 +4750,39 @@ function setFrameData(data){
       tNorm = Math.max(0, Math.min(1, scaled));
     }
     const rgb = intensityToRgb(tNorm, mapName);
-    col[i * 3] = rgb[0];
-    col[i * 3 + 1] = rgb[1];
-    col[i * 3 + 2] = rgb[2];
+    col[outBase] = rgb[0];
+    col[outBase + 1] = rgb[1];
+    col[outBase + 2] = rgb[2];
+    outPointIndex++;
   }
   pointsGeom.setAttribute("position", new THREE.BufferAttribute(pos, 3));
   pointsGeom.setAttribute("color", new THREE.BufferAttribute(col, 3));
   pointsGeom.computeBoundingSphere();
-  while (boxesGroup.children.length) boxesGroup.remove(boxesGroup.children[0]);
+  clearGroupDeep(boxesGroup);
   const edges = [
     [0,1],[1,2],[2,3],[3,0],
     [4,5],[5,6],[6,7],[7,4],
     [0,4],[1,5],[2,6],[3,7]
   ];
+  const batchSceneBoxes = data.boxCount > SCENE_BOX_BATCH_THRESHOLD;
+  const batchedLinePts = batchSceneBoxes ? [] : null;
+  const appendCenterBoxEdges = (out, cx, cy, cz, sx, sy, sz, yaw) => {
+    const hx = Number(sx || 0) * 0.5;
+    const hy = Number(sy || 0) * 0.5;
+    const hz = Number(sz || 0) * 0.5;
+    const c = Math.cos(Number(yaw || 0));
+    const s = Math.sin(Number(yaw || 0));
+    const local = [
+      [ hx,  hy, -hz], [ hx, -hy, -hz], [-hx, -hy, -hz], [-hx,  hy, -hz],
+      [ hx,  hy,  hz], [ hx, -hy,  hz], [-hx, -hy,  hz], [-hx,  hy,  hz],
+    ];
+    const corners = local.map(([x, y, z]) => [
+      Number(cx || 0) + x * c - y * s,
+      Number(cy || 0) + x * s + y * c,
+      Number(cz || 0) + z,
+    ]);
+    for (const [a, b] of edges) out.push(...corners[a], ...corners[b]);
+  };
   for (let i=0;i<data.boxCount;i++) {
     const candidate = sceneSelectionCandidates[i] || null;
     if (data.format === "T4V3D002") {
@@ -4755,6 +4796,10 @@ function setFrameData(data){
           data.boxes[b0], data.boxes[b0 + 1], data.boxes[b0 + 2]
         );
       }
+      if (batchSceneBoxes) {
+        batchedLinePts.push(...linePts);
+        continue;
+      }
       const g = new THREE.BufferGeometry();
       g.setAttribute("position", new THREE.Float32BufferAttribute(linePts, 3));
       const m = new THREE.LineBasicMaterial({
@@ -4767,6 +4812,10 @@ function setFrameData(data){
     } else {
       const cx=data.boxes[i*7], cy=data.boxes[i*7+1], cz=data.boxes[i*7+2];
       const sx=data.boxes[i*7+3], sy=data.boxes[i*7+4], sz=data.boxes[i*7+5], yaw=data.boxes[i*7+6];
+      if (batchSceneBoxes) {
+        appendCenterBoxEdges(batchedLinePts, cx, cy, cz, sx, sy, sz, yaw);
+        continue;
+      }
       const g = new THREE.BoxGeometry(sx, sy, sz);
       const m = new THREE.MeshBasicMaterial({color:0xffd166, wireframe:true, transparent:true, opacity:Number(document.getElementById("boxOpacity").value || "0.9")});
       const box = new THREE.Mesh(g, m);
@@ -4776,9 +4825,23 @@ function setFrameData(data){
       boxesGroup.add(box);
     }
   }
+  if (batchSceneBoxes && batchedLinePts && batchedLinePts.length) {
+    const g = new THREE.BufferGeometry();
+    g.setAttribute("position", new THREE.Float32BufferAttribute(batchedLinePts, 3));
+    const m = new THREE.LineBasicMaterial({
+      color: 0xffd166,
+      transparent: true,
+      opacity: Number(document.getElementById("boxOpacity").value || "0.9"),
+    });
+    const lines = new THREE.LineSegments(g, m);
+    lines.userData.inspectSelectable = false;
+    boxesGroup.add(lines);
+  }
   const ann3d = document.getElementById("show3dAnnotations");
   boxesGroup.visible = !ann3d || !!ann3d.checked;
-  metaEl.innerHTML = `<div>sample=<code>${data.sampleToken}</code></div><div>timestamp_us=${data.timestampUs}</div><div>points=${data.pointCount} boxes=${data.boxCount}</div>`;
+  const pointMeta = pointStep > 1 ? `${renderPointCount}/${data.pointCount}` : `${data.pointCount}`;
+  const boxMeta = batchSceneBoxes ? `${data.boxCount} batched` : `${data.boxCount}`;
+  metaEl.innerHTML = `<div>sample=<code>${data.sampleToken}</code></div><div>timestamp_us=${data.timestampUs}</div><div>points=${pointMeta} boxes=${boxMeta}</div>`;
 }
 
 async function showFrame(i){

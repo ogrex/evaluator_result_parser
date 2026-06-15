@@ -76,14 +76,16 @@ pip install -e ".[server]"
 
 `pip install -e .` で以下の CLI コマンドが利用できるようになります:
 
-| コマンド | 説明 |
-|---|---|
-| `t4-visualize` | 1シーンをインタラクティブ / PNG で可視化 |
-| `t4-batch` | CSV/Parquet から複数シーンをバッチ可視化 |
-| `t4-multi` | 複数の CSV を一括処理 |
-| `t4-inspect` | データセットの情報確認 |
-| `t4-cache` | ローカルキャッシュの管理 |
-| `t4-server` | HTTP API サーバーを起動（要 `.[server]`） |
+
+| コマンド           | 説明                              |
+| -------------- | ------------------------------- |
+| `t4-visualize` | 1シーンをインタラクティブ / PNG で可視化        |
+| `t4-batch`     | CSV/Parquet から複数シーンをバッチ可視化      |
+| `t4-multi`     | 複数の CSV を一括処理                   |
+| `t4-inspect`   | データセットの情報確認                     |
+| `t4-cache`     | ローカルキャッシュの管理                    |
+| `t4-server`    | HTTP API サーバーを起動（要 `.[server]`） |
+
 
 ---
 
@@ -113,6 +115,7 @@ python result_parser/jsonl_parser.py <folder_name>
 ```
 
 主要クラス:
+
 - `JSONLProcessor` — フォルダ内の `.jsonl` を一括読み込み
 - `ObjectExtractor` — ego 情報・検出物体（位置/速度/共分散等）を抽出
 - `ObjectProcessor` — 上記を組み合わせて DataFrame を生成
@@ -136,6 +139,7 @@ python result_parser/metrics_visualizer.py
 ```
 
 主要機能:
+
 - `DatasetManager.calc_tprate()` — カテゴリ別 TPrate
 - `DatasetManager.calc_mAP()` — mean Average Precision
 - `DatasetManager.distance_based_fp_tp_fn()` — 距離ビン別 FP/TP/FN
@@ -169,6 +173,7 @@ t4-visualize /path/to/t4dataset 1609459200000000 --no-annotations
 ```
 
 出力:
+
 - `<save_dir>/<timestamp>_cameras.png` — 全カメラ画像（2D bbox オーバーレイ付き）
 - `<save_dir>/<timestamp>_pointcloud.png` — LiDAR 鳥瞰図（BEV、3D bbox フットプリント付き）
 
@@ -193,6 +198,7 @@ t4-inspect /path/to/t4dataset
 ```
 
 出力例:
+
 ```
 ============================================================
   Scenes (1)
@@ -221,24 +227,27 @@ CSV または Parquet で指定した複数シーンを一括で可視化しま�
 
 #### 入力ファイル形式
 
-| カラム | 必須 | 説明 |
-|---|---|---|
-| `t4dataset_id` | ✅ | データセット識別子（ダウンロード・検索に使用） |
-| `scenario_name` | ✅ | シーン名 |
-| `frame_index` | ✅ | フレーム番号（0始まり） |
-| `t4dataset_name` | | データセットの表示名（ダウンロード確認プロンプトで使用） |
-| `status` | | グループ名（例: `degrade`, `improved`）。サブフォルダに分類される |
-| `cameras` | | 表示するカメラをカンマ区切りで指定（省略=全カメラ） |
-| `description` | | 自由記述のメモ |
-| `label` | | 対象物体のラベル文字列（例: `car`, `pedestrian`）。出力ファイル名の先頭に付与される |
-| `uuid` | | 対象物体のインスタンストークン（T4 dataset の `instance_token`） |
-| `x` / `y` / `z` | | 自車座標系での物体位置（メートル） |
-| `width` / `length` / `height` | | 物体の BBOX サイズ（メートル） |
-| `yaw` | | 物体の向き（ラジアン） |
+
+| カラム                           | 必須  | 説明                                                   |
+| ----------------------------- | --- | ---------------------------------------------------- |
+| `t4dataset_id`                | ✅   | データセット識別子（ダウンロード・検索に使用）                              |
+| `scenario_name`               | ✅   | シーン名                                                 |
+| `frame_index`                 | ✅   | フレーム番号（0始まり）                                         |
+| `t4dataset_name`              |     | データセットの表示名（ダウンロード確認プロンプトで使用）                         |
+| `status`                      |     | グループ名（例: `degrade`, `improved`）。サブフォルダに分類される         |
+| `cameras`                     |     | 表示するカメラをカンマ区切りで指定（省略=全カメラ）                           |
+| `description`                 |     | 自由記述のメモ                                              |
+| `label`                       |     | 対象物体のラベル文字列（例: `car`, `pedestrian`）。出力ファイル名の先頭に付与される |
+| `uuid`                        |     | 対象物体のインスタンストークン（T4 dataset の `instance_token`）       |
+| `x` / `y` / `z`               |     | 自車座標系での物体位置（メートル）                                    |
+| `width` / `length` / `height` |     | 物体の BBOX サイズ（メートル）                                   |
+| `yaw`                         |     | 物体の向き（ラジアン）                                          |
+
 
 1 行 = 1 物体。同じ `(t4dataset_id, scenario_name, frame_index)` の行は 1 フレームにまとめて可視化されます。
 
 入力例 (`scenes.csv`):
+
 ```csv
 t4dataset_id,scenario_name,frame_index,status,label,uuid,x,y,z
 dataset-abc,scene-001,0,degrade,car,inst-uuid-001,10.5,2.3,0.5
@@ -282,6 +291,7 @@ t4-batch scenes.csv --output-dir results/ --fail-fast
 `status` 列がある場合、ステータスごとにサブフォルダへ分類されます。
 
 通常モード（`--crop-view` なし）の出力ファイル名:
+
 ```
 <label>_<t4dataset_id>_<scenario_name>_f<frame_index>_cameras.png
 <label>_<t4dataset_id>_<scenario_name>_f<frame_index>_pointcloud.png
@@ -290,6 +300,7 @@ t4-batch scenes.csv --output-dir results/ --fail-fast
 
 `--crop-view` モードでは、物体ごとに最良カメラを選び**カメラ別に 1 枚**生成します。
 異なるカメラに写る物体は別ファイルになります:
+
 ```
 <label>_<t4dataset_id>_<scenario_name>_f<frame_index>_<CHANNEL>_visualization_crop.png
 ```
@@ -309,17 +320,19 @@ results/
 
 `batch_summary.csv` の内容:
 
-| カラム | 説明 |
-|---|---|
-| `t4dataset_id` | データセットID |
-| `t4dataset_name` | データセット表示名 |
-| `scenario_name` | シーン名 |
-| `frame_index` | フレーム番号 |
-| `status` | ステータス |
-| `success` | 成否 |
-| `output_dir` | 出力先ディレクトリ |
+
+| カラム               | 説明             |
+| ----------------- | -------------- |
+| `t4dataset_id`    | データセットID       |
+| `t4dataset_name`  | データセット表示名      |
+| `scenario_name`   | シーン名           |
+| `frame_index`     | フレーム番号         |
+| `status`          | ステータス          |
+| `success`         | 成否             |
+| `output_dir`      | 出力先ディレクトリ      |
 | `filename_prefix` | 出力ファイルのプレフィックス |
-| `error` | エラーメッセージ（失敗時） |
+| `error`           | エラーメッセージ（失敗時）  |
+
 
 ### t4-multi — 複数 CSV の一括処理
 
@@ -346,20 +359,24 @@ t4-multi improve:improve.csv -o ./viz --no-download \
 データセットサーバーによっては `dest_dir/*/<t4dataset_id>` のようにグループフォルダが
 1段挟まる場合があります。`--search-depth N`（デフォルト `1`）でサブディレクトリを探索します。
 
-| layout | 必要な search-depth |
-|---|---|
-| `dest_dir/<id>/` | 0 または 1（フラットは常に優先検索） |
-| `dest_dir/group/<id>/` | 1（デフォルト） |
+
+| layout                 | 必要な search-depth     |
+| ---------------------- | -------------------- |
+| `dest_dir/<id>/`       | 0 または 1（フラットは常に優先検索） |
+| `dest_dir/group/<id>/` | 1（デフォルト）             |
+
 
 `--no-download` 時の present / missing サマリーおよびダウンロード前確認の
 表示も同じ depth で計算されます。
 
 内部で**3フェーズ**処理が行われます:
+
 1. **Load** — 全 CSV を読み込み、必要なデータセット ID の集合を収集
 2. **Download** — `DatasetCache.ensure_many()` で重複なく一括取得。LRU の不要エントリを先に退避
 3. **Visualize** — 各 CSV をラベル別ディレクトリに出力
 
 出力構造:
+
 ```
 ./viz/
 ├── improve/
@@ -443,33 +460,39 @@ with ThreadPoolExecutor(max_workers=4) as ex:
 
 **VisualizationRequest**
 
-| フィールド | 型 | デフォルト | 説明 |
-|---|---|---|---|
-| `dataset_path` | `Path` | 必須 | T4 dataset root のローカルパス |
-| `scenario_name` | `str` | 必須 | シーン名 |
-| `frame_index` | `int` | 必須 | 0始まりのフレーム番号 |
-| `target_objects` | `List[TargetObject]` | `[]` | ハイライト対象の物体リスト |
-| `cameras` | `Optional[List[str]]` | `None` | 表示カメラ（省略=全カメラ） |
-| `show_annotations` | `bool` | `True` | アノテーション表示 |
-| `version` | `Optional[str]` | `None` | データセットバージョン |
-| `crop_cameras` | `bool` | `False` | 対象物周辺クロップモード |
-| `crop_padding` | `int` | `40` | クロップの余白ピクセル |
-| `crop_min_size` | `int` | `300` | クロップの最小サイズ（ピクセル） |
+
+| フィールド              | 型                     | デフォルト   | 説明                      |
+| ------------------ | --------------------- | ------- | ----------------------- |
+| `dataset_path`     | `Path`                | 必須      | T4 dataset root のローカルパス |
+| `scenario_name`    | `str`                 | 必須      | シーン名                    |
+| `frame_index`      | `int`                 | 必須      | 0始まりのフレーム番号             |
+| `target_objects`   | `List[TargetObject]`  | `[]`    | ハイライト対象の物体リスト           |
+| `cameras`          | `Optional[List[str]]` | `None`  | 表示カメラ（省略=全カメラ）          |
+| `show_annotations` | `bool`                | `True`  | アノテーション表示               |
+| `version`          | `Optional[str]`       | `None`  | データセットバージョン             |
+| `crop_cameras`     | `bool`                | `False` | 対象物周辺クロップモード            |
+| `crop_padding`     | `int`                 | `40`    | クロップの余白ピクセル             |
+| `crop_min_size`    | `int`                 | `300`   | クロップの最小サイズ（ピクセル）        |
+
 
 **VisualizationResult**
 
-| フィールド | 型 | 説明 |
-|---|---|---|
-| `images` | `List[RenderImage]` | 生成された図（標準モード: 1件、クロップモード: カメラ数分） |
-| `sample_token` | `str` | レンダリングしたサンプルのトークン |
-| `timestamp_us` | `int` | サンプルのタイムスタンプ（マイクロ秒） |
+
+| フィールド          | 型                   | 説明                               |
+| -------------- | ------------------- | -------------------------------- |
+| `images`       | `List[RenderImage]` | 生成された図（標準モード: 1件、クロップモード: カメラ数分） |
+| `sample_token` | `str`               | レンダリングしたサンプルのトークン                |
+| `timestamp_us` | `int`               | サンプルのタイムスタンプ（マイクロ秒）              |
+
 
 **RenderImage**
 
-| フィールド | 型 | 説明 |
-|---|---|---|
-| `data` | `bytes` | PNG バイト列 |
-| `label` | `str` | `"combined"`（標準）またはカメラチャンネル名（クロップ） |
+
+| フィールド   | 型       | 説明                                 |
+| ------- | ------- | ---------------------------------- |
+| `data`  | `bytes` | PNG バイト列                           |
+| `label` | `str`   | `"combined"`（標準）またはカメラチャンネル名（クロップ） |
+
 
 ---
 
@@ -509,22 +532,24 @@ t4-server --data-dir /mnt/t4data --port 8080 --tier4-cache 4
 
 `serve.sh` / `t4-server` オプション一覧:
 
-| オプション | デフォルト | 説明 |
-|---|---|---|
-| `--data-dir` | `./t4datasets` | データセットのルートディレクトリ |
-| `--search-depth` | `1` | サブディレクトリ探索の深さ |
-| `--host` | `0.0.0.0` | バインドホスト |
-| `--port` | `8000` | バインドポート |
-| `--workers` | `8` | uvicorn ワーカープロセス数 |
-| `--tier4-cache` | `8` | メモリ上に保持する Tier4 インスタンス数 |
-| `--project-id` | 環境変数依存 | webauto プロジェクト ID |
-| `--venv` | `.venv` | 仮想環境ディレクトリ |
-| `--pid-file` | `.run/t4-server.pid` | PID ファイル |
-| `--log-file` | `.run/t4-server.log` | ログファイル |
+
+| オプション            | デフォルト                | 説明                      |
+| ---------------- | -------------------- | ----------------------- |
+| `--data-dir`     | `./t4datasets`       | データセットのルートディレクトリ        |
+| `--search-depth` | `1`                  | サブディレクトリ探索の深さ           |
+| `--host`         | `0.0.0.0`            | バインドホスト                 |
+| `--port`         | `8000`               | バインドポート                 |
+| `--workers`      | `8`                  | uvicorn ワーカープロセス数       |
+| `--tier4-cache`  | `8`                  | メモリ上に保持する Tier4 インスタンス数 |
+| `--project-id`   | 環境変数依存               | webauto プロジェクト ID       |
+| `--venv`         | `.venv`              | 仮想環境ディレクトリ              |
+| `--pid-file`     | `.run/t4-server.pid` | PID ファイル                |
+| `--log-file`     | `.run/t4-server.log` | ログファイル                  |
+
 
 #### エンドポイント
 
-**`POST /render`** — フレームをレンダリング
+`**POST /render**` — フレームをレンダリング
 
 リクエスト:
 
@@ -560,7 +585,7 @@ t4-server --data-dir /mnt/t4data --port 8080 --tier4-cache 4
 }
 ```
 
-**`GET /health`** — サーバー死活確認
+`**GET /health**` — サーバー死活確認
 
 ```bash
 curl http://localhost:8000/health
@@ -650,7 +675,7 @@ t4-load-test --mode viewer-tlr \
 - これはブラウザ内の WebGL FPS や描画負荷そのものではありません。クライアント GPU を含めた体感性能を測るには、別途ブラウザ自動操作ベンチマークが必要です。
 - `--plot-out` を付けると、並列数に対する `RPS` と `p50/p95/p99` 遅延の推移を PNG で保存できます。
 
-**`GET /datasets`** — 利用可能なデータセット一覧
+`**GET /datasets`** — 利用可能なデータセット一覧
 
 ```bash
 curl http://localhost:8000/datasets
@@ -718,6 +743,7 @@ t4-batch scenes.csv --output-dir results/
 ```
 
 プレースホルダー:
+
 - `{t4dataset_id}` — データセットID
 - `{dest_dir}` — 親ディレクトリ（例: `./t4datasets`）
 - `{dataset_path}` — データセットの展開先（`{dest_dir}/{t4dataset_id}`）
@@ -834,18 +860,21 @@ CIFS / NFS マウントなど書き込み不可の場所にデータセットが
 
 ## 依存ライブラリ
 
-| ライブラリ | 用途 |
-|---|---|
-| `pandas` | CSV/Parquet の読み書き |
-| `matplotlib` | 可視化（全ツール共通） |
-| `seaborn` | 散布図（`covariance_analysis.py`） |
-| `numpy` | 数値処理 |
-| `Pillow` | 画像読み込み（`visualize.py`） |
-| `pyarrow` | Parquet 読み込み（`batch.py`） |
-| `t4-devkit` | T4 dataset ロード（`t4_visualizer/` 全般） |
+
+| ライブラリ        | 用途                                  |
+| ------------ | ----------------------------------- |
+| `pandas`     | CSV/Parquet の読み書き                   |
+| `matplotlib` | 可視化（全ツール共通）                         |
+| `seaborn`    | 散布図（`covariance_analysis.py`）       |
+| `numpy`      | 数値処理                                |
+| `Pillow`     | 画像読み込み（`visualize.py`）              |
+| `pyarrow`    | Parquet 読み込み（`batch.py`）            |
+| `t4-devkit`  | T4 dataset ロード（`t4_visualizer/` 全般） |
+
 
 ```bash
 pip install pandas matplotlib seaborn numpy pillow pyarrow
 pip install git+https://github.com/tier4/t4-devkit.git
 pip install -e .
 ```
+
