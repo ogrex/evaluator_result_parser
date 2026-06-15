@@ -29,6 +29,33 @@
   button:hover,input[type=range]:hover,select:hover{border-color:rgba(120,160,255,.45)}
   #canvasWrap{position:relative;min-height:0}
   #canvas{width:100%;height:100%;display:block}
+  .compare-curtain-handle{
+    position:absolute;top:0;bottom:0;left:50%;width:34px;z-index:5;display:none;cursor:default;
+    transform:translateX(-50%);
+    background:linear-gradient(90deg,transparent 0,transparent calc(50% - 1px),rgba(180,205,255,.96) calc(50% - 1px),rgba(180,205,255,.96) calc(50% + 1px),transparent calc(50% + 1px),transparent 100%);
+    filter:drop-shadow(0 0 12px rgba(124,179,255,.62));
+    touch-action:none;
+  }
+  .compare-curtain-handle.is-curtain{cursor:ew-resize}
+  .compare-curtain-handle::before{
+    content:"";position:absolute;left:50%;top:50%;width:32px;height:54px;transform:translate(-50%,-50%);
+    border-radius:999px;border:1px solid rgba(180,205,255,.65);
+    background:rgba(12,16,36,.82);box-shadow:0 8px 28px rgba(0,0,0,.45),0 0 22px rgba(124,179,255,.28);
+  }
+  .compare-curtain-handle::after{
+    content:"A | B";position:absolute;left:50%;top:50%;transform:translate(-50%,-50%) rotate(-90deg);
+    color:#dbe8ff;font:700 10px var(--font-mono);letter-spacing:.08em;white-space:nowrap;
+  }
+  .compare-curtain-handle.visible{display:block}
+  .compare-label{
+    position:absolute;top:12px;z-index:5;display:none;padding:.24rem .5rem;border-radius:999px;
+    border:1px solid rgba(124,179,255,.34);background:rgba(7,11,24,.78);
+    color:#d9e6ff;font:700 11px var(--font-mono);letter-spacing:.08em;text-transform:uppercase;
+    pointer-events:none;box-shadow:0 6px 22px rgba(0,0,0,.38);
+  }
+  .compare-label.visible{display:block}
+  #compareLabelA{left:12px}
+  #compareLabelB{right:12px}
   .hud-panel{
     position:absolute;right:14px;top:14px;min-width:272px;max-width:min(92vw,320px);
     background:var(--hud-inner);backdrop-filter:blur(16px) saturate(1.15);
@@ -290,6 +317,11 @@
         <button id="camTop">Top</button>
         <button id="camFollow">Follow</button>
         <button id="toggleLanelet">Lanelet OFF</button>
+        <label title="Compare eval boxes by run with synchronized camera"><select id="compareViewMode">
+          <option value="overlay" selected>Overlay</option>
+          <option value="side_by_side">A | B</option>
+          <option value="curtain">Curtain</option>
+        </select></label>
         <button type="button" id="toggleCameraViewport" aria-pressed="false" title="Camera images overlay (off)">Cameras: off</button>
         <button id="toggleFullscreen" type="button" title="Fullscreen viewer">Fullscreen</button>
         <button id="importSessionBtn" type="button" title="Load evaluation overlay data from a local file">Load Eval</button>
@@ -321,6 +353,9 @@
     </div>
   </div>
   <div id="canvasWrap"><canvas id="canvas"></canvas>
+    <div id="compareLabelA" class="compare-label">A</div>
+    <div id="compareLabelB" class="compare-label">B</div>
+    <div id="compareCurtainHandle" class="compare-curtain-handle" title="Drag compare curtain"></div>
     <div id="colorbarWrap" title="Intensity colorbar">
       <canvas id="colorbarCanvas" style="display:block;border-radius:6px;border:1px solid rgba(90,110,180,.4);"></canvas>
     </div>
@@ -565,6 +600,12 @@ const scenario = params.get("scenario_name");
 const startFrame = Number(params.get("frame_index") || "0");
 const version = params.get("version");
 const initialSessionId = params.get("session_id") || "";
+const initialCompareViewMode = (() => {
+  const raw = String(params.get("compare_view") || params.get("compare_mode") || "").toLowerCase();
+  if (raw === "side_by_side" || raw === "side-by-side" || raw === "sidebyside") return "side_by_side";
+  if (raw === "curtain") return "curtain";
+  return "overlay";
+})();
 const qv = version ? `&version=${encodeURIComponent(version)}` : "";
 const metaUrl = `/viewer/three/meta?t4dataset_id=${encodeURIComponent(dataset)}&scenario_name=${encodeURIComponent(scenario)}${qv}`;
 
@@ -754,6 +795,9 @@ let spotlightIndex = -1;
 let spotlightTouring = false;
 let spotlightLastSwitchTs = 0;
 let spotlightJumpInFlight = false;
+let compareCurtainRatio = 0.5;
+let compareRenderRunFilter = null;
+let compareCurtainDragging = false;
 
 function lerp(a, b, u){ return a + (b - a) * u; }
 
@@ -842,6 +886,7 @@ let laneletFrame = -1;
 let externalLayers = { gt: [], pred: [] };
 /** When set, eval GT/pred layers are keyed by frame index (from parent postMessage). */
 let bboxLayersByFrame = null;
+let compareRunOrder = [];
 /** Optional per-frame series from parent: `{ gt_tp, gt_fn, est_tp, est_fp }` or legacy `{ gt, pred, tpr }`. */
 let metricsSeriesOverride = null;
 let activeViewerSessionId = initialSessionId || "";
@@ -897,6 +942,7 @@ function normalizeViewerSessionPayload(raw, sourceName){
     ? root
     : (root.eval_metrics_series || root.metricsSeries || root.metrics_series || null);
   if (metrics && typeof metrics === "object") out.eval_metrics_series = normalizeMetricsSeriesPayload(metrics);
+  if (Array.isArray(root.compare_runs)) out.compare_runs = root.compare_runs.map((v) => String(v || "").trim()).filter(Boolean);
 
   if (!Object.keys(out).length) {
     throw new Error("JSON must contain bbox_layers_by_frame, bbox_layers, eval_metrics_series, or a frame map.");
@@ -918,6 +964,7 @@ function clearCurrentViewerLayers(opts){
   const doCameraRefresh = !opts || opts.refreshCamera !== false;
   const clearMetrics = !opts || opts.clearMetrics !== false;
   bboxLayersByFrame = null;
+  compareRunOrder = [];
   if (clearMetrics) metricsSeriesOverride = null;
   externalLayers = { gt: [], pred: [] };
   renderExternalLayers();
@@ -930,6 +977,7 @@ function clearCurrentViewerLayers(opts){
 function applyViewerSessionPayload(payload, opts){
   const doCameraRefresh = !opts || opts.refreshCamera !== false;
   const norm = payload && typeof payload === "object" ? payload : {};
+  compareRunOrder = Array.isArray(norm.compare_runs) ? norm.compare_runs.map((v) => String(v || "").trim()).filter(Boolean) : [];
   metricsSeriesOverride = norm.eval_metrics_series ? normalizeMetricsSeriesPayload(norm.eval_metrics_series) : null;
   if (norm.bbox_layers_by_frame && typeof norm.bbox_layers_by_frame === "object") {
     bboxLayersByFrame = norm.bbox_layers_by_frame;
@@ -952,6 +1000,7 @@ function buildCurrentViewerSessionPayload(){
   const payload = {};
   if (bboxLayersByFrame && typeof bboxLayersByFrame === "object" && Object.keys(bboxLayersByFrame).length) {
     payload.bbox_layers_by_frame = bboxLayersByFrame;
+    if (compareRunOrder.length >= 2) payload.compare_runs = compareRunOrder;
   } else {
     const gt = Array.isArray(externalLayers.gt) ? externalLayers.gt : [];
     const pred = Array.isArray(externalLayers.pred) ? externalLayers.pred : [];
@@ -1071,6 +1120,8 @@ const evalHudEl = document.getElementById("evalHud");
 const appRootEl = document.getElementById("app");
 const shareSessionStateEl = document.getElementById("shareSessionState");
 const viewerSessionFileInput = document.getElementById("viewerSessionFileInput");
+const compareViewModeEl = document.getElementById("compareViewMode");
+if (compareViewModeEl) compareViewModeEl.value = initialCompareViewMode;
 function setStatus(t){ statusEl.textContent = t; }
 function setFrameText(){ frameTxt.textContent = `frame ${frame}/${Math.max(0,totalFrames-1)}`; slider.value = String(frame); }
 function setShareSessionState(t){ if (shareSessionStateEl) shareSessionStateEl.textContent = t; }
@@ -1696,21 +1747,26 @@ function syncFullscreenButton(){
   btn.textContent = document.fullscreenElement ? "Exit fullscreen" : "Fullscreen";
 }
 
+function applyMainCameraAspect(aspect){
+  const a = Math.max(0.05, Number(aspect) || 1);
+  if (camera.isPerspectiveCamera) {
+    camera.aspect = a;
+  } else {
+    const fr = 22;
+    camera.left = -fr * a;
+    camera.right = fr * a;
+    camera.top = fr;
+    camera.bottom = -fr;
+  }
+  camera.updateProjectionMatrix();
+}
+
 function resizeMainRenderer(){
   const wrap = document.getElementById("canvasWrap");
   const w = Math.max(1, (wrap && wrap.clientWidth) || canvas.clientWidth || window.innerWidth);
   const h = Math.max(1, (wrap && wrap.clientHeight) || canvas.clientHeight || (window.innerHeight - 64));
   renderer.setSize(w, h, false);
-  if (camera.isPerspectiveCamera) {
-    camera.aspect = w / h;
-  } else {
-    const fr = 22;
-    camera.left = -fr * (w / h);
-    camera.right = fr * (w / h);
-    camera.top = fr;
-    camera.bottom = -fr;
-  }
-  camera.updateProjectionMatrix();
+  applyMainCameraAspect(w / h);
   layoutMetricsStacks();
   resizeMetricsRenderer();
 }
@@ -3640,9 +3696,11 @@ function drawLayerBoxes(group, boxes, layerId){
     const candidate = buildInspectCandidate(getInspectableBoxMeta(b, layerId), null);
     if (layerId === "gt") {
       const obj = canBuildGtMeshFromBox(b) ? addGtEvalBoxMesh(group, b, layerId) : addEvalWireframeLinesOnly(group, b, layerId);
+      if (obj && obj.userData) obj.userData.compareRun = evalRunNameFromMeta(b);
       setInspectUserData(obj, candidate);
     } else {
       const obj = addEstEvalWireframe(group, b, layerId);
+      if (obj && obj.userData) obj.userData.compareRun = evalRunNameFromMeta(b);
       setInspectUserData(obj, candidate);
     }
     if (candidate) nextCandidates.push(candidate);
@@ -3669,6 +3727,123 @@ function renderExternalLayers(){
     || !!(document.getElementById("showEstFp") && document.getElementById("showEstFp").checked);
   gtLayerGroup.visible = gtOn;
   predLayerGroup.visible = prOn;
+}
+
+function evalRunNameFromMeta(meta){
+  const text = String((meta && (meta.run ?? meta.meta?.run)) ?? "").trim();
+  return text && text.toLowerCase() !== "nan" && text.toLowerCase() !== "none" ? text : "";
+}
+
+function currentEvalRuns(){
+  if (Array.isArray(compareRunOrder) && compareRunOrder.length >= 2) return compareRunOrder.slice();
+  const seen = new Set();
+  const out = [];
+  const addRows = (rows) => {
+    if (!Array.isArray(rows)) return;
+    for (const row of rows) {
+      const name = evalRunNameFromMeta(row);
+      if (name && !seen.has(name)) {
+        seen.add(name);
+        out.push(name);
+      }
+    }
+  };
+  addRows(externalLayers.gt);
+  addRows(externalLayers.pred);
+  return out;
+}
+
+function compareModeValue(){
+  const el = document.getElementById("compareViewMode");
+  return el ? String(el.value || "overlay") : "overlay";
+}
+
+function setCompareLabels(runA, runB, mode){
+  const la = document.getElementById("compareLabelA");
+  const lb = document.getElementById("compareLabelB");
+  const handle = document.getElementById("compareCurtainHandle");
+  const active = mode === "side_by_side" || mode === "curtain";
+  if (la) {
+    la.textContent = runA ? `A · ${runA}` : "A";
+    la.classList.toggle("visible", active);
+  }
+  if (lb) {
+    lb.textContent = runB ? `B · ${runB}` : "B";
+    lb.classList.toggle("visible", active);
+  }
+  if (handle) {
+    handle.classList.toggle("visible", active);
+    handle.classList.toggle("is-curtain", mode === "curtain");
+    const x = mode === "curtain" ? compareCurtainRatio : 0.5;
+    handle.style.left = `${Math.round(x * 10000) / 100}%`;
+  }
+}
+
+function setCompareRunVisibilityForGroup(group, runName){
+  if (!group) return;
+  const taggedRuns = [];
+  for (const child of group.children || []) {
+    const cand = getInspectCandidateFromObject(child);
+    const boxRun = String((child.userData && child.userData.compareRun) || evalRunNameFromMeta(cand && cand.meta) || "").trim();
+    if (boxRun) taggedRuns.push(boxRun);
+  }
+  const hasRunTags = taggedRuns.length > 0;
+  for (const child of group.children || []) {
+    const cand = getInspectCandidateFromObject(child);
+    const boxRun = String((child.userData && child.userData.compareRun) || evalRunNameFromMeta(cand && cand.meta) || "").trim();
+    child.visible = !runName || !hasRunTags || boxRun === runName;
+  }
+}
+
+function setCompareRunVisibility(runName){
+  compareRenderRunFilter = runName || null;
+  setCompareRunVisibilityForGroup(gtLayerGroup, compareRenderRunFilter);
+  setCompareRunVisibilityForGroup(predLayerGroup, compareRenderRunFilter);
+}
+
+function renderSceneViewport(x, y, w, h, runName){
+  const vw = Math.max(1, Math.floor(w));
+  const vh = Math.max(1, Math.floor(h));
+  renderer.setViewport(Math.floor(x), Math.floor(y), vw, vh);
+  renderer.setScissor(Math.floor(x), Math.floor(y), vw, vh);
+  applyMainCameraAspect(vw / vh);
+  setCompareRunVisibility(runName);
+  renderer.render(scene, camera);
+}
+
+function renderMainScene(){
+  const size = renderer.getSize(new THREE.Vector2());
+  const w = Math.max(1, Math.floor(size.x));
+  const h = Math.max(1, Math.floor(size.y));
+  const mode = compareModeValue();
+  const runs = currentEvalRuns();
+  const runA = runs[0] || "A";
+  const runB = runs[1] || "B";
+  const activeMode = mode === "side_by_side" || mode === "curtain" ? mode : "overlay";
+  setCompareLabels(runA, runB, activeMode);
+
+  if (activeMode === "side_by_side" || activeMode === "curtain") {
+    const split = activeMode === "side_by_side" ? 0.5 : Math.max(0.06, Math.min(0.94, compareCurtainRatio));
+    const leftW = Math.max(1, Math.round(w * split));
+    const rightW = Math.max(1, w - leftW);
+    renderer.setScissorTest(true);
+    renderer.setViewport(0, 0, w, h);
+    renderer.setScissor(0, 0, w, h);
+    renderer.clear();
+    renderSceneViewport(0, 0, leftW, h, runA);
+    renderSceneViewport(leftW, 0, rightW, h, runB);
+    setCompareRunVisibility(null);
+    renderer.setScissorTest(false);
+    renderer.setViewport(0, 0, w, h);
+    applyMainCameraAspect(w / h);
+    return;
+  }
+
+  renderer.setScissorTest(false);
+  renderer.setViewport(0, 0, w, h);
+  applyMainCameraAspect(w / h);
+  setCompareRunVisibility(null);
+  renderer.render(scene, camera);
 }
 
 function buildExternalCandidatesForFrameIndex(i){
@@ -4878,11 +5053,13 @@ window.addEventListener("message", (ev) => {
   console.info("[viewer-debug] message received", { type: d.type, origin: ev.origin || "null" });
   if (d.type === "bbox_layers") {
     bboxLayersByFrame = null;
+    compareRunOrder = Array.isArray(d.compare_runs) ? d.compare_runs.map((v) => String(v || "").trim()).filter(Boolean) : [];
     setExternalLayerPayload(d);
   } else if (d.type === "bbox_layers_by_frame") {
     const frames = d.frames;
     if (frames && typeof frames === "object"){
       bboxLayersByFrame = frames;
+      compareRunOrder = Array.isArray(d.compare_runs) ? d.compare_runs.map((v) => String(v || "").trim()).filter(Boolean) : [];
       const n = Object.keys(frames).length;
       const ack = `/viewer/three/debug/message-received?t4dataset_id=${encodeURIComponent(dataset)}&scenario_name=${encodeURIComponent(scenario)}&frame_index=${frame}&gt_count=0&pred_count=0&matched_count=0&message_type=bbox_layers_by_frame&frames_count=${n}`;
       fetch(ack)
@@ -5063,6 +5240,38 @@ document.getElementById("cameraOverlayMaxRange")?.addEventListener("change", () 
 document.getElementById("cameraOverlayMaxBoxes")?.addEventListener("change", () => {
   refreshCameraOverlay().catch((e) => setStatus(`camera: ${e.message}`));
 });
+document.getElementById("compareViewMode")?.addEventListener("change", () => {
+  const mode = compareModeValue();
+  const runs = currentEvalRuns();
+  setCompareLabels(runs[0] || "", runs[1] || "", runs.length >= 2 ? mode : "overlay");
+});
+function updateCompareCurtainFromClientX(clientX){
+  const wrap = document.getElementById("canvasWrap");
+  if (!wrap) return;
+  const rect = wrap.getBoundingClientRect();
+  if (!(rect.width > 0)) return;
+  compareCurtainRatio = Math.max(0.06, Math.min(0.94, (Number(clientX) - rect.left) / rect.width));
+  const handle = document.getElementById("compareCurtainHandle");
+  if (handle) handle.style.left = `${Math.round(compareCurtainRatio * 10000) / 100}%`;
+}
+document.getElementById("compareCurtainHandle")?.addEventListener("pointerdown", (ev) => {
+  if (compareModeValue() !== "curtain") return;
+  compareCurtainDragging = true;
+  ev.currentTarget.setPointerCapture?.(ev.pointerId);
+  updateCompareCurtainFromClientX(ev.clientX);
+  ev.preventDefault();
+});
+window.addEventListener("pointermove", (ev) => {
+  if (!compareCurtainDragging) return;
+  updateCompareCurtainFromClientX(ev.clientX);
+});
+window.addEventListener("pointerup", () => {
+  compareCurtainDragging = false;
+});
+document.getElementById("canvasWrap")?.addEventListener("dblclick", (ev) => {
+  if (compareModeValue() !== "curtain") return;
+  updateCompareCurtainFromClientX(ev.clientX);
+});
 window.addEventListener("resize", () => {
   resizeMainRenderer();
   resizeMetricsRenderer();
@@ -5107,7 +5316,7 @@ function animate(ts){
       if (obj.material) obj.material.opacity = 0.22 + 0.18 * u;
     }
   });
-  renderer.render(scene, camera);
+  renderMainScene();
   const cntOn = document.getElementById("uiShowMetricsCounts") && document.getElementById("uiShowMetricsCounts").checked;
   const rateOn = document.getElementById("uiShowMetricsRates") && document.getElementById("uiShowMetricsRates").checked;
   const errOn = document.getElementById("uiShowMetricsError") && document.getElementById("uiShowMetricsError").checked;
