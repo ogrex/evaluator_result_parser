@@ -3086,6 +3086,9 @@ def _build_app(
         session_id: Optional[str] = Query(None),
         compare_view: Optional[str] = Query(None),
         compare_mode: Optional[str] = Query(None),
+        external_bbox_yaw_offset: Optional[str] = Query(None),
+        external_bbox_swap_lw: Optional[str] = Query(None),
+        external_bbox_alignment_version: Optional[str] = Query(None),
     ):
         esc = html.escape
         qs_params = {
@@ -3102,6 +3105,12 @@ def _build_app(
             qs_params["compare_view"] = compare_view
         if compare_mode:
             qs_params["compare_mode"] = compare_mode
+        if external_bbox_yaw_offset is not None:
+            qs_params["external_bbox_yaw_offset"] = external_bbox_yaw_offset
+        if external_bbox_swap_lw is not None:
+            qs_params["external_bbox_swap_lw"] = external_bbox_swap_lw
+        if external_bbox_alignment_version is not None:
+            qs_params["external_bbox_alignment_version"] = external_bbox_alignment_version
         qs = urlencode(qs_params)
         scenario_label = scenario_name or "(auto)"
         tmpl = _load_template("viewer_three.html")
