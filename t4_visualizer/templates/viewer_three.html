@@ -3931,6 +3931,20 @@ function renderSceneViewport(x, y, w, h, runName){
   renderer.render(scene, camera);
 }
 
+function renderSceneFullViewportClipped(clipX, clipY, clipW, clipH, fullW, fullH, runName){
+  const fw = Math.max(1, Math.floor(fullW));
+  const fh = Math.max(1, Math.floor(fullH));
+  const sx = Math.floor(clipX);
+  const sy = Math.floor(clipY);
+  const sw = Math.max(1, Math.floor(clipW));
+  const sh = Math.max(1, Math.floor(clipH));
+  renderer.setViewport(0, 0, fw, fh);
+  renderer.setScissor(sx, sy, sw, sh);
+  applyMainCameraAspect(fw / fh);
+  setCompareRunVisibility(runName);
+  renderer.render(scene, camera);
+}
+
 function renderMainScene(){
   const size = renderer.getSize(new THREE.Vector2());
   const w = Math.max(1, Math.floor(size.x));
@@ -3942,9 +3956,8 @@ function renderMainScene(){
   const activeMode = mode === "side_by_side" || mode === "curtain" ? mode : "overlay";
   setCompareLabels(runA, runB, activeMode);
 
-  if (activeMode === "side_by_side" || activeMode === "curtain") {
-    const split = activeMode === "side_by_side" ? 0.5 : Math.max(0.06, Math.min(0.94, compareCurtainRatio));
-    const leftW = Math.max(1, Math.round(w * split));
+  if (activeMode === "side_by_side") {
+    const leftW = Math.max(1, Math.round(w * 0.5));
     const rightW = Math.max(1, w - leftW);
     renderer.setScissorTest(true);
     renderer.setViewport(0, 0, w, h);
@@ -3952,6 +3965,23 @@ function renderMainScene(){
     renderer.clear();
     renderSceneViewport(0, 0, leftW, h, runA);
     renderSceneViewport(leftW, 0, rightW, h, runB);
+    setCompareRunVisibility(null);
+    renderer.setScissorTest(false);
+    renderer.setViewport(0, 0, w, h);
+    applyMainCameraAspect(w / h);
+    return;
+  }
+
+  if (activeMode === "curtain") {
+    const split = Math.max(0.06, Math.min(0.94, compareCurtainRatio));
+    const curtainX = Math.max(1, Math.min(w - 1, Math.round(w * split)));
+    const rightW = Math.max(1, w - curtainX);
+    renderer.setScissorTest(true);
+    renderer.setViewport(0, 0, w, h);
+    renderer.setScissor(0, 0, w, h);
+    renderer.clear();
+    renderSceneFullViewportClipped(0, 0, w, h, w, h, runA);
+    renderSceneFullViewportClipped(curtainX, 0, rightW, h, w, h, runB);
     setCompareRunVisibility(null);
     renderer.setScissorTest(false);
     renderer.setViewport(0, 0, w, h);
