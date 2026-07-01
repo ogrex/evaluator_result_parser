@@ -2718,7 +2718,11 @@ function wireInspectPicking(){
     if (predLayerGroup.visible) pickRoots.push(predLayerGroup);
     if (!pickRoots.length) return;
     const hits = inspectRaycaster.intersectObjects(pickRoots, true);
-    const hit = hits.find((row) => !!getInspectCandidateFromObject(row.object));
+    const compareRunName = compareRunNameForCanvasClientX(ev.clientX);
+    const hit = hits.find((row) => {
+      const cand = getInspectCandidateFromObject(row.object);
+      return !!cand && candidateMatchesCompareRun(cand, compareRunName);
+    });
     if (!hit) return;
     const cand = getInspectCandidateFromObject(hit.object);
     setSelectedInspectCandidate(cand, { focus: true });
@@ -3169,8 +3173,19 @@ function candidateSizeDelta(a, b){
   return Math.abs(as[0] - bs[0]) + Math.abs(as[1] - bs[1]) + Math.abs(as[2] - bs[2]);
 }
 
+function candidateRunName(cand){
+  return evalRunNameFromMeta(cand && (cand.meta || cand));
+}
+
+function candidateRunsCompatible(a, b){
+  const ar = candidateRunName(a);
+  const br = candidateRunName(b);
+  return !ar || !br || ar === br;
+}
+
 function scoreCandidateMatch(sel, cand){
   if (!sel || !cand) return Infinity;
+  if (!candidateRunsCompatible(sel, cand)) return Infinity;
   const sid = String(sel.trackId || "");
   const cid = String(cand.trackId || "");
   if (sid && cid && sid === cid && sel.source === cand.source) return 0;
@@ -3878,6 +3893,25 @@ function compareModeValue(){
   return el ? String(el.value || "overlay") : "overlay";
 }
 
+function compareRunNameForCanvasClientX(clientX){
+  const mode = compareModeValue();
+  if (mode !== "side_by_side" && mode !== "curtain") return "";
+  const runs = currentEvalRuns();
+  if (!Array.isArray(runs) || runs.length < 2) return "";
+  const rect = canvas.getBoundingClientRect();
+  if (!(rect.width > 0)) return "";
+  const x = clientX - rect.left;
+  if (mode === "side_by_side") return x < rect.width * 0.5 ? runs[0] : runs[1];
+  const split = Math.max(0.06, Math.min(0.94, compareCurtainRatio));
+  return x < rect.width * split ? runs[0] : runs[1];
+}
+
+function candidateMatchesCompareRun(candidate, runName){
+  if (!runName || !candidate) return true;
+  const candRun = candidateRunName(candidate);
+  return !candRun || candRun === runName;
+}
+
 function setCompareLabels(runA, runB, mode){
   const la = document.getElementById("compareLabelA");
   const lb = document.getElementById("compareLabelB");
@@ -4449,9 +4483,12 @@ function candidateFromCameraRow(row){
   const merged = [...externalSelectionCandidates, ...(sceneSelectionCandidates || [])];
   const rowUuid = String(row.uuid || "");
   const rowPair = String(row.pair_uuid || "");
+  const rowRun = evalRunNameFromMeta(row);
   let best = null;
   for (const cand of merged) {
     if (!cand) continue;
+    const candRun = candidateRunName(cand);
+    if (rowRun && candRun && rowRun !== candRun) continue;
     if (rowUuid && String(cand.trackId || "") === rowUuid) return cand;
     if (!best && rowPair && String(cand.pairId || "") === rowPair) best = cand;
   }
