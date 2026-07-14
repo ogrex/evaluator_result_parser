@@ -56,6 +56,16 @@
   .compare-label.visible{display:block}
   #compareLabelA{left:12px}
   #compareLabelB{right:12px}
+  .hover-tip{
+    position:absolute;z-index:7;display:none;max-width:min(60vw,320px);
+    padding:.3rem .5rem;border-radius:8px;pointer-events:none;
+    background:rgba(6,10,20,.9);border:1px solid var(--tip-accent,rgba(124,179,255,.55));
+    box-shadow:0 8px 26px rgba(0,0,0,.5);transform:translate(12px,12px);
+    font:600 11.5px var(--font-mono);color:#eaf1ff;letter-spacing:.02em;white-space:nowrap;
+  }
+  .hover-tip.visible{display:block}
+  .hover-tip .tip-label{font-weight:700;font-size:12.5px;color:#fff}
+  .hover-tip .tip-sub{color:#9db6ec;font-size:10px;letter-spacing:.1em;text-transform:uppercase}
   .hud-panel{
     position:absolute;right:14px;top:14px;min-width:272px;max-width:min(92vw,320px);
     background:var(--hud-inner);backdrop-filter:blur(16px) saturate(1.15);
@@ -367,6 +377,7 @@
   <div id="canvasWrap"><canvas id="canvas"></canvas>
     <div id="compareLabelA" class="compare-label">A</div>
     <div id="compareLabelB" class="compare-label">B</div>
+    <div id="hoverTip" class="hover-tip"></div>
     <div id="compareCurtainHandle" class="compare-curtain-handle" title="Drag compare curtain"></div>
     <div id="colorbarWrap" title="Intensity colorbar">
       <canvas id="colorbarCanvas" style="display:block;border-radius:6px;border:1px solid rgba(90,110,180,.4);"></canvas>
@@ -462,6 +473,7 @@
           <label title="EST / TP — blue wireframe"><span class="layer-swatch" style="--sw:#66b3ff"></span><input id="showEstTp" type="checkbox" checked> EST·TP <span class="layer-count" id="cntEstTp">0</span></label>
           <label title="EST / FP — red wireframe (fainter)"><span class="layer-swatch" style="--sw:#ff6666"></span><input id="showEstFp" type="checkbox" checked> EST·FP <span class="layer-count" id="cntEstFp">0</span></label>
         </div>
+        <label title="Draw the class label (truck / unknown / …) above every eval box, including polygon detections shown as points. Hover any box for its label without this on."><input id="showLabels" type="checkbox"> Labels <span class="layer-count" id="cntLabels">0</span></label>
       </div>
       <div id="evalHud" hidden></div>
       <details class="hud-advanced" id="hudAdvanced">
@@ -841,6 +853,13 @@ const EVAL_FAST_RENDER_BOX_THRESHOLD = 450;
 const SCENE_BOX_BATCH_THRESHOLD = 180;
 const MAX_RENDER_POINTS = 180000;
 let evalFastRenderMode = false;
+/** Cap on how many eval-box text-label sprites we draw per frame (keeps the Labels toggle smooth on dense scenes). */
+const LABEL_SPRITE_CAP = 220;
+let labelBudget = 0;
+let labelableCount = 0;
+let hoverTipRaf = 0;
+let hoverTipLastEvent = null;
+const _hoverProjV = new THREE.Vector3();
 
 function lerp(a, b, u){ return a + (b - a) * u; }
 
@@ -2934,6 +2953,65 @@ function applyPanelVisibility(){
 })();
 updateInspectHud();
 
+/** The on-canvas viewport (CSS px, origin top-left of canvas) that the pointer sits in.
+ *  side_by_side renders each run into a half-width viewport with its own aspect; overlay/curtain
+ *  both render at the full-canvas aspect (curtain only scissors), so their pick viewport is the whole canvas. */
+function compareViewportForPointer(clientX, rect){
+  const localX = clientX - rect.left;
+  if (compareModeValue() === "side_by_side") {
+    const half = rect.width * 0.5;
+    const onRight = localX >= half;
+    return { vpX: onRight ? half : 0, vpY: 0, vpW: Math.max(1, half), vpH: rect.height };
+  }
+  return { vpX: 0, vpY: 0, vpW: rect.width, vpH: rect.height };
+}
+
+/** Pick the eval-box candidate under a screen point, correcting for the active compare viewport/aspect.
+ *  Precise ray hits win; falls back to the nearest box center within a small screen radius (tiny point markers). */
+function pickCandidateAtClientXY(clientX, clientY){
+  const rect = canvas.getBoundingClientRect();
+  if (!(rect.width > 0 && rect.height > 0)) return null;
+  const vp = compareViewportForPointer(clientX, rect);
+  const fullAspect = rect.width / rect.height;
+  applyMainCameraAspect(vp.vpW / vp.vpH);  // match the projection the hovered viewport was rendered with
+  try {
+    inspectPointer.x = ((clientX - rect.left - vp.vpX) / vp.vpW) * 2 - 1;
+    inspectPointer.y = -((clientY - rect.top - vp.vpY) / vp.vpH) * 2 + 1;
+    inspectRaycaster.setFromCamera(inspectPointer, camera);
+    const pickRoots = [];
+    if (boxesGroup.visible) pickRoots.push(boxesGroup);
+    if (gtLayerGroup.visible) pickRoots.push(gtLayerGroup);
+    if (predLayerGroup.visible) pickRoots.push(predLayerGroup);
+    if (!pickRoots.length) return null;
+    const compareRunName = compareRunNameForCanvasClientX(clientX);
+    const hits = inspectRaycaster.intersectObjects(pickRoots, true);
+    const hit = hits.find((row) => {
+      const c = getInspectCandidateFromObject(row.object);
+      return !!c && candidateMatchesCompareRun(c, compareRunName);
+    });
+    let cand = hit ? getInspectCandidateFromObject(hit.object) : null;
+    if (!cand) {
+      const gtVis = gtLayerGroup.visible, prVis = predLayerGroup.visible;
+      let bestPx = 26;
+      for (const c of externalSelectionCandidates) {
+        if (!c || !c.center) continue;
+        const isPred = String(c.source || "").indexOf("pred") >= 0;
+        if (isPred ? !prVis : !gtVis) continue;
+        if (!candidateMatchesCompareRun(c, compareRunName)) continue;
+        _hoverProjV.set(Number(c.center[0] || 0), Number(c.center[1] || 0), Number(c.center[2] || 0)).project(camera);
+        if (_hoverProjV.z > 1) continue;  // behind the camera
+        const sx = rect.left + vp.vpX + (_hoverProjV.x * 0.5 + 0.5) * vp.vpW;
+        const sy = rect.top + vp.vpY + (-_hoverProjV.y * 0.5 + 0.5) * vp.vpH;
+        const d = Math.hypot(sx - clientX, sy - clientY);
+        if (d < bestPx) { bestPx = d; cand = c; }
+      }
+    }
+    return cand;
+  } finally {
+    applyMainCameraAspect(fullAspect);  // restore; the render loop also resets this each frame
+  }
+}
+
 function wireInspectPicking(){
   canvas.addEventListener("pointerdown", (ev) => {
     pointerDownState = { x: ev.clientX, y: ev.clientY, moved: false };
@@ -2948,26 +3026,55 @@ function wireInspectPicking(){
     const pd = pointerDownState;
     pointerDownState = null;
     if (!pd || pd.moved) return;
-    const rect = canvas.getBoundingClientRect();
-    if (!(rect.width > 0 && rect.height > 0)) return;
-    inspectPointer.x = ((ev.clientX - rect.left) / rect.width) * 2 - 1;
-    inspectPointer.y = -((ev.clientY - rect.top) / rect.height) * 2 + 1;
-    inspectRaycaster.setFromCamera(inspectPointer, camera);
-    const pickRoots = [];
-    if (boxesGroup.visible) pickRoots.push(boxesGroup);
-    if (gtLayerGroup.visible) pickRoots.push(gtLayerGroup);
-    if (predLayerGroup.visible) pickRoots.push(predLayerGroup);
-    if (!pickRoots.length) return;
-    const hits = inspectRaycaster.intersectObjects(pickRoots, true);
-    const compareRunName = compareRunNameForCanvasClientX(ev.clientX);
-    const hit = hits.find((row) => {
-      const cand = getInspectCandidateFromObject(row.object);
-      return !!cand && candidateMatchesCompareRun(cand, compareRunName);
-    });
-    if (!hit) return;
-    const cand = getInspectCandidateFromObject(hit.object);
-    setSelectedInspectCandidate(cand, { focus: true });
+    const cand = pickCandidateAtClientXY(ev.clientX, ev.clientY);
+    if (cand) setSelectedInspectCandidate(cand, { focus: true });
   });
+  // Hover-to-reveal label: cheap raycast throttled to one per animation frame; costs nothing while idle.
+  canvas.addEventListener("pointermove", (ev) => {
+    hoverTipLastEvent = ev;
+    if (hoverTipRaf) return;
+    hoverTipRaf = requestAnimationFrame(updateHoverTip);
+  });
+  canvas.addEventListener("pointerleave", hideHoverTip);
+}
+
+function hideHoverTip(){
+  const tip = document.getElementById("hoverTip");
+  if (tip) tip.classList.remove("visible");
+  if (canvas) canvas.style.cursor = "";
+}
+
+/** rAF-driven: pick the box under the pointer and show its class label in a lightweight HTML chip. */
+function updateHoverTip(){
+  hoverTipRaf = 0;
+  const ev = hoverTipLastEvent;
+  const tip = document.getElementById("hoverTip");
+  if (!ev || !tip) return;
+  if (pointerDownState && pointerDownState.moved) { hideHoverTip(); return; }  // orbiting the camera — stay out of the way
+  const cand = pickCandidateAtClientXY(ev.clientX, ev.clientY);
+  if (!cand) { hideHoverTip(); return; }
+  const meta = cand.meta || {};
+  const conf = safeNum(meta.confidence);
+  const isPoly = String(meta.shape_type || "").toLowerCase().indexOf("polygon") >= 0 || isEvalPointMarker(meta);
+  const subParts = [String(cand.kind || "").toUpperCase(), String(cand.status || "").toUpperCase()].filter(Boolean);
+  if (isPoly) subParts.push("polygon");
+  let sub = subParts.join(" · ");
+  if (conf != null) sub += `  ·  conf ${conf.toFixed(2)}`;
+  const labelEl = document.createElement("div");
+  labelEl.className = "tip-label";
+  labelEl.textContent = String(cand.label || "object");
+  const subEl = document.createElement("div");
+  subEl.className = "tip-sub";
+  subEl.textContent = sub;
+  tip.replaceChildren(labelEl, subEl);
+  const layerId = String(cand.source || "").indexOf("pred") >= 0 ? "pred" : "gt";
+  const accent = evalLineColor(meta && Object.keys(meta).length ? meta : cand, layerId);
+  tip.style.setProperty("--tip-accent", `rgba(${(accent >> 16) & 255},${(accent >> 8) & 255},${accent & 255},0.85)`);
+  const wrapRect = (document.getElementById("canvasWrap") || canvas).getBoundingClientRect();
+  tip.style.left = (ev.clientX - wrapRect.left) + "px";
+  tip.style.top = (ev.clientY - wrapRect.top) + "px";
+  tip.classList.add("visible");
+  canvas.style.cursor = "pointer";
 }
 
 function readFloat32Copied(buf, off, count){
@@ -3386,6 +3493,62 @@ function addEstEvalWireframe(group, box, layerId){
   if (!evalFastRenderMode) addTpQualityAura(seg, box, layerId);
   group.add(seg);
   return seg;
+}
+
+function labelsEnabled(){
+  const el = document.getElementById("showLabels");
+  return !!(el && el.checked);
+}
+
+/** Rasterized label chips are cached by (text, color): a scene of 200 "car" boxes rasterizes once, not 200×. */
+const labelSpriteCache = new Map();
+function labelSpriteAssets(label, colorHex){
+  const key = `${label}|${colorHex}`;
+  const cached = labelSpriteCache.get(key);
+  if (cached) return cached;
+  const dpr = Math.min(2, window.devicePixelRatio || 1);
+  const padX = 12, fontPx = 30, baseH = 46;
+  const measure = document.createElement("canvas").getContext("2d");
+  measure.font = `700 ${fontPx}px DM Sans, sans-serif`;
+  const textW = Math.ceil(measure.measureText(label).width);
+  const w = textW + padX * 2, h = baseH;
+  const cv = document.createElement("canvas");
+  cv.width = Math.ceil(w * dpr);
+  cv.height = Math.ceil(h * dpr);
+  const ctx = cv.getContext("2d");
+  ctx.scale(dpr, dpr);
+  const r = (colorHex >> 16) & 255, g = (colorHex >> 8) & 255, b = colorHex & 255;
+  ctx.fillStyle = "rgba(6,10,20,0.82)";
+  ctx.strokeStyle = `rgba(${r},${g},${b},0.9)`;
+  ctx.lineWidth = 2;
+  ctx.beginPath();
+  ctx.roundRect(1, 1, w - 2, h - 2, 9);
+  ctx.fill();
+  ctx.stroke();
+  ctx.fillStyle = "#f4f8ff";
+  ctx.font = `700 ${fontPx}px DM Sans, sans-serif`;
+  ctx.textBaseline = "middle";
+  ctx.fillText(label, padX, h / 2 + 1);
+  const tex = new THREE.CanvasTexture(cv);
+  tex.anisotropy = 4;
+  const material = new THREE.SpriteMaterial({ map: tex, transparent: true, depthWrite: false, depthTest: false });
+  const assets = { material, aspect: w / h };
+  labelSpriteCache.set(key, assets);
+  return assets;
+}
+
+/** Compact class-label chip ("truck", "unknown", …) placed at world `pos`, above an eval box. Border color matches status. */
+function makeEvalLabelSprite(text, colorHex, pos){
+  const { material, aspect } = labelSpriteAssets(String(text || "object"), colorHex);
+  const sprite = new THREE.Sprite(material);
+  // Constant world height (~0.62 m) so text stays legible regardless of distance or label length.
+  const worldH = 0.62;
+  sprite.scale.set(worldH * aspect, worldH, 1);
+  sprite.position.set(Number(pos[0] || 0), Number(pos[1] || 0), Number(pos[2] || 0));
+  sprite.renderOrder = 4;
+  sprite.userData.opacityFactor = 1;
+  sprite.userData.keepOpacity = true;  // stay legible when the box-opacity slider dims wireframes
+  return sprite;
 }
 
 function addEvalPointMarker(group, box, layerId){
@@ -4126,6 +4289,7 @@ function drawLayerBoxes(group, boxes, layerId){
   }
   for (const b of boxes){
     if (!isEvalTupleVisible(b, layerId)) continue;
+    labelableCount += 1;
     const candidate = buildInspectCandidate(getInspectableBoxMeta(b, layerId), null);
     if (layerId === "gt") {
       const obj = canBuildGtMeshFromBox(b) ? addGtEvalBoxMesh(group, b, layerId) : addEvalWireframeLinesOnly(group, b, layerId);
@@ -4135,6 +4299,15 @@ function drawLayerBoxes(group, boxes, layerId){
       const obj = addEstEvalWireframe(group, b, layerId);
       if (obj && obj.userData) obj.userData.compareRun = evalRunNameFromMeta(b);
       setInspectUserData(obj, candidate);
+    }
+    if (candidate && labelsEnabled() && labelBudget > 0) {
+      labelBudget -= 1;
+      const c = candidate.center || [0, 0, 0];
+      const s = candidate.size || [0, 0, 0];
+      const zTop = Number(c[2] || 0) + Math.max(0, Number(s[2] || 0)) * 0.5 + 0.55;
+      const spr = makeEvalLabelSprite(candidate.label, evalLineColor(b, layerId), [c[0], c[1], zTop]);
+      spr.userData.compareRun = evalRunNameFromMeta(b);
+      group.add(spr);
     }
     if (candidate) nextCandidates.push(candidate);
   }
@@ -4154,8 +4327,18 @@ function drawLayerBoxes(group, boxes, layerId){
 function renderExternalLayers(){
   const visibleEvalCount = countVisibleEvalBoxes(externalLayers.gt, "gt") + countVisibleEvalBoxes(externalLayers.pred, "pred");
   evalFastRenderMode = visibleEvalCount > EVAL_FAST_RENDER_BOX_THRESHOLD;
+  labelBudget = LABEL_SPRITE_CAP;
+  labelableCount = 0;
   drawLayerBoxes(gtLayerGroup, externalLayers.gt, "gt");
   drawLayerBoxes(predLayerGroup, externalLayers.pred, "pred");
+  const labelCntEl = document.getElementById("cntLabels");
+  if (labelCntEl) {
+    const capped = labelsEnabled() && labelableCount > LABEL_SPRITE_CAP;
+    labelCntEl.textContent = capped ? `${LABEL_SPRITE_CAP}/${labelableCount}` : String(labelableCount);
+    labelCntEl.title = capped
+      ? `Showing ${LABEL_SPRITE_CAP} of ${labelableCount} labels (capped for performance). Hover any box for its label.`
+      : `${labelableCount} eval boxes in this frame`;
+  }
   const gtOn = !!(document.getElementById("showGtTp") && document.getElementById("showGtTp").checked)
     || !!(document.getElementById("showGtFn") && document.getElementById("showGtFn").checked);
   const prOn = !!(document.getElementById("showEstTp") && document.getElementById("showEstTp").checked)
@@ -5516,6 +5699,7 @@ function updateColorbar(){
 function applyOpacityToEvalLayerGroup(grp, v){
   grp.traverse((o) => {
     if (!o.material) return;
+    if (o.userData && o.userData.keepOpacity) return;
     const f = o.userData.opacityFactor != null ? o.userData.opacityFactor : 1;
     const mats = Array.isArray(o.material) ? o.material : [o.material];
     for (const m of mats) {
@@ -5534,7 +5718,7 @@ document.getElementById("boxOpacity").addEventListener("input", () => {
   applyOpacityToEvalLayerGroup(predLayerGroup, v);
   applyEgoOpacity(v);
 });
-["showGtTp", "showGtFn", "showEstTp", "showEstFp"].forEach((id) => {
+["showGtTp", "showGtFn", "showEstTp", "showEstFp", "showLabels"].forEach((id) => {
   const el = document.getElementById(id);
   if (el) el.addEventListener("change", () => {
     renderExternalLayers();
