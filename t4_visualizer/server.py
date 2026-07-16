@@ -3089,6 +3089,8 @@ def _build_app(
         external_bbox_yaw_offset: Optional[str] = Query(None),
         external_bbox_swap_lw: Optional[str] = Query(None),
         external_bbox_alignment_version: Optional[str] = Query(None),
+        hide_panels: Optional[str] = Query(None),
+        embed: Optional[str] = Query(None),
     ):
         esc = html.escape
         qs_params = {
@@ -3111,6 +3113,10 @@ def _build_app(
             qs_params["external_bbox_swap_lw"] = external_bbox_swap_lw
         if external_bbox_alignment_version is not None:
             qs_params["external_bbox_alignment_version"] = external_bbox_alignment_version
+        if hide_panels is not None:
+            qs_params["hide_panels"] = hide_panels
+        if embed is not None:
+            qs_params["embed"] = embed
         qs = urlencode(qs_params)
         scenario_label = scenario_name or "(auto)"
         tmpl = _load_template("viewer_three.html")

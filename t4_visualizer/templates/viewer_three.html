@@ -660,6 +660,10 @@ const initialCompareViewMode = (() => {
   if (raw === "overlay") return "overlay";
   return "overlay";
 })();
+const initialHidePanels = (() => {
+  const raw = String(params.get("hide_panels") || params.get("embed") || "").toLowerCase();
+  return raw === "1" || raw === "true" || raw === "yes" || raw === "on";
+})();
 const qv = version ? `&version=${encodeURIComponent(version)}` : "";
 const metaUrl = `/viewer/three/meta?t4dataset_id=${encodeURIComponent(dataset)}&scenario_name=${encodeURIComponent(scenario)}${qv}`;
 
@@ -1292,6 +1296,12 @@ const shareSessionUrlEl = document.getElementById("shareSessionUrl");
 const viewerSessionFileInput = document.getElementById("viewerSessionFileInput");
 const compareViewModeEl = document.getElementById("compareViewMode");
 if (compareViewModeEl) compareViewModeEl.value = initialCompareViewMode;
+if (initialHidePanels) {
+  ["uiShowHud", "uiShowInspector", "uiShowMetricsCounts", "uiShowMetricsRates", "uiShowMetricsError", "uiShowCameraViewport"].forEach((id) => {
+    const el = document.getElementById(id);
+    if (el) el.checked = false;
+  });
+}
 function setStatus(t){ statusEl.textContent = t; }
 function setFrameText(){ frameTxt.textContent = `frame ${frame}/${Math.max(0,totalFrames-1)}`; slider.value = String(frame); }
 function setShareSessionState(t){ if (shareSessionStateEl) shareSessionStateEl.textContent = t; }
