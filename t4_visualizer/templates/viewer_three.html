@@ -368,6 +368,9 @@
       <input id="slider" type="range" min="0" max="0" value="0" />
       <span id="frameTxt" class="pill" style="min-width:7.5rem;text-align:right">frame 0/0</span>
       <span id="shareSessionState" class="pill" title="Imported/shared overlay session state">session local-only</span>
+      <input id="shareSessionUrl" type="text" readonly hidden
+        title="Generated viewer share URL"
+        style="min-width:min(42vw,34rem);max-width:42vw;background:rgba(18,24,48,.9);color:#dbe8ff;border:1px solid rgba(90,110,180,.35);border-radius:9px;padding:.28rem .45rem;font:11px var(--font-mono);" />
       <div class="frameNav">
         <button id="framePrev" type="button" title="Previous frame">◀</button>
         <button id="frameNext" type="button" title="Next frame">▶</button>
@@ -1285,12 +1288,27 @@ const metaEl = document.getElementById("meta");
 const evalHudEl = document.getElementById("evalHud");
 const appRootEl = document.getElementById("app");
 const shareSessionStateEl = document.getElementById("shareSessionState");
+const shareSessionUrlEl = document.getElementById("shareSessionUrl");
 const viewerSessionFileInput = document.getElementById("viewerSessionFileInput");
 const compareViewModeEl = document.getElementById("compareViewMode");
 if (compareViewModeEl) compareViewModeEl.value = initialCompareViewMode;
 function setStatus(t){ statusEl.textContent = t; }
 function setFrameText(){ frameTxt.textContent = `frame ${frame}/${Math.max(0,totalFrames-1)}`; slider.value = String(frame); }
 function setShareSessionState(t){ if (shareSessionStateEl) shareSessionStateEl.textContent = t; }
+function revealShareSessionUrl(url){
+  if (!shareSessionUrlEl) return;
+  shareSessionUrlEl.hidden = false;
+  shareSessionUrlEl.value = String(url || "");
+  shareSessionUrlEl.title = String(url || "");
+  shareSessionUrlEl.focus();
+  shareSessionUrlEl.select();
+}
+if (shareSessionUrlEl) {
+  shareSessionUrlEl.addEventListener("click", () => {
+    shareSessionUrlEl.focus();
+    shareSessionUrlEl.select();
+  });
+}
 setShareSessionState(initialSessionId ? `session ${initialSessionId.slice(0, 8)}` : "session local-only");
 function fmtNum(v, d){
   return Number.isFinite(v) ? Number(v).toFixed(d) : "—";
@@ -5901,11 +5919,10 @@ document.getElementById("shareSessionBtn").addEventListener("click", async () =>
     const body = await parseJsonResponseOrThrow(res, `viewer session HTTP ${res.status}`);
     activeViewerSessionId = String(body && body.session_id ? body.session_id : "");
     if (!activeViewerSessionId) throw new Error("Server did not return a session id.");
-    const shareUrl = body && body.share_url
-      ? new URL(String(body.share_url), window.location.origin).toString()
-      : `${window.location.origin}${window.location.pathname}?${params.toString()}`;
     updateViewerSessionUrl(activeViewerSessionId);
+    const shareUrl = `${window.location.origin}${window.location.pathname}?${params.toString()}`;
     setShareSessionState(`session ${activeViewerSessionId.slice(0, 8)}`);
+    revealShareSessionUrl(shareUrl);
     let copied = false;
     if (navigator.clipboard && navigator.clipboard.writeText) {
       try {
@@ -5913,7 +5930,14 @@ document.getElementById("shareSessionBtn").addEventListener("click", async () =>
         copied = true;
       } catch (_) {}
     }
-    setStatus(copied ? `share link copied · ${activeViewerSessionId.slice(0, 8)}` : `share link ready · ${activeViewerSessionId.slice(0, 8)}`);
+    if (!copied && shareSessionUrlEl) {
+      try {
+        shareSessionUrlEl.focus();
+        shareSessionUrlEl.select();
+        copied = document.execCommand && document.execCommand("copy");
+      } catch (_) {}
+    }
+    setStatus(copied ? `share link copied · ${activeViewerSessionId.slice(0, 8)}` : `share link ready in URL field · ${activeViewerSessionId.slice(0, 8)}`);
   } catch (err) {
     setStatus(`share error: ${err && err.message ? err.message : String(err)}`);
   }
