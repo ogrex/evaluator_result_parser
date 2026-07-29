@@ -1068,6 +1068,19 @@ function decodeBboxLayersBinaryV1(buffer){
   for (let i = 0; i < pairCount; i++) {
     pairs.push({ gt_idx: u32(), pred_idx: u32(), pair_uuid: str(u32()) });
   }
+  if (off < dv.byteLength) {
+    for (const box of boxes) {
+      if (off >= dv.byteLength) break;
+      const pointCount = u32();
+      if (pointCount > 0) {
+        const footprint = [];
+        for (let j = 0; j < pointCount; j++) {
+          footprint.push([f32(), f32(), f32()]);
+        }
+        if (footprint.length >= 3) box.footprint = footprint;
+      }
+    }
+  }
   const bbox_layers_by_frame = {};
   for (const row of frameRows) {
     bbox_layers_by_frame[String(row.frame_index)] = {
@@ -3413,11 +3426,96 @@ function addTpQualityAura(parent, box, layerId){
   });
 }
 
+function evalFootprintVertices(box){
+  const fp = box && Array.isArray(box.footprint) ? box.footprint : null;
+  if (!fp || fp.length < 3) return null;
+  const out = [];
+  for (const pt of fp) {
+    if (!Array.isArray(pt) || pt.length < 2) return null;
+    const x = Number(pt[0]);
+    const y = Number(pt[1]);
+    const z = Number(pt.length >= 3 ? pt[2] : 0);
+    if (!Number.isFinite(x) || !Number.isFinite(y) || !Number.isFinite(z)) return null;
+    out.push([x, y, z]);
+  }
+  if (out.length >= 2) {
+    const a = out[0];
+    const b = out[out.length - 1];
+    if (Math.hypot(a[0] - b[0], a[1] - b[1], a[2] - b[2]) < 1e-4) out.pop();
+  }
+  return out.length >= 3 ? out : null;
+}
+
+function addEvalFootprintPrism(group, box, layerId){
+  const base = evalFootprintVertices(box);
+  if (!base) return null;
+  const col = evalLineColor(box, layerId);
+  const v = Number(document.getElementById("boxOpacity").value || "0.9");
+  const pose = readEvalBoxPose(box);
+  const h = Math.max(0.15, Number(box.height ?? box.h ?? pose.h ?? 1.0));
+  const zBase = base.reduce((sum, pt) => sum + Number(pt[2] || 0), 0) / base.length;
+  const zTop = zBase + h;
+  const groupObj = new THREE.Group();
+  groupObj.userData.opacityFactor = 1;
+
+  const faceVerts = [];
+  for (let i = 1; i < base.length - 1; i++) {
+    faceVerts.push(base[0][0], base[0][1], zBase, base[i][0], base[i][1], zBase, base[i + 1][0], base[i + 1][1], zBase);
+    faceVerts.push(base[0][0], base[0][1], zTop, base[i + 1][0], base[i + 1][1], zTop, base[i][0], base[i][1], zTop);
+  }
+  for (let i = 0; i < base.length; i++) {
+    const j = (i + 1) % base.length;
+    faceVerts.push(base[i][0], base[i][1], zBase, base[j][0], base[j][1], zBase, base[j][0], base[j][1], zTop);
+    faceVerts.push(base[i][0], base[i][1], zBase, base[j][0], base[j][1], zTop, base[i][0], base[i][1], zTop);
+  }
+  if (!evalFastRenderMode && faceVerts.length) {
+    const geom = new THREE.BufferGeometry();
+    geom.setAttribute("position", new THREE.Float32BufferAttribute(faceVerts, 3));
+    geom.computeVertexNormals();
+    const faceOpacity = layerId === "pred" ? 0.08 : 0.13;
+    const mesh = new THREE.Mesh(
+      geom,
+      new THREE.MeshBasicMaterial({
+        color: col,
+        transparent: true,
+        opacity: v * faceOpacity,
+        depthWrite: false,
+        side: THREE.DoubleSide,
+      })
+    );
+    mesh.userData.opacityFactor = faceOpacity;
+    groupObj.add(mesh);
+  }
+
+  const edgeVerts = [];
+  for (let i = 0; i < base.length; i++) {
+    const j = (i + 1) % base.length;
+    edgeVerts.push(base[i][0], base[i][1], zBase, base[j][0], base[j][1], zBase);
+    edgeVerts.push(base[i][0], base[i][1], zTop, base[j][0], base[j][1], zTop);
+    edgeVerts.push(base[i][0], base[i][1], zBase, base[i][0], base[i][1], zTop);
+  }
+  const edgeGeom = new THREE.BufferGeometry();
+  edgeGeom.setAttribute("position", new THREE.Float32BufferAttribute(edgeVerts, 3));
+  const edgeMul = layerId === "pred" && normalizeEvalStatus(box) === "FP" ? 0.68 : 1.0;
+  const lines = new THREE.LineSegments(
+    edgeGeom,
+    new THREE.LineBasicMaterial({ color: col, transparent: true, opacity: v * edgeMul })
+  );
+  lines.userData.opacityFactor = edgeMul;
+  groupObj.add(lines);
+
+  if (!evalFastRenderMode) addVelocityVectorArrow(group, getInspectableBoxMeta(box, layerId), col);
+  if (!evalFastRenderMode) addTpQualityAura(groupObj, box, layerId);
+  group.add(groupObj);
+  return groupObj;
+}
+
 /**
  * GT: semi-transparent filled box + crisp edges (reference geometry).
  * FN: lighter fill so TP reads as “solid match”; edges stay visible.
  */
 function addGtEvalBoxMesh(group, box, layerId){
+  if (evalFootprintVertices(box)) return addEvalFootprintPrism(group, box, layerId);
   if (evalFastRenderMode) return addEvalWireframeLinesOnly(group, box, layerId);
   const pose = readEvalBoxPose(box);
   const col = evalLineColor(box, layerId);
@@ -3483,6 +3581,7 @@ function addGtEvalBoxMesh(group, box, layerId){
 
 /** EST: wireframe only; FP drawn fainter so TP/FP separate without new color names. */
 function addEstEvalWireframe(group, box, layerId){
+  if (evalFootprintVertices(box)) return addEvalFootprintPrism(group, box, layerId);
   if (isEvalPointMarker(box)) return addEvalPointMarker(group, box, layerId);
   const edges = boxEdgesFromCorners(box) || boxEdgesFromCenterExternal(box);
   const g = new THREE.BufferGeometry();
@@ -4241,6 +4340,7 @@ function animatePulseMarkers(root, tsMs){
 }
 
 function addEvalWireframeLinesOnly(group, box, layerId){
+  if (evalFootprintVertices(box)) return addEvalFootprintPrism(group, box, layerId);
   const edges = boxEdgesFromCorners(box) || boxEdgesFromCenterExternal(box);
   const g = new THREE.BufferGeometry();
   g.setAttribute("position", new THREE.Float32BufferAttribute(edges, 3));
