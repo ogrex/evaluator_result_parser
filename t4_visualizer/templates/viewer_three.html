@@ -5,53 +5,162 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,400;0,9..40,500;0,9..40,600;0,9..40,700&family=JetBrains+Mono:wght@420;520&display=swap" rel="stylesheet">
+<script src="/static/t4_theme.js?v=light-20260730a"></script>
 <style>
   :root{
-    --bg:#060812;--panel:rgba(12,16,36,.78);--text:#eef2ff;--muted:#94a3c8;--accent:#7cb3ff;--ok:#4bd08d;
+    color-scheme:dark;
+    /* Palette triplets ("r g b") so every alpha variant derives from one source.
+       Mirrored in /static/t4_theme.js for the WebGL metrics charts. */
+    --c-s0:6 9 20;            /* deepest recess */
+    --c-s1:12 16 36;          /* panel body */
+    --c-s2:22 28 52;          /* raised / hover */
+    --c-s3:55 65 110;         /* highest / selected */
+    --c-line:80 100 160;
+    --c-line-strong:124 146 212;
+    --c-line-pale:175 200 252;
+    --c-line-dim:47 66 124;
+    --c-neutral:136 136 136;
+    --c-accent:124 179 255;
+    --c-cyan:104 194 255;
+    --c-ok:94 228 168;
+    --c-warn:255 180 96;
+    --c-bad:255 112 103;
+    --c-warn-bg:44 24 9;
+    --c-bad-bg:40 16 14;
+    --c-shadow:0 0 0;
+    --c-sheen:255 255 255;
+    /* Drawn on the always-dark 3D viewport, so it does not follow the theme. */
+    --c-on-scene:180 205 255;
+
+    --t-max:#fff;
+    --t1:#d9e6ff;
+    --t2:#a8b8e0;
+    --t3:#8b9cc4;
+    --accent:#7cb3ff;
+    --ok-fg:#4bd08d;
+    --warn-fg:#ffb766;
+    --warn-fg-2:#ffd28f;
+    --warn-fg-3:#ffe6b8;
+    --warn-fg-muted:#d8be95;
+    --t2-dim:#8ca6df;
+    --bad-fg:#ff8888;
+    --bad-fg-2:#ffb09c;
+    --bad-fg-warm:#ff7966;
+    --bad-fg-dim:#deb0a2;
+
+    /* Chart + legend series, grouped as the four charts use them. */
+    --s-gt-tp:#00cc66;    --s-gt-fn:#ff9933;    --s-est-tp:#66b3ff;   --s-est-fp:#ff6666;
+    --s-cmp-a-tp:#42d6ff; --s-cmp-a-fp:#ff7d7d; --s-cmp-b-tp:#b7e46d; --s-cmp-b-fp:#ffbd68;
+    --s-rate-1:#5ee4a8;   --s-rate-2:#66b3ff;   --s-rate-3:#ffcc66;   --s-rate-4:#ff7799;
+    --s-err-1:#6fe2ff;    --s-err-2:#8fb1ff;    --s-err-3:#ffbe78;    --s-err-4:#ff739d;
+    --annotation:#ffd166;
+
+    /* Legacy aliases kept so existing rules resolve unchanged. */
+    --bg:rgb(var(--c-s0));--panel:rgb(var(--c-s1) / .78);--text:var(--t-max);--muted:var(--t3);--ok:var(--ok-fg);
     --font-ui:"DM Sans",system-ui,sans-serif;--font-mono:"JetBrains Mono",ui-monospace,monospace;
-    --hud-edge:rgba(120,140,200,.22);--hud-inner:linear-gradient(165deg,rgba(22,28,52,.95) 0%,rgba(8,10,22,.92) 50%,rgba(14,18,38,.94) 100%);
+    --hud-edge:rgb(var(--c-line-strong) / .22);
+    --hud-inner:linear-gradient(165deg,rgb(var(--c-s2) / .95) 0%,rgb(var(--c-s0) / .92) 50%,rgb(var(--c-s1) / .94) 100%);
+    --body-wash:radial-gradient(ellipse 1400px 700px at 15% -10%,#1e2a64 0%,#0a0e1e 48%,#060812 100%);
+    --top-wash:linear-gradient(180deg,rgb(var(--c-s1) / .88) 0%,rgb(var(--c-s0) / .82) 100%);
+    --title-wash:linear-gradient(110deg,var(--t1) 0%,var(--t2) 100%);
   }
-  html,body{margin:0;height:100%;background:radial-gradient(ellipse 1400px 700px at 15% -10%,#1e2a64 0%,#0a0e1e 48%,#060812 100%);color:var(--text);font-family:var(--font-ui);font-feature-settings:"ss01" on;-webkit-font-smoothing:antialiased;}
+  :root[data-theme="light"]{
+    color-scheme:light;
+    /* Warm paper chrome. The 3D viewport stays dark in both themes -- the LiDAR point
+       cloud is intensity-mapped and reads best on a dark ground -- and it is unaffected
+       because the main renderer clears opaque. */
+    --c-s0:236 233 223;
+    --c-s1:255 255 255;
+    --c-s2:250 249 245;
+    --c-s3:241 238 229;
+    --c-line:42 37 30;
+    --c-line-strong:26 23 18;
+    --c-line-pale:60 54 45;
+    --c-line-dim:52 46 38;
+    --c-neutral:120 116 108;
+    --c-accent:217 119 87;
+    --c-cyan:47 126 122;
+    --c-ok:58 122 84;
+    --c-warn:163 113 12;
+    --c-bad:185 68 53;
+    --c-warn-bg:250 231 194;
+    --c-bad-bg:246 208 202;
+    /* Warm gray, not black: the dark rules use .35-.5 alpha shadows. */
+    --c-shadow:120 108 92;
+    /* The white inset sheen inverts to a faint inner shade. */
+    --c-sheen:0 0 0;
+
+    --t-max:#14120f;
+    --t1:#23211d;
+    --t2:#4a463f;
+    --t3:#6b6862;
+    --accent:#a24f30;
+    --ok-fg:#2f6647;
+    --warn-fg:#8a6206;
+    --warn-fg-2:#9a6f08;
+    --warn-fg-3:#a8791a;
+    --warn-fg-muted:#7a6a4a;
+    --t2-dim:#5a564e;
+    --bad-fg:#9c3427;
+    --bad-fg-2:#a8493a;
+    --bad-fg-warm:#a8412a;
+    --bad-fg-dim:#8f4436;
+
+    /* Series darkened for a paper ground while keeping their identity. */
+    --s-gt-tp:#177a4a;    --s-gt-fn:#c26a10;    --s-est-tp:#2868ad;   --s-est-fp:#c0392b;
+    --s-cmp-a-tp:#1f6f86; --s-cmp-a-fp:#b8453a; --s-cmp-b-tp:#5c7a1f; --s-cmp-b-fp:#a8720c;
+    --s-rate-1:#2c7d59;   --s-rate-2:#2868ad;   --s-rate-3:#96700a;   --s-rate-4:#b03a58;
+    --s-err-1:#1f6f86;    --s-err-2:#3a5f9e;    --s-err-3:#a8720c;    --s-err-4:#b03a58;
+    --annotation:#a8720c;
+
+    --panel:rgb(var(--c-s1) / .94);
+    --hud-edge:rgb(var(--c-line) / .16);
+    --hud-inner:linear-gradient(165deg,rgb(var(--c-s1)) 0%,rgb(var(--c-s2)) 55%,rgb(var(--c-s1)) 100%);
+    --body-wash:linear-gradient(135deg,rgb(250 249 245) 0%,rgb(245 243 236) 46%,rgb(241 239 230) 100%);
+    --top-wash:linear-gradient(180deg,rgb(var(--c-s1) / .96) 0%,rgb(var(--c-s2) / .92) 100%);
+    --title-wash:linear-gradient(110deg,var(--t1) 0%,var(--t2) 100%);
+  }
+  html,body{margin:0;height:100%;background:var(--body-wash);color:var(--text);font-family:var(--font-ui);font-feature-settings:"ss01" on;-webkit-font-smoothing:antialiased;}
   #app{display:grid;grid-template-rows:auto 1fr;height:100%;}
   #app:fullscreen{height:100%;min-height:100%;display:grid;grid-template-rows:auto 1fr;}
-  .top{display:flex;flex-direction:column;gap:.5rem;padding:.6rem 1rem .7rem;background:linear-gradient(180deg,rgba(14,18,40,.88) 0%,rgba(8,10,22,.82) 100%);backdrop-filter:blur(14px) saturate(1.2);border-bottom:1px solid var(--hud-edge);box-shadow:0 4px 24px rgba(0,0,0,.35)}
+  .top{display:flex;flex-direction:column;gap:.5rem;padding:.6rem 1rem .7rem;background:var(--top-wash);backdrop-filter:blur(14px) saturate(1.2);border-bottom:1px solid var(--hud-edge);box-shadow:0 4px 24px rgb(var(--c-shadow) / .35)}
   .topRowMain{display:flex;gap:.75rem;align-items:center;flex-wrap:wrap}
-  .topRowMain>strong{font-size:.95rem;font-weight:700;letter-spacing:-.03em;background:linear-gradient(110deg,#e8eeff 0%,#a8b8e8 100%);-webkit-background-clip:text;background-clip:text;color:transparent}
+  .topRowMain>strong{font-size:.95rem;font-weight:700;letter-spacing:-.03em;background:var(--title-wash);-webkit-background-clip:text;background-clip:text;color:transparent}
   .topRowScrubber{display:flex;gap:.6rem;align-items:center;width:100%;min-height:2.1rem;padding:.15rem 0}
   .scrubberLabel{font-size:.75rem;font-weight:600;letter-spacing:.06em;text-transform:uppercase;color:var(--muted)}
   #slider{flex:1;min-width:120px;height:1.35rem;cursor:pointer;accent-color:var(--accent)}
   .frameNav{display:flex;gap:.35rem;align-items:center;flex-shrink:0}
   .frameNav button{min-width:2rem;padding:.28rem .45rem;border-radius:9px}
   .pill{font-size:.8rem;color:var(--muted)}
-  .pill code{font-family:var(--font-mono);font-size:.78em;color:#b8c8e8}
+  .pill code{font-family:var(--font-mono);font-size:.78em;color:var(--t2)}
   .controls{display:flex;gap:.45rem;align-items:center;flex-wrap:wrap}
-  button,input[type=range],select{background:rgba(18,24,48,.9);color:var(--text);border:1px solid rgba(90,110,180,.35);border-radius:9px;padding:.32rem .55rem;box-shadow:0 1px 0 rgba(255,255,255,.04) inset;transition:border-color .15s,background .15s}
-  button:hover,input[type=range]:hover,select:hover{border-color:rgba(120,160,255,.45)}
+  button,input[type=range],select{background:rgb(var(--c-s2) / .9);color:var(--text);border:1px solid rgb(var(--c-line) / .35);border-radius:9px;padding:.32rem .55rem;box-shadow:0 1px 0 rgb(var(--c-sheen) / .04) inset;transition:border-color .15s,background .15s}
+  button:hover,input[type=range]:hover,select:hover{border-color:rgb(var(--c-accent) / .45)}
   #canvasWrap{position:relative;min-height:0}
   #canvas{width:100%;height:100%;display:block}
   .compare-curtain-handle{
     position:absolute;top:0;bottom:0;left:50%;width:34px;z-index:5;display:none;cursor:default;
     transform:translateX(-50%);
-    background:linear-gradient(90deg,transparent 0,transparent calc(50% - 1px),rgba(180,205,255,.96) calc(50% - 1px),rgba(180,205,255,.96) calc(50% + 1px),transparent calc(50% + 1px),transparent 100%);
-    filter:drop-shadow(0 0 12px rgba(124,179,255,.62));
+    background:linear-gradient(90deg,transparent 0,transparent calc(50% - 1px),rgb(var(--c-on-scene) / .96) calc(50% - 1px),rgb(var(--c-on-scene) / .96) calc(50% + 1px),transparent calc(50% + 1px),transparent 100%);
+    filter:drop-shadow(0 0 12px rgb(var(--c-accent) / .62));
     touch-action:none;
   }
   .compare-curtain-handle.is-curtain{cursor:ew-resize}
   .compare-curtain-handle::before{
     content:"";position:absolute;left:50%;top:50%;width:32px;height:54px;transform:translate(-50%,-50%);
-    border-radius:999px;border:1px solid rgba(180,205,255,.65);
-    background:rgba(12,16,36,.82);box-shadow:0 8px 28px rgba(0,0,0,.45),0 0 22px rgba(124,179,255,.28);
+    border-radius:999px;border:1px solid rgb(var(--c-on-scene) / .65);
+    background:rgb(var(--c-s1) / .82);box-shadow:0 8px 28px rgb(var(--c-shadow) / .45),0 0 22px rgb(var(--c-accent) / .28);
   }
   .compare-curtain-handle::after{
     content:"A | B";position:absolute;left:50%;top:50%;transform:translate(-50%,-50%) rotate(-90deg);
-    color:#dbe8ff;font:700 10px var(--font-mono);letter-spacing:.08em;white-space:nowrap;
+    color:var(--t1);font:700 10px var(--font-mono);letter-spacing:.08em;white-space:nowrap;
   }
   .compare-curtain-handle.visible{display:block}
   .compare-label{
     position:absolute;top:12px;z-index:5;display:none;padding:.24rem .5rem;border-radius:999px;
-    border:1px solid rgba(124,179,255,.34);background:rgba(7,11,24,.78);
-    color:#d9e6ff;font:700 11px var(--font-mono);letter-spacing:.08em;text-transform:uppercase;
-    pointer-events:none;box-shadow:0 6px 22px rgba(0,0,0,.38);
+    border:1px solid rgb(var(--c-accent) / .34);background:rgb(var(--c-s0) / .78);
+    color:var(--t1);font:700 11px var(--font-mono);letter-spacing:.08em;text-transform:uppercase;
+    pointer-events:none;box-shadow:0 6px 22px rgb(var(--c-shadow) / .38);
   }
   .compare-label.visible{display:block}
   #compareLabelA{left:12px}
@@ -59,94 +168,94 @@
   .hover-tip{
     position:absolute;z-index:7;display:none;max-width:min(60vw,320px);
     padding:.3rem .5rem;border-radius:8px;pointer-events:none;
-    background:rgba(6,10,20,.9);border:1px solid var(--tip-accent,rgba(124,179,255,.55));
-    box-shadow:0 8px 26px rgba(0,0,0,.5);transform:translate(12px,12px);
-    font:600 11.5px var(--font-mono);color:#eaf1ff;letter-spacing:.02em;white-space:nowrap;
+    background:rgb(var(--c-s0) / .9);border:1px solid var(--tip-accent,rgb(var(--c-accent) / .55));
+    box-shadow:0 8px 26px rgb(var(--c-shadow) / .5);transform:translate(12px,12px);
+    font:600 11.5px var(--font-mono);color:var(--t-max);letter-spacing:.02em;white-space:nowrap;
   }
   .hover-tip.visible{display:block}
-  .hover-tip .tip-label{font-weight:700;font-size:12.5px;color:#fff}
-  .hover-tip .tip-sub{color:#9db6ec;font-size:10px;letter-spacing:.1em;text-transform:uppercase}
+  .hover-tip .tip-label{font-weight:700;font-size:12.5px;color:var(--t-max)}
+  .hover-tip .tip-sub{color:var(--t2);font-size:10px;letter-spacing:.1em;text-transform:uppercase}
   .hud-panel{
     position:absolute;right:14px;top:14px;min-width:272px;max-width:min(92vw,320px);
     background:var(--hud-inner);backdrop-filter:blur(16px) saturate(1.15);
     border:1px solid var(--hud-edge);border-radius:14px;
     padding:.85rem .95rem 1rem;
-    box-shadow:0 8px 40px rgba(0,0,0,.45),0 0 0 1px rgba(255,255,255,.04) inset,0 1px 0 rgba(255,255,255,.06) inset;
+    box-shadow:0 8px 40px rgb(var(--c-shadow) / .45),0 0 0 1px rgb(var(--c-sheen) / .04) inset,0 1px 0 rgb(var(--c-sheen) / .06) inset;
   }
-  .hud-header-bar{display:flex;align-items:stretch;margin:-.85rem -.95rem .65rem -.95rem;border-radius:14px 14px 0 0;border-bottom:1px solid rgba(80,100,160,.22);overflow:hidden}
+  .hud-header-bar{display:flex;align-items:stretch;margin:-.85rem -.95rem .65rem -.95rem;border-radius:14px 14px 0 0;border-bottom:1px solid rgb(var(--c-line) / .22);overflow:hidden}
   .hud-header-bar .hud-drag-handle.panel-drag-handle{
     flex:1;margin:0;border-radius:0;border-bottom:none;min-height:32px;
     position:relative;left:auto;right:auto;top:auto;
     padding:.5rem .85rem;
-    font-size:.68rem;font-weight:700;letter-spacing:.12em;text-transform:uppercase;color:#8b9cc4;
+    font-size:.68rem;font-weight:700;letter-spacing:.12em;text-transform:uppercase;color:var(--t3);
   }
   .hud-panel-hide{
-    flex-shrink:0;width:34px;border:none;background:rgba(26,32,58,.9);color:#a8b8e0;cursor:pointer;font-size:1.05rem;line-height:1;padding:0;
-    border-left:1px solid rgba(80,100,160,.28);transition:background .15s,color .15s;
+    flex-shrink:0;width:34px;border:none;background:rgb(var(--c-s2) / .9);color:var(--t2);cursor:pointer;font-size:1.05rem;line-height:1;padding:0;
+    border-left:1px solid rgb(var(--c-line) / .28);transition:background .15s,color .15s;
   }
-  .hud-panel-hide:hover{background:rgba(55,65,110,.55);color:#fff}
-  .hud-panel .hud-rule{border:none;height:1px;background:linear-gradient(90deg,transparent,rgba(100,120,200,.35),transparent);margin:.65rem 0;opacity:.9}
-  .hud-panel__section-title{font-size:.62rem;font-weight:700;letter-spacing:.12em;text-transform:uppercase;color:#7d8db8;margin-bottom:.45rem}
-  .hud-panel__hint{font-size:.62rem;color:#7d8caf;line-height:1.35;margin:-.15rem 0 .4rem;opacity:.92}
+  .hud-panel-hide:hover{background:rgb(var(--c-s3) / .55);color:var(--t-max)}
+  .hud-panel .hud-rule{border:none;height:1px;background:linear-gradient(90deg,transparent,rgb(var(--c-line-strong) / .35),transparent);margin:.65rem 0;opacity:.9}
+  .hud-panel__section-title{font-size:.62rem;font-weight:700;letter-spacing:.12em;text-transform:uppercase;color:var(--t3);margin-bottom:.45rem}
+  .hud-panel__hint{font-size:.62rem;color:var(--t3);line-height:1.35;margin:-.15rem 0 .4rem;opacity:.92}
   .hud-panel .hud-grid{display:grid;gap:.38rem;font-size:.8rem}
   .inspect-panel{
     position:absolute;left:14px;top:14px;bottom:14px;min-width:min(56vw,620px);width:min(64vw,900px);max-width:min(95vw,1120px);
-    background:linear-gradient(165deg,rgba(16,20,42,.96) 0%,rgba(7,10,22,.96) 52%,rgba(11,16,34,.97) 100%);
+    background:linear-gradient(165deg,rgb(var(--c-s1) / .96) 0%,rgb(var(--c-s0) / .96) 52%,rgb(var(--c-s1) / .97) 100%);
     backdrop-filter:blur(18px) saturate(1.18);
-    border:1px solid rgba(124,146,212,.26);border-radius:16px;
-    box-shadow:0 12px 56px rgba(0,0,0,.48),0 0 0 1px rgba(255,255,255,.05) inset,0 1px 0 rgba(255,255,255,.06) inset;
+    border:1px solid rgb(var(--c-line-strong) / .26);border-radius:16px;
+    box-shadow:0 12px 56px rgb(var(--c-shadow) / .48),0 0 0 1px rgb(var(--c-sheen) / .05) inset,0 1px 0 rgb(var(--c-sheen) / .06) inset;
     overflow:hidden;z-index:6;display:flex;flex-direction:column;
   }
   .inspect-panel[hidden]{display:none !important}
   .inspect-panel__body{padding:.9rem .95rem .95rem;overflow:visible;flex:1;min-height:0}
   .inspect-panel .inspect-panel-hide{
-    flex-shrink:0;width:34px;border:none;background:rgba(26,32,58,.9);color:#a8b8e0;cursor:pointer;font-size:1.05rem;line-height:1;padding:0;
-    border-left:1px solid rgba(80,100,160,.28);transition:background .15s,color .15s;
+    flex-shrink:0;width:34px;border:none;background:rgb(var(--c-s2) / .9);color:var(--t2);cursor:pointer;font-size:1.05rem;line-height:1;padding:0;
+    border-left:1px solid rgb(var(--c-line) / .28);transition:background .15s,color .15s;
   }
-  .inspect-panel .inspect-panel-hide:hover{background:rgba(55,65,110,.55);color:#fff}
+  .inspect-panel .inspect-panel-hide:hover{background:rgb(var(--c-s3) / .55);color:var(--t-max)}
   .inspect-panel-resize{
     position:absolute;right:0;bottom:0;width:18px;height:18px;z-index:8;cursor:nwse-resize;
-    background:linear-gradient(135deg,transparent 50%,rgba(120,150,220,.45) 50%);
+    background:linear-gradient(135deg,transparent 50%,rgb(var(--c-line-strong) / .45) 50%);
     border-radius:0 0 14px 0;
   }
-  .inspect-panel-resize:hover{background:linear-gradient(135deg,transparent 45%,rgba(150,180,245,.68) 55%)}
-  #evalHud{margin-top:.4rem;padding-top:.4rem;border-top:1px solid rgba(60,80,140,.25);font-size:.68rem;line-height:1.2}
-  #evalHud .eval-hud-head{font-weight:700;font-size:.58rem;letter-spacing:.08em;text-transform:uppercase;color:#8b9cc4;margin-bottom:.2rem}
-  #evalHud .eval-rp{margin-top:.28rem;font-family:var(--font-mono);font-size:.62rem;opacity:.92;color:#aab6d4}
+  .inspect-panel-resize:hover{background:linear-gradient(135deg,transparent 45%,rgb(var(--c-line-pale) / .68) 55%)}
+  #evalHud{margin-top:.4rem;padding-top:.4rem;border-top:1px solid rgb(var(--c-line) / .25);font-size:.68rem;line-height:1.2}
+  #evalHud .eval-hud-head{font-weight:700;font-size:.58rem;letter-spacing:.08em;text-transform:uppercase;color:var(--t3);margin-bottom:.2rem}
+  #evalHud .eval-rp{margin-top:.28rem;font-family:var(--font-mono);font-size:.62rem;opacity:.92;color:var(--t2)}
   #inspectHud{font-size:.82rem;line-height:1.45}
   #inspectHud[hidden]{display:none !important}
   #inspectHud .inspect-head{display:grid;grid-template-columns:minmax(0,1fr) minmax(220px,280px);align-items:stretch;gap:.72rem;margin-bottom:.55rem}
-  #inspectHud .inspect-head strong{font-size:.72rem;letter-spacing:.12em;text-transform:uppercase;color:#d3e0ff}
+  #inspectHud .inspect-head strong{font-size:.72rem;letter-spacing:.12em;text-transform:uppercase;color:var(--t1)}
   #inspectHud .inspect-title-stack{display:flex;flex-direction:column;gap:.45rem;min-width:0}
   #inspectHud .inspect-headline{display:flex;justify-content:space-between;align-items:center;gap:.65rem;min-width:0}
   #inspectHud .inspect-subchips{display:flex;flex-wrap:wrap;gap:.35rem}
   #inspectHud .inspect-subchips .inspect-chip{font-size:.66rem}
   #inspectHud .inspect-hero-strip{
     display:grid;grid-template-columns:minmax(0,1fr) auto;gap:.6rem;padding:.68rem .76rem;border-radius:14px;
-    border:1px solid rgba(110,140,210,.26);
-    background:linear-gradient(155deg,rgba(17,26,52,.92) 0%,rgba(8,12,28,.9) 55%,rgba(10,16,36,.94) 100%);
-    box-shadow:inset 0 1px 0 rgba(255,255,255,.06),0 0 32px rgba(70,124,255,.08);
+    border:1px solid rgb(var(--c-line-strong) / .26);
+    background:linear-gradient(155deg,rgb(var(--c-s2) / .92) 0%,rgb(var(--c-s0) / .9) 55%,rgb(var(--c-s1) / .94) 100%);
+    box-shadow:inset 0 1px 0 rgb(var(--c-sheen) / .06),0 0 32px rgb(var(--c-accent) / .08);
   }
   #inspectHud .inspect-confidence{display:grid;gap:.3rem;min-width:0}
-  #inspectHud .inspect-confidence-label{font-size:.62rem;letter-spacing:.16em;text-transform:uppercase;color:#8ca6df}
-  #inspectHud .inspect-confidence-value{font-family:var(--font-mono);font-size:1.7rem;line-height:1;font-weight:700;color:#f6fbff;letter-spacing:-.05em}
-  #inspectHud .inspect-confidence-meter{height:8px;border-radius:999px;background:rgba(255,255,255,.08);overflow:hidden;border:1px solid rgba(115,145,215,.22)}
+  #inspectHud .inspect-confidence-label{font-size:.62rem;letter-spacing:.16em;text-transform:uppercase;color:var(--t2-dim)}
+  #inspectHud .inspect-confidence-value{font-family:var(--font-mono);font-size:1.7rem;line-height:1;font-weight:700;color:var(--t-max);letter-spacing:-.05em}
+  #inspectHud .inspect-confidence-meter{height:8px;border-radius:999px;background:rgb(var(--c-sheen) / .08);overflow:hidden;border:1px solid rgb(var(--c-line-strong) / .22)}
   #inspectHud .inspect-confidence-fill{
     height:100%;width:0%;
-    background:linear-gradient(90deg,#59d6ff 0%,#8fb6ff 52%,#f7c471 100%);
-    box-shadow:0 0 18px rgba(104,194,255,.35);
+    background:linear-gradient(90deg,var(--s-err-1) 0%,var(--accent) 52%,var(--warn-fg) 100%);
+    box-shadow:0 0 18px rgb(var(--c-cyan) / .35);
   }
-  #inspectHud .inspect-confidence-note{font-size:.7rem;color:#9bb0dc}
+  #inspectHud .inspect-confidence-note{font-size:.7rem;color:var(--t2)}
   #inspectHud .inspect-score-stack{display:grid;align-content:center;justify-items:end;gap:.18rem;text-align:right}
-  #inspectHud .inspect-score-label{font-size:.6rem;letter-spacing:.16em;text-transform:uppercase;color:#8ca6df}
-  #inspectHud .inspect-score-value{font-family:var(--font-mono);font-size:1rem;color:#eef5ff}
-  #inspectHud .inspect-score-bucket{font-size:.76rem;color:#ffd9aa;text-transform:capitalize}
-  #inspectHud .inspect-chip{padding:.18rem .5rem;border-radius:999px;border:1px solid rgba(120,160,255,.25);background:rgba(25,33,60,.72);color:#cdd9fb;font-family:var(--font-mono);font-size:.7rem}
+  #inspectHud .inspect-score-label{font-size:.6rem;letter-spacing:.16em;text-transform:uppercase;color:var(--t2-dim)}
+  #inspectHud .inspect-score-value{font-family:var(--font-mono);font-size:1rem;color:var(--t-max)}
+  #inspectHud .inspect-score-bucket{font-size:.76rem;color:var(--warn-fg-3);text-transform:capitalize}
+  #inspectHud .inspect-chip{padding:.18rem .5rem;border-radius:999px;border:1px solid rgb(var(--c-accent) / .25);background:rgb(var(--c-s2) / .72);color:var(--t1);font-family:var(--font-mono);font-size:.7rem}
   #inspectHud .inspect-chip-row{display:flex;flex-wrap:wrap;gap:.36rem;margin:.14rem 0 .46rem}
   #inspectHud .inspect-meta{display:grid;gap:.26rem;margin-top:.16rem}
   #inspectHud .inspect-row{display:flex;justify-content:space-between;align-items:center;gap:1rem}
-  #inspectHud .inspect-row span:first-child{color:#91a0c3;flex:0 0 auto}
-  #inspectHud .inspect-row code{color:#dce7ff;font-size:.78rem;white-space:nowrap;text-align:right;overflow:hidden;text-overflow:ellipsis;max-width:65%}
+  #inspectHud .inspect-row span:first-child{color:var(--t3);flex:0 0 auto}
+  #inspectHud .inspect-row code{color:var(--t1);font-size:.78rem;white-space:nowrap;text-align:right;overflow:hidden;text-overflow:ellipsis;max-width:65%}
   #inspectHud .inspect-row.inspect-row--context{align-items:flex-start;gap:.9rem}
   #inspectHud .inspect-row.inspect-row--context span:first-child{flex:0 0 5rem;padding-top:.08rem}
   #inspectHud .inspect-row.inspect-row--context code{
@@ -162,101 +271,101 @@
   }
   #inspectHud .inspect-actions{display:flex;gap:.42rem;flex-wrap:wrap;margin-top:.52rem}
   #inspectHud .inspect-actions button{font-size:.76rem;padding:.34rem .58rem}
-  #inspectHud .inspect-note{margin-top:.36rem;color:#8d9bbd;font-size:.7rem;line-height:1.4}
+  #inspectHud .inspect-note{margin-top:.36rem;color:var(--t3);font-size:.7rem;line-height:1.4}
   #inspectHud .inspect-main-grid{display:grid;grid-template-columns:minmax(0,1fr);gap:.58rem}
   #inspectHud .inspect-info-grid{display:grid;grid-template-columns:minmax(0,1fr);gap:.5rem}
-  #inspectHud .inspect-card{padding:.58rem .66rem;border-radius:12px;background:rgba(12,18,36,.78);border:1px solid rgba(88,110,175,.24)}
-  #inspectHud .inspect-card strong{display:block;margin-bottom:.32rem;font-size:.6rem;letter-spacing:.12em;text-transform:uppercase;color:#8ca0cf}
-  #inspectHud .inspect-card canvas{width:100%;height:auto;display:block;background:radial-gradient(circle at 50% 50%,rgba(64,84,132,.16),rgba(8,12,28,.72));border-radius:10px;border:1px solid rgba(88,110,175,.22)}
+  #inspectHud .inspect-card{padding:.58rem .66rem;border-radius:12px;background:rgb(var(--c-s1) / .78);border:1px solid rgb(var(--c-line) / .24)}
+  #inspectHud .inspect-card strong{display:block;margin-bottom:.32rem;font-size:.6rem;letter-spacing:.12em;text-transform:uppercase;color:var(--t3)}
+  #inspectHud .inspect-card canvas{width:100%;height:auto;display:block;background:radial-gradient(circle at 50% 50%,rgb(var(--c-line) / .16),rgb(var(--c-s0) / .72));border-radius:10px;border:1px solid rgb(var(--c-line) / .22)}
   #inspectHud .inspect-card.inspect-hero-card canvas{min-height:320px}
-  #inspectHud .inspect-summary{margin-top:.38rem;color:#cad6f6;font-size:.72rem;line-height:1.46}
+  #inspectHud .inspect-summary{margin-top:.38rem;color:var(--t1);font-size:.72rem;line-height:1.46}
   #inspectHud .inspect-kpi-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:.4rem}
-  #inspectHud .inspect-kpi{padding:.42rem .5rem;border-radius:10px;background:rgba(19,27,50,.82);border:1px solid rgba(88,110,175,.2)}
-  #inspectHud .inspect-kpi-label{display:block;font-size:.58rem;letter-spacing:.12em;text-transform:uppercase;color:#8ea1cf;margin-bottom:.16rem}
-  #inspectHud .inspect-kpi code{display:block;color:#eef4ff;font-size:.82rem}
-  #spotlightHud{margin-top:.55rem;padding-top:.55rem;border-top:1px solid rgba(60,80,140,.25);font-size:.7rem;line-height:1.35}
+  #inspectHud .inspect-kpi{padding:.42rem .5rem;border-radius:10px;background:rgb(var(--c-s2) / .82);border:1px solid rgb(var(--c-line) / .2)}
+  #inspectHud .inspect-kpi-label{display:block;font-size:.58rem;letter-spacing:.12em;text-transform:uppercase;color:var(--t3);margin-bottom:.16rem}
+  #inspectHud .inspect-kpi code{display:block;color:var(--t-max);font-size:.82rem}
+  #spotlightHud{margin-top:.55rem;padding-top:.55rem;border-top:1px solid rgb(var(--c-line) / .25);font-size:.7rem;line-height:1.35}
   #spotlightHud[hidden]{display:none !important}
   #spotlightHud .spotlight-head{display:flex;justify-content:space-between;align-items:center;gap:.5rem;margin-bottom:.35rem}
-  #spotlightHud .spotlight-head strong{font-size:.58rem;letter-spacing:.1em;text-transform:uppercase;color:#ffb766}
-  #spotlightHud .spotlight-chip{padding:.1rem .38rem;border-radius:999px;border:1px solid rgba(255,166,87,.28);background:rgba(54,28,10,.6);color:#ffd7aa;font-family:var(--font-mono);font-size:.6rem}
+  #spotlightHud .spotlight-head strong{font-size:.58rem;letter-spacing:.1em;text-transform:uppercase;color:var(--warn-fg)}
+  #spotlightHud .spotlight-chip{padding:.1rem .38rem;border-radius:999px;border:1px solid rgb(var(--c-warn) / .28);background:rgb(var(--c-warn-bg) / .6);color:var(--warn-fg-3);font-family:var(--font-mono);font-size:.6rem}
   #spotlightHud .spotlight-row{display:flex;justify-content:space-between;align-items:center;gap:.55rem}
-  #spotlightHud .spotlight-row span:first-child{color:#91a0c3}
+  #spotlightHud .spotlight-row span:first-child{color:var(--t3)}
   #spotlightHud .spotlight-actions{display:flex;gap:.38rem;flex-wrap:wrap;margin-top:.45rem}
   #spotlightHud .spotlight-actions button{font-size:.68rem;padding:.25rem .45rem}
-  #spotlightHud .spotlight-note{margin-top:.35rem;color:#8d9bbd;font-size:.62rem;line-height:1.35}
+  #spotlightHud .spotlight-note{margin-top:.35rem;color:var(--t3);font-size:.62rem;line-height:1.35}
   #spotlightHud select{font-size:.68rem;min-width:8rem;padding:.2rem .35rem}
-  #inspectHud[data-status="TP"] .inspect-hero-strip{box-shadow:inset 0 1px 0 rgba(255,255,255,.06),0 0 32px rgba(79,212,255,.12)}
-  #inspectHud[data-status="FP"] .inspect-hero-strip{background:linear-gradient(155deg,rgba(52,20,18,.94) 0%,rgba(25,8,10,.92) 56%,rgba(36,14,12,.94) 100%);border-color:rgba(255,130,102,.28);box-shadow:inset 0 1px 0 rgba(255,255,255,.05),0 0 32px rgba(255,96,86,.12)}
-  #inspectHud[data-status="FN"] .inspect-hero-strip{background:linear-gradient(155deg,rgba(54,34,12,.94) 0%,rgba(26,14,6,.92) 56%,rgba(38,20,8,.94) 100%);border-color:rgba(255,186,103,.28);box-shadow:inset 0 1px 0 rgba(255,255,255,.05),0 0 32px rgba(255,174,86,.11)}
-  #inspectHud[data-status="FP"] .inspect-score-bucket{color:#ffb39d}
-  #inspectHud[data-status="FN"] .inspect-score-bucket{color:#ffd08f}
-  #inspectHud[data-status="FP"] .inspect-confidence-fill{background:linear-gradient(90deg,#ff7966 0%,#ffb06e 60%,#ffd98c 100%);box-shadow:0 0 18px rgba(255,112,103,.32)}
-  #inspectHud[data-status="FN"] .inspect-confidence-fill{background:linear-gradient(90deg,#ffc06b 0%,#ffd88a 50%,#fff0b0 100%);box-shadow:0 0 18px rgba(255,188,98,.28)}
-  #inspectHud[data-status="FN"] .inspect-confidence-note{color:#d8be95}
-  #inspectHud[data-status="FP"] .inspect-confidence-note{color:#deb0a2}
-  .layer-eval-grid .layer-count{font-family:var(--font-mono);font-size:.7rem;opacity:.9;margin-left:.25rem;color:#aab6d4}
+  #inspectHud[data-status="TP"] .inspect-hero-strip{box-shadow:inset 0 1px 0 rgb(var(--c-sheen) / .06),0 0 32px rgb(var(--c-cyan) / .12)}
+  #inspectHud[data-status="FP"] .inspect-hero-strip{background:linear-gradient(155deg,rgb(var(--c-bad-bg) / .94) 0%,rgb(var(--c-bad-bg) / .92) 56%,rgb(var(--c-bad-bg) / .94) 100%);border-color:rgb(var(--c-bad) / .28);box-shadow:inset 0 1px 0 rgb(var(--c-sheen) / .05),0 0 32px rgb(var(--c-bad) / .12)}
+  #inspectHud[data-status="FN"] .inspect-hero-strip{background:linear-gradient(155deg,rgb(var(--c-warn-bg) / .94) 0%,rgb(var(--c-warn-bg) / .92) 56%,rgb(var(--c-warn-bg) / .94) 100%);border-color:rgb(var(--c-warn) / .28);box-shadow:inset 0 1px 0 rgb(var(--c-sheen) / .05),0 0 32px rgb(var(--c-warn) / .11)}
+  #inspectHud[data-status="FP"] .inspect-score-bucket{color:var(--bad-fg-2)}
+  #inspectHud[data-status="FN"] .inspect-score-bucket{color:var(--warn-fg-2)}
+  #inspectHud[data-status="FP"] .inspect-confidence-fill{background:linear-gradient(90deg,var(--bad-fg-warm) 0%,var(--warn-fg) 60%,var(--warn-fg-2) 100%);box-shadow:0 0 18px rgb(var(--c-bad) / .32)}
+  #inspectHud[data-status="FN"] .inspect-confidence-fill{background:linear-gradient(90deg,var(--warn-fg) 0%,var(--warn-fg-2) 50%,var(--warn-fg-3) 100%);box-shadow:0 0 18px rgb(var(--c-warn) / .28)}
+  #inspectHud[data-status="FN"] .inspect-confidence-note{color:var(--warn-fg-muted)}
+  #inspectHud[data-status="FP"] .inspect-confidence-note{color:var(--bad-fg-dim)}
+  .layer-eval-grid .layer-count{font-family:var(--font-mono);font-size:.7rem;opacity:.9;margin-left:.25rem;color:var(--t2)}
   #evalHud .row{display:flex;justify-content:space-between;align-items:center;gap:.6rem}
-  #evalHud .row span:first-child{color:#9aa6c8;font-size:.76rem}
-  #evalHud .nGt{color:#5ee4a8;font-weight:600;text-shadow:0 0 20px rgba(94,228,168,.35)}
-  #evalHud .nPr{color:#8ec8ff;font-weight:600;text-shadow:0 0 20px rgba(142,200,255,.3)}
-  #evalHud .nMt{color:#7ee0ff;font-weight:600;text-shadow:0 0 20px rgba(126,224,255,.28)}
+  #evalHud .row span:first-child{color:var(--t3);font-size:.76rem}
+  #evalHud .nGt{color:var(--s-rate-1);font-weight:600;text-shadow:0 0 20px rgb(var(--c-ok) / .35)}
+  #evalHud .nPr{color:var(--accent);font-weight:600;text-shadow:0 0 20px rgb(var(--c-accent) / .3)}
+  #evalHud .nMt{color:var(--s-err-1);font-weight:600;text-shadow:0 0 20px rgb(var(--c-cyan) / .28)}
   #status{font-size:.8rem;color:var(--muted);line-height:1.4}
-  #meta{font-size:.75rem;color:#a8b4d4;margin-top:.35rem;font-family:var(--font-mono);line-height:1.45;word-break:break-all}
-  a{color:var(--accent);text-decoration:none;border-bottom:1px solid rgba(124,179,255,.35);transition:color .15s,border-color .15s}
-  a:hover{color:#c8ddff;border-bottom-color:rgba(200,221,255,.55)}
-  .metrics-wrap{position:absolute;right:12px;bottom:12px;width:min(38vw,360px);height:min(26vh,168px);border-radius:12px;overflow:hidden;border:1px solid #33467a;background:linear-gradient(145deg,#0a0e22f0 0%,#060812fa 55%,#0d1228 100%);box-shadow:0 0 0 1px rgba(110,168,255,.12),0 12px 40px rgba(0,0,0,.5),inset 0 1px 0 rgba(255,255,255,.06);backdrop-filter:blur(10px)}
+  #meta{font-size:.75rem;color:var(--t2);margin-top:.35rem;font-family:var(--font-mono);line-height:1.45;word-break:break-all}
+  a{color:var(--accent);text-decoration:none;border-bottom:1px solid rgb(var(--c-accent) / .35);transition:color .15s,border-color .15s}
+  a:hover{color:var(--t1);border-bottom-color:rgb(var(--c-line-pale) / .55)}
+  .metrics-wrap{position:absolute;right:12px;bottom:12px;width:min(38vw,360px);height:min(26vh,168px);border-radius:12px;overflow:hidden;border:1px solid rgb(var(--c-line-dim));background:linear-gradient(145deg,rgb(var(--c-s1) / .94) 0%,rgb(var(--c-s0) / .98) 55%,rgb(var(--c-s1)) 100%);box-shadow:0 0 0 1px rgb(var(--c-accent) / .12),0 12px 40px rgb(var(--c-shadow) / .5),inset 0 1px 0 rgb(var(--c-sheen) / .06);backdrop-filter:blur(10px)}
   .metrics-compare-wrap{height:auto;min-height:172px;padding:34px 10px 10px}
   .metrics-compare-grid{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:2px}
-  .metrics-compare-card{border:1px solid rgba(92,118,188,.34);border-radius:8px;background:rgba(8,13,30,.72);padding:7px 8px;min-width:0}
-  .metrics-compare-name{font-size:9px;font-weight:700;letter-spacing:.1em;text-transform:uppercase;color:#a9b9e0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .metrics-compare-card{border:1px solid rgb(var(--c-line) / .34);border-radius:8px;background:rgb(var(--c-s0) / .72);padding:7px 8px;min-width:0}
+  .metrics-compare-name{font-size:9px;font-weight:700;letter-spacing:.1em;text-transform:uppercase;color:var(--t2);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
   .metrics-compare-kpis{display:grid;grid-template-columns:1fr 1fr;gap:5px;margin-top:6px}
-  .metrics-compare-kpi span{display:block;font-size:8px;letter-spacing:.08em;text-transform:uppercase;color:#7f90bb}
-  .metrics-compare-kpi code{display:block;margin-top:1px;font:700 15px var(--font-mono);color:#eef4ff}
-  .metrics-compare-kpi.tp code{color:#7ee0ff}.metrics-compare-kpi.fp code{color:#ff8888}
-  .metrics-compare-mini{margin-top:5px;font:10px var(--font-mono);color:#9aa8cb;line-height:1.35}
-  .metrics-compare-delta{margin-top:8px;border-top:1px solid rgba(80,100,160,.28);padding-top:7px;font:11px var(--font-mono);color:#ccd8f8;display:grid;grid-template-columns:1fr 1fr;gap:6px}
-  .metrics-compare-delta b{font-weight:700;color:#fff}
+  .metrics-compare-kpi span{display:block;font-size:8px;letter-spacing:.08em;text-transform:uppercase;color:var(--t3)}
+  .metrics-compare-kpi code{display:block;margin-top:1px;font:700 15px var(--font-mono);color:var(--t-max)}
+  .metrics-compare-kpi.tp code{color:var(--s-err-1)}.metrics-compare-kpi.fp code{color:var(--bad-fg)}
+  .metrics-compare-mini{margin-top:5px;font:10px var(--font-mono);color:var(--t2);line-height:1.35}
+  .metrics-compare-delta{margin-top:8px;border-top:1px solid rgb(var(--c-line) / .28);padding-top:7px;font:11px var(--font-mono);color:var(--t1);display:grid;grid-template-columns:1fr 1fr;gap:6px}
+  .metrics-compare-delta b{font-weight:700;color:var(--t-max)}
   .panel-drag-handle{
     position:absolute;left:0;right:0;top:0;height:26px;z-index:4;
     display:flex;align-items:center;padding:0 10px;
     cursor:grab;user-select:none;-webkit-user-select:none;
-    background:linear-gradient(180deg,rgba(22,28,52,.92) 0%,rgba(10,14,28,.35) 100%);
+    background:linear-gradient(180deg,rgb(var(--c-s2) / .92) 0%,rgb(var(--c-s0) / .35) 100%);
     border-radius:12px 12px 0 0;
-    border-bottom:1px solid rgba(80,100,160,.2);
+    border-bottom:1px solid rgb(var(--c-line) / .2);
     touch-action:none;
   }
   .panel-drag-handle:active{cursor:grabbing}
   .metrics-wrap .panel-drag-handle .metrics-title{
     position:static;font-size:9px;font-weight:700;letter-spacing:.14em;text-transform:uppercase;
-    color:#7a8bbf;pointer-events:none;text-shadow:0 0 12px rgba(110,168,255,.35);
+    color:var(--t3);pointer-events:none;text-shadow:0 0 12px rgb(var(--c-accent) / .35);
   }
-  .metrics-wrap.metrics-error-wrap .panel-drag-handle .metrics-title{color:#ffd38f}
-  .metrics-caption{position:absolute;left:8px;right:8px;top:30px;z-index:1;font-size:9px;line-height:1.35;color:#9aa6c8;pointer-events:none;font-family:var(--font-mono)}
-  .metrics-legend{position:absolute;left:8px;right:8px;bottom:5px;z-index:1;font-size:8px;letter-spacing:.03em;color:#8a9bc4;pointer-events:none;display:flex;flex-wrap:wrap;gap:6px 10px;justify-content:flex-end}
+  .metrics-wrap.metrics-error-wrap .panel-drag-handle .metrics-title{color:var(--warn-fg-2)}
+  .metrics-caption{position:absolute;left:8px;right:8px;top:30px;z-index:1;font-size:9px;line-height:1.35;color:var(--t3);pointer-events:none;font-family:var(--font-mono)}
+  .metrics-legend{position:absolute;left:8px;right:8px;bottom:5px;z-index:1;font-size:8px;letter-spacing:.03em;color:var(--t3);pointer-events:none;display:flex;flex-wrap:wrap;gap:6px 10px;justify-content:flex-end}
   .metrics-legend span{white-space:nowrap}
-  .metrics-legend .c1{color:#00cc66}.metrics-legend .c2{color:#ff9933}.metrics-legend .c3{color:#66b3ff}.metrics-legend .c4{color:#ff6666}
-  .metrics-legend.compare-legend .c1{color:#42d6ff}.metrics-legend.compare-legend .c2{color:#ff7d7d}.metrics-legend.compare-legend .c3{color:#b7e46d}.metrics-legend.compare-legend .c4{color:#ffbd68}
-  .metrics-legend.rates-legend .r1{color:#5ee4a8}.metrics-legend.rates-legend .r2{color:#66b3ff}.metrics-legend.rates-legend .r3{color:#ffcc66}.metrics-legend.rates-legend .r4{color:#ff7799}
-  .metrics-legend.error-legend .e1{color:#6fe2ff}.metrics-legend.error-legend .e2{color:#8fb1ff}.metrics-legend.error-legend .e3{color:#ffbe78}.metrics-legend.error-legend .e4{color:#ff739d}
+  .metrics-legend .c1{color:var(--s-gt-tp)}.metrics-legend .c2{color:var(--s-gt-fn)}.metrics-legend .c3{color:var(--s-est-tp)}.metrics-legend .c4{color:var(--s-est-fp)}
+  .metrics-legend.compare-legend .c1{color:var(--s-cmp-a-tp)}.metrics-legend.compare-legend .c2{color:var(--s-cmp-a-fp)}.metrics-legend.compare-legend .c3{color:var(--s-cmp-b-tp)}.metrics-legend.compare-legend .c4{color:var(--s-cmp-b-fp)}
+  .metrics-legend.rates-legend .r1{color:var(--s-rate-1)}.metrics-legend.rates-legend .r2{color:var(--s-est-tp)}.metrics-legend.rates-legend .r3{color:var(--s-rate-3)}.metrics-legend.rates-legend .r4{color:var(--s-rate-4)}
+  .metrics-legend.error-legend .e1{color:var(--s-err-1)}.metrics-legend.error-legend .e2{color:var(--s-err-2)}.metrics-legend.error-legend .e3{color:var(--s-err-3)}.metrics-legend.error-legend .e4{color:var(--s-err-4)}
   #metricsCanvas,#metricsRatesCanvas,#metricsErrorCanvas{position:relative;z-index:0;width:100%;height:100%;display:block}
   .metrics-wrap .metrics-caption,.metrics-wrap .metrics-legend{z-index:2}
   .view-panels{position:relative;z-index:4}
-  .view-panels>summary{cursor:pointer;list-style:none;font-size:.78rem;font-weight:600;letter-spacing:.06em;text-transform:uppercase;color:var(--muted);padding:.28rem .5rem;border-radius:8px;border:1px solid rgba(90,110,180,.35);background:rgba(18,24,48,.75)}
+  .view-panels>summary{cursor:pointer;list-style:none;font-size:.78rem;font-weight:600;letter-spacing:.06em;text-transform:uppercase;color:var(--muted);padding:.28rem .5rem;border-radius:8px;border:1px solid rgb(var(--c-line) / .35);background:rgb(var(--c-s2) / .75)}
   .view-panels>summary::-webkit-details-marker{display:none}
-  .view-panels[open]>summary{color:#c8d8ff;border-color:rgba(120,160,255,.45)}
-  .view-panels__body{margin-top:.35rem;padding:.55rem .65rem;border-radius:10px;border:1px solid rgba(90,110,180,.4);background:rgba(10,14,28,.95);display:grid;gap:.45rem;min-width:15rem;box-shadow:0 8px 28px rgba(0,0,0,.4)}
+  .view-panels[open]>summary{color:var(--t1);border-color:rgb(var(--c-accent) / .45)}
+  .view-panels__body{margin-top:.35rem;padding:.55rem .65rem;border-radius:10px;border:1px solid rgb(var(--c-line) / .4);background:rgb(var(--c-s0) / .95);display:grid;gap:.45rem;min-width:15rem;box-shadow:0 8px 28px rgb(var(--c-shadow) / .4)}
   .view-panels__body label{display:flex;align-items:center;gap:.5rem;font-size:.78rem;cursor:pointer;user-select:none}
-  .view-panels__body input{accent-color:#8ab4ff}
+  .view-panels__body input{accent-color:var(--accent)}
   #colorbarWrap{position:absolute;left:14px;bottom:14px;pointer-events:none;display:none}
   #colorbarWrap.visible{display:block}
   .colorbar-canvas{display:block}
   #hudRevealBtn{
     position:fixed;right:10px;top:50%;transform:translateY(-50%);z-index:20;
-    width:40px;height:40px;border-radius:12px;border:1px solid rgba(120,160,255,.4);
-    background:rgba(14,18,40,.92);color:#c8d8ff;font-size:1.1rem;cursor:pointer;
-    box-shadow:0 6px 24px rgba(0,0,0,.45);backdrop-filter:blur(8px);
+    width:40px;height:40px;border-radius:12px;border:1px solid rgb(var(--c-accent) / .4);
+    background:rgb(var(--c-s1) / .92);color:var(--t1);font-size:1.1rem;cursor:pointer;
+    box-shadow:0 6px 24px rgb(var(--c-shadow) / .45);backdrop-filter:blur(8px);
   }
-  #hudRevealBtn:hover{border-color:rgba(160,190,255,.55)}
+  #hudRevealBtn:hover{border-color:rgb(var(--c-line-pale) / .55)}
   .hud-grid label{display:flex;align-items:center;gap:.45rem;cursor:pointer;user-select:none}
   .hud-grid--layers{gap:.35rem}
   .layer-eval-grid{
@@ -265,24 +374,31 @@
     gap:.22rem .35rem;
     font-size:.74rem;line-height:1.2;
   }
-  .layer-swatch{width:11px;height:11px;border-radius:3px;flex-shrink:0;background:var(--sw,#888);box-shadow:0 0 0 1px rgba(0,0,0,.4) inset}
+  .layer-swatch{width:11px;height:11px;border-radius:3px;flex-shrink:0;background:var(--sw,rgb(var(--c-neutral) / 1));box-shadow:0 0 0 1px rgb(var(--c-shadow) / .4) inset}
+  /* Layer swatches legend the eval boxes in the 3D scene, so they read from the same
+     tokens the scene palette uses rather than fixed colors. */
+  .layer-swatch.sw-gt-tp{--sw:var(--s-gt-tp)}
+  .layer-swatch.sw-gt-fn{--sw:var(--s-gt-fn)}
+  .layer-swatch.sw-est-tp{--sw:var(--s-est-tp)}
+  .layer-swatch.sw-est-fp{--sw:var(--s-est-fp)}
+  .layer-swatch.sw-annotation{--sw:var(--annotation)}
   .layer-eval-grid label{gap:.32rem;min-width:0}
   .layer-eval-grid label input[type=checkbox]{width:12px;height:12px;flex-shrink:0}
   #pointColormap{min-width:9.5rem}
-  .hud-grid label input[type=checkbox]{accent-color:#8ab4ff;width:14px;height:14px}
-  .hud-grid strong#projMode{cursor:pointer;color:#c8d8ff}
-  .hud-advanced{margin-top:.45rem;border-top:1px solid rgba(60,80,140,.2);padding-top:.45rem}
-  .hud-advanced>summary{cursor:pointer;font-size:.62rem;font-weight:700;letter-spacing:.1em;text-transform:uppercase;color:#7d8db8;list-style:none;user-select:none}
+  .hud-grid label input[type=checkbox]{accent-color:var(--accent);width:14px;height:14px}
+  .hud-grid strong#projMode{cursor:pointer;color:var(--t1)}
+  .hud-advanced{margin-top:.45rem;border-top:1px solid rgb(var(--c-line) / .2);padding-top:.45rem}
+  .hud-advanced>summary{cursor:pointer;font-size:.62rem;font-weight:700;letter-spacing:.1em;text-transform:uppercase;color:var(--t3);list-style:none;user-select:none}
   .hud-advanced>summary::-webkit-details-marker{display:none}
-  .hud-advanced[open]>summary{color:#a8b8e8;margin-bottom:.35rem}
+  .hud-advanced[open]>summary{color:var(--t2);margin-bottom:.35rem}
   .hud-advanced .hud-grid{font-size:.74rem}
   .hud-advanced .hud-grid label{display:flex;align-items:center;gap:.35rem;flex-wrap:wrap;width:100%}
   .hud-advanced .hud-grid label input[type=range]{flex:1;min-width:100px}
-  .adv-out{font-size:.62rem;color:#8a9abf;font-family:var(--font-mono);min-width:2.5rem;text-align:right;flex-shrink:0}
+  .adv-out{font-size:.62rem;color:var(--t3);font-family:var(--font-mono);min-width:2.5rem;text-align:right;flex-shrink:0}
   .cam-viewport-wrap{
     position:absolute;left:12px;bottom:12px;width:min(94vw,760px);max-height:min(72vh,760px);
-    display:flex;flex-direction:column;border:1px solid #2b3f7d;border-radius:12px;overflow:hidden;z-index:6;
-    background:linear-gradient(180deg,#0c1022 0%,#080c18 100%);box-shadow:0 8px 32px rgba(0,0,0,.5);
+    display:flex;flex-direction:column;border:1px solid rgb(var(--c-line-dim));border-radius:12px;overflow:hidden;z-index:6;
+    background:linear-gradient(180deg,rgb(var(--c-s1)) 0%,rgb(var(--c-s0)) 100%);box-shadow:0 8px 32px rgb(var(--c-shadow) / .5);
     min-width:260px;min-height:120px;
   }
   .cam-viewport-wrap[hidden]{display:none !important}
@@ -292,17 +408,17 @@
   .cam-viewport-wrap.cam-mode-grid #cameraSingleWrap{display:none !important}
   .cam-viewport-resize{
     position:absolute;right:0;bottom:0;width:18px;height:18px;z-index:8;cursor:nwse-resize;
-    background:linear-gradient(135deg,transparent 50%,rgba(100,130,200,.45) 50%);
+    background:linear-gradient(135deg,transparent 50%,rgb(var(--c-line-strong) / .45) 50%);
     border-radius:0 0 10px 0;
   }
-  .cam-viewport-resize:hover{background:linear-gradient(135deg,transparent 45%,rgba(130,160,230,.65) 55%)}
+  .cam-viewport-resize:hover{background:linear-gradient(135deg,transparent 45%,rgb(var(--c-line-strong) / .65) 55%)}
   .cam-viewport-head{
     cursor:grab;padding:.4rem .65rem;font-size:.65rem;font-weight:700;letter-spacing:.1em;text-transform:uppercase;
-    color:#8b9cc4;border-bottom:1px solid #1e2848;background:linear-gradient(180deg,rgba(22,28,52,.9) 0%,rgba(10,14,28,.5) 100%);
+    color:var(--t3);border-bottom:1px solid rgb(var(--c-s2));background:linear-gradient(180deg,rgb(var(--c-s2) / .9) 0%,rgb(var(--c-s0) / .5) 100%);
     user-select:none;touch-action:none;
   }
   .cam-viewport-head:active{cursor:grabbing}
-  .cam-viewport-toolbar{display:flex;flex-wrap:wrap;align-items:center;gap:.35rem .5rem;padding:.4rem .55rem;font-size:.72rem;border-bottom:1px solid #1e2848;background:#070a14}
+  .cam-viewport-toolbar{display:flex;flex-wrap:wrap;align-items:center;gap:.35rem .5rem;padding:.4rem .55rem;font-size:.72rem;border-bottom:1px solid rgb(var(--c-s2));background:rgb(var(--c-s0))}
   .cam-viewport-toolbar select{min-width:120px;font-size:.72rem;padding:.22rem .4rem}
   .cam-viewport-body{min-height:0}
   .cam-viewport-wrap.cam-mode-single .cam-viewport-body{
@@ -311,12 +427,12 @@
   .cam-viewport-wrap.cam-mode-grid .cam-viewport-body{
     flex:1;min-height:100px;overflow:auto;max-height:none;
   }
-  .cam-single-wrap{background:#050810;text-align:center;min-width:0}
+  .cam-single-wrap{background:rgb(var(--c-s0));text-align:center;min-width:0}
   .cam-single-wrap canvas{max-width:100%;height:auto;display:block}
-  .cam-grid6{display:grid;grid-template-columns:1fr 1fr 1fr;grid-template-rows:1fr 1fr;gap:2px;background:#050810;min-height:220px}
-  .cam-slot{position:relative;min-height:100px;background:#0a0e18;display:flex;align-items:center;justify-content:center}
+  .cam-grid6{display:grid;grid-template-columns:1fr 1fr 1fr;grid-template-rows:1fr 1fr;gap:2px;background:rgb(var(--c-s0));min-height:220px}
+  .cam-slot{position:relative;min-height:100px;background:rgb(var(--c-s0));display:flex;align-items:center;justify-content:center}
   .cam-slot canvas{width:100%;height:auto;display:block}
-  .cam-slot-label{position:absolute;left:3px;bottom:3px;font-size:9px;font-weight:600;color:#d0dcf0;text-shadow:0 0 6px #000;padding:2px 5px;background:rgba(0,0,0,.45);border-radius:4px;pointer-events:none;max-width:calc(100% - 8px);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .cam-slot-label{position:absolute;left:3px;bottom:3px;font-size:9px;font-weight:600;color:var(--t1);text-shadow:0 0 6px rgb(var(--c-shadow));padding:2px 5px;background:rgb(var(--c-shadow) / .45);border-radius:4px;pointer-events:none;max-width:calc(100% - 8px);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
   @media (min-width:960px){
     #inspectHud .inspect-info-grid{grid-template-columns:repeat(2,minmax(0,1fr))}
   }
@@ -333,6 +449,7 @@
       <span class="pill">dataset=<code>__DATASET_ID__</code></span>
       <span class="pill">scenario=<code>__SCENARIO_NAME__</code></span>
       <div class="controls">
+        <button type="button" id="themeToggleBtn" title="Switch theme">☀</button>
         <button id="playBtn">Play</button>
         <label>speed <select id="speed"><option>0.25</option><option>0.5</option><option selected>1</option><option>2</option><option>4</option></select>x</label>
         <button id="camReset">Reset Cam</button>
@@ -469,12 +586,12 @@
       <div class="hud-panel__section-title">Eval &amp; layers</div>
       <p class="hud-panel__hint">GT = filled glass · EST = wireframe (predictions draw on top)</p>
       <div class="hud-grid hud-grid--layers">
-        <label title="Dataset 3D boxes from lidar / T4 sample (yellow wireframes)"><span class="layer-swatch" style="--sw:#ffd166"></span><input id="show3dAnnotations" type="checkbox" checked> 3D annotations</label>
+        <label title="Dataset 3D boxes from lidar / T4 sample (yellow wireframes)"><span class="layer-swatch sw-annotation"></span><input id="show3dAnnotations" type="checkbox" checked> 3D annotations</label>
         <div class="layer-eval-grid" title="Eval layers — colors match 3D view">
-          <label title="GT / TP — green fill + outline"><span class="layer-swatch" style="--sw:#00cc66"></span><input id="showGtTp" type="checkbox" checked> GT·TP <span class="layer-count" id="cntGtTp">0</span></label>
-          <label title="GT / FN — orange fill + outline"><span class="layer-swatch" style="--sw:#ff9933"></span><input id="showGtFn" type="checkbox" checked> GT·FN <span class="layer-count" id="cntGtFn">0</span></label>
-          <label title="EST / TP — blue wireframe"><span class="layer-swatch" style="--sw:#66b3ff"></span><input id="showEstTp" type="checkbox" checked> EST·TP <span class="layer-count" id="cntEstTp">0</span></label>
-          <label title="EST / FP — red wireframe (fainter)"><span class="layer-swatch" style="--sw:#ff6666"></span><input id="showEstFp" type="checkbox" checked> EST·FP <span class="layer-count" id="cntEstFp">0</span></label>
+          <label title="GT / TP — green fill + outline"><span class="layer-swatch sw-gt-tp"></span><input id="showGtTp" type="checkbox" checked> GT·TP <span class="layer-count" id="cntGtTp">0</span></label>
+          <label title="GT / FN — orange fill + outline"><span class="layer-swatch sw-gt-fn"></span><input id="showGtFn" type="checkbox" checked> GT·FN <span class="layer-count" id="cntGtFn">0</span></label>
+          <label title="EST / TP — blue wireframe"><span class="layer-swatch sw-est-tp"></span><input id="showEstTp" type="checkbox" checked> EST·TP <span class="layer-count" id="cntEstTp">0</span></label>
+          <label title="EST / FP — red wireframe (fainter)"><span class="layer-swatch sw-est-fp"></span><input id="showEstFp" type="checkbox" checked> EST·FP <span class="layer-count" id="cntEstFp">0</span></label>
         </div>
         <label title="Draw the class label (truck / unknown / …) above every eval box, including polygon detections shown as points. Hover any box for its label without this on."><input id="showLabels" type="checkbox"> Labels <span class="layer-count" id="cntLabels">0</span></label>
       </div>
@@ -485,6 +602,7 @@
           <label>intensity gain <input id="intensityGain" type="range" min="0.4" max="2.5" step="0.1" value="1.0"></label>
           <label>point colors <select id="pointColormap" title="Map lidar intensity to RGB">
             <option value="turbo" selected>Turbo</option>
+            <option value="paper">Paper ink (light bg)</option>
             <option value="viridis">Viridis</option>
             <option value="plasma">Plasma</option>
             <option value="jet">Jet</option>
@@ -681,10 +799,12 @@ function getExternalBboxSwapLW(){
 
 const canvas = document.getElementById("canvas");
 const renderer = new THREE.WebGLRenderer({canvas, antialias:true});
+// The scene ground follows the theme; without this the canvas clears to black.
+renderer.setClearColor(TH.hex("sceneBg"), 1);
 renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
 renderer.outputColorSpace = THREE.SRGBColorSpace;
 const scene = new THREE.Scene();
-scene.fog = new THREE.Fog(0x070b16, 90, 230);
+scene.fog = new THREE.Fog(TH.hex("fog"), 90, 230);
 const perspCamera = new THREE.PerspectiveCamera(74, 1, 0.1, 1000);
 const orthoCamera = new THREE.OrthographicCamera(-20, 20, 20, -20, 0.1, 1000);
 let camera = perspCamera;
@@ -715,7 +835,42 @@ function applyFogFromSettings(){
   const near = Number(document.getElementById("fogNear")?.value ?? 90);
   let far = Number(document.getElementById("fogFar")?.value ?? 230);
   if (far <= near + 1) far = near + 2;
-  scene.fog = new THREE.Fog(0x070b16, near, far);
+  scene.fog = new THREE.Fog(TH.hex("fog"), near, far);
+}
+
+/**
+ * Re-apply the theme to everything in the scene that caches a color.
+ *
+ * A theme flip changes the ground the scene is drawn on, and three.js bakes colors
+ * into materials, grid geometry and canvas textures, so those have to be rebuilt --
+ * CSS cannot reach any of it.
+ */
+function applySceneTheme(){
+  syncDefaultColormap();
+  renderer.setClearColor(TH.hex("sceneBg"), 1);
+  applyFogFromSettings();
+  if (typeof ambientLight !== "undefined" && ambientLight) {
+    ambientLight.color.setHex(TH.hex("ambient"));
+  }
+  if (grid) {
+    scene.remove(grid);
+    grid.geometry.dispose();
+    if (Array.isArray(grid.material)) grid.material.forEach((m) => m.dispose());
+    else grid.material.dispose();
+    grid = new THREE.GridHelper(180, 90, TH.hex("gridMajor"), TH.hex("gridMinor"));
+    grid.rotation.x = Math.PI / 2;
+    scene.add(grid);
+  }
+  // Label chips are cached per (text, color, theme); drop the stale-theme entries.
+  refreshEvalStatusColors();
+  if (typeof egoFallback !== "undefined" && egoFallback && egoFallback.material) {
+    egoFallback.material.color.setHex(TH.hex("egoWire"));
+  }
+  labelSpriteCache.clear();
+  // Rebuilds boxes, labels and per-point colormap colors for the current frame.
+  const data = cache.get(frame);
+  if (data) setFrameData(data);
+  updateColorbar();
 }
 
 function applyCameraClipFromSettings(){
@@ -737,9 +892,10 @@ function fxEnabled(id){
   return !!(el && el.checked);
 }
 
-scene.add(new THREE.AmbientLight(0x8aa6ff, 0.7));
+const ambientLight = new THREE.AmbientLight(TH.hex("ambient"), 0.7);
+scene.add(ambientLight);
 const dl = new THREE.DirectionalLight(0xffffff, 0.9); dl.position.set(12, -10, 30); scene.add(dl);
-const grid = new THREE.GridHelper(180, 90, 0x2b3a6f, 0x1a2342);
+let grid = new THREE.GridHelper(180, 90, TH.hex("gridMajor"), TH.hex("gridMinor"));
 grid.rotation.x = Math.PI / 2; // XY ground plane (z-up)
 scene.add(grid);
 
@@ -764,7 +920,7 @@ scene.add(egoRoot);
 const egoFallback = new THREE.Mesh(
   new THREE.BoxGeometry(4.6, 1.9, 1.6),
   new THREE.MeshBasicMaterial({
-    color: 0x6ea8ff,
+    color: TH.hex("egoWire"),
     wireframe: true,
     transparent: true,
     opacity: Number(document.getElementById("boxOpacity").value || "0.9"),
@@ -902,6 +1058,23 @@ const VIRIDIS_STOPS = [
   { t: 0.75, r: 0.206756, g: 0.371758, b: 0.553123 },
   { t: 1, r: 0.993248, g: 0.906157, b: 0.143936 },
 ];
+/**
+ * Single-hue blue ramp, light -> dark, for use over a light ground.
+ *
+ * Turbo and jet are rainbows and viridis/plasma run dark -> light, so on paper
+ * their bright end lands at the ground's own luminance and those points vanish.
+ * This ramp instead darkens monotonically with intensity, putting ink where the
+ * signal is. It starts at blue step 300 rather than the lighter steps: a heatmap
+ * cell may recede into its surface, but a 1px point that does is simply gone
+ * (step 300 = 2.15:1 against the scene ground, the lightest step clearing 2:1).
+ */
+const PAPER_STOPS = [
+  { t: 0,    r: 0.427451, g: 0.654902, b: 0.925490 },  /* #6da7ec  blue 300 */
+  { t: 0.25, r: 0.223529, g: 0.529412, b: 0.898039 },  /* #3987e5  blue 400 */
+  { t: 0.5,  r: 0.145098, g: 0.415686, b: 0.749020 },  /* #256abf  blue 500 */
+  { t: 0.75, r: 0.094118, g: 0.309804, b: 0.584314 },  /* #184f95  blue 600 */
+  { t: 1,    r: 0.050980, g: 0.211765, b: 0.419608 },  /* #0d366b  blue 700 */
+];
 const PLASMA_STOPS = [
   { t: 0, r: 0.050383, g: 0.029803, b: 0.527975 },
   { t: 0.25, r: 0.493733, g: 0.011988, b: 0.657865 },
@@ -925,18 +1098,50 @@ function colormapClassic(t){
 }
 
 function intensityToRgb(tNorm, mapName){
+  const rgb = intensityToRgbRaw(tNorm, mapName);
+  // "paper" is already built for a light ground; the others need toning down.
+  const scale = mapName === "paper" ? 1 : TH.num("pointScale", 1);
+  if (scale === 1) return rgb;
+  // Light ground: darken so the bright end of every map stays visible.
+  return [rgb[0] * scale, rgb[1] * scale, rgb[2] * scale];
+}
+
+/** Raw colormap lookup, before any theme adjustment. */
+function intensityToRgbRaw(tNorm, mapName){
   switch (mapName) {
     case "viridis": return lerpColorStops(tNorm, VIRIDIS_STOPS);
     case "plasma": return lerpColorStops(tNorm, PLASMA_STOPS);
     case "jet": return colormapJet(tNorm);
+    case "paper": return lerpColorStops(tNorm, PAPER_STOPS);
     case "grayscale": {
-      const g = Math.max(0, Math.min(1, tNorm));
+      let g = Math.max(0, Math.min(1, tNorm));
+      // Light ground: bright grays vanish, so run the ramp dark-on-light.
+      if (TH.num("grayscaleInvert", 0)) g = 1 - g;
       return [g, g, g];
     }
     case "classic": return colormapClassic(tNorm);
     case "turbo":
     default: return lerpColorStops(tNorm, TURBO_STOPS);
   }
+}
+
+/** Set once the operator picks a colormap themselves; suppresses the theme default. */
+let pointColormapChosen = false;
+
+/**
+ * Follow the theme's default colormap until the operator picks one.
+ *
+ * Turbo reads well on the dark ground but is a rainbow whose mid-range goes pale,
+ * so on paper the default becomes the single-hue "paper" ramp instead.
+ */
+function syncDefaultColormap(){
+  if (pointColormapChosen) return false;
+  const el = document.getElementById("pointColormap");
+  if (!el) return false;
+  const want = (window.TH && TH.isLight()) ? "paper" : "turbo";
+  if (el.value === want) return false;
+  el.value = want;
+  return true;
 }
 
 function getPointColormapName(){
@@ -2426,16 +2631,16 @@ function rebuildMetricsPlot(){
   }
   const chartSeries = compareSeries
     ? [
-      { vals: compareSeries.a_tp, color: 0x42d6ff, label: "A TP" },
-      { vals: compareSeries.a_fp, color: 0xff7d7d, label: "A FP" },
-      { vals: compareSeries.b_tp, color: 0xb7e46d, label: "B TP" },
-      { vals: compareSeries.b_fp, color: 0xffbd68, label: "B FP" },
+      { vals: compareSeries.a_tp, color: TH.hex("cmpATp"), label: "A TP" },
+      { vals: compareSeries.a_fp, color: TH.hex("cmpAFp"), label: "A FP" },
+      { vals: compareSeries.b_tp, color: TH.hex("cmpBTp"), label: "B TP" },
+      { vals: compareSeries.b_fp, color: TH.hex("cmpBFp"), label: "B FP" },
     ]
     : [
-      { vals: series.gt_tp, color: 0x00cc66, label: "GT/TP" },
-      { vals: series.gt_fn, color: 0xff9933, label: "GT/FN" },
-      { vals: series.est_tp, color: 0x66b3ff, label: "EST/TP" },
-      { vals: series.est_fp, color: 0xff6666, label: "EST/FP" },
+      { vals: series.gt_tp, color: TH.hex("gtTp"), label: "GT/TP" },
+      { vals: series.gt_fn, color: TH.hex("gtFn"), label: "GT/FN" },
+      { vals: series.est_tp, color: TH.hex("estTp"), label: "EST/TP" },
+      { vals: series.est_fp, color: TH.hex("estFp"), label: "EST/FP" },
     ];
   const n = series.n;
   let yMax = 1e-6;
@@ -2450,7 +2655,7 @@ function rebuildMetricsPlot(){
 
   const bg = new THREE.Mesh(
     new THREE.PlaneGeometry(2.05, 1.85),
-    new THREE.MeshBasicMaterial({ color: 0x06091c, transparent: true, opacity: 0.92 })
+    new THREE.MeshBasicMaterial({ color: TH.hex("chartPanel"), transparent: true, opacity: 0.92 })
   );
   bg.position.z = -0.02;
   metricsChartGroup.add(bg);
@@ -2472,7 +2677,7 @@ function rebuildMetricsPlot(){
     const y = y0 + (y1 - y0) * t;
     const gg = new THREE.BufferGeometry();
     gg.setAttribute("position", new THREE.Float32BufferAttribute([x0, y, 0, x1, y, 0], 3));
-    metricsChartGroup.add(new THREE.Line(gg, new THREE.LineBasicMaterial({ color: 0x2a3f60, transparent: true, opacity: 0.55 })));
+    metricsChartGroup.add(new THREE.Line(gg, new THREE.LineBasicMaterial({ color: TH.hex("chartGrid"), transparent: true, opacity: 0.55 })));
   }
 
   function lineStrip(vals, color){
@@ -2509,12 +2714,12 @@ function rebuildMetricsPlot(){
   phGeom.setAttribute("position", new THREE.BufferAttribute(phPos, 3));
   metricsPlayhead = new THREE.Group();
   metricsPlayhead.userData.geom = phGeom;
-  metricsPlayhead.add(new THREE.Line(phGeom, new THREE.LineBasicMaterial({ color: 0xffffff, transparent: true, opacity: 1 })));
+  metricsPlayhead.add(new THREE.Line(phGeom, new THREE.LineBasicMaterial({ color: TH.hex("playhead"), transparent: true, opacity: 1 })));
   const phGeom2 = new THREE.BufferGeometry();
   const phPos2 = new Float32Array(phPos);
   phGeom2.setAttribute("position", new THREE.BufferAttribute(phPos2, 3));
   metricsPlayhead.userData.geomGlow = phGeom2;
-  metricsPlayhead.add(new THREE.Line(phGeom2, new THREE.LineBasicMaterial({ color: 0x6ea8ff, transparent: true, opacity: 0.4 })));
+  metricsPlayhead.add(new THREE.Line(phGeom2, new THREE.LineBasicMaterial({ color: TH.hex("playheadGlow"), transparent: true, opacity: 0.4 })));
   metricsChartGroup.add(metricsPlayhead);
 
   metricsWrapEl.hidden = false;
@@ -2552,7 +2757,7 @@ function rebuildMetricsRatesPlot(){
 
   const bg = new THREE.Mesh(
     new THREE.PlaneGeometry(2.05, 1.85),
-    new THREE.MeshBasicMaterial({ color: 0x06091c, transparent: true, opacity: 0.92 })
+    new THREE.MeshBasicMaterial({ color: TH.hex("chartPanel"), transparent: true, opacity: 0.92 })
   );
   bg.position.z = -0.02;
   metricsRatesChartGroup.add(bg);
@@ -2562,7 +2767,7 @@ function rebuildMetricsRatesPlot(){
     const yy = y0 + (y1 - y0) * t;
     const gg = new THREE.BufferGeometry();
     gg.setAttribute("position", new THREE.Float32BufferAttribute([x0, yy, 0, x1, yy, 0], 3));
-    metricsRatesChartGroup.add(new THREE.Line(gg, new THREE.LineBasicMaterial({ color: 0x2a3f60, transparent: true, opacity: 0.55 })));
+    metricsRatesChartGroup.add(new THREE.Line(gg, new THREE.LineBasicMaterial({ color: TH.hex("chartGrid"), transparent: true, opacity: 0.55 })));
   }
 
   function lineStrip01(vals, color){
@@ -2579,22 +2784,22 @@ function rebuildMetricsRatesPlot(){
     geom.setAttribute("position", new THREE.Float32BufferAttribute(pts, 3));
     return new THREE.Line(geom, new THREE.LineBasicMaterial({ color, transparent: true, opacity: 0.95 }));
   }
-  metricsRatesChartGroup.add(lineStrip01(tpr, 0x5ee4a8));
-  metricsRatesChartGroup.add(lineStrip01(prec, 0x66b3ff));
-  metricsRatesChartGroup.add(lineStrip01(f1, 0xffcc66));
-  metricsRatesChartGroup.add(lineStrip01(fdr, 0xff7799));
+  metricsRatesChartGroup.add(lineStrip01(tpr, TH.hex("rate1")));
+  metricsRatesChartGroup.add(lineStrip01(prec, TH.hex("estTp")));
+  metricsRatesChartGroup.add(lineStrip01(f1, TH.hex("rate3")));
+  metricsRatesChartGroup.add(lineStrip01(fdr, TH.hex("rate4")));
 
   const phGeom = new THREE.BufferGeometry();
   const phPos = new Float32Array([-0.9, -0.78, 0.04, -0.9, 0.78, 0.04]);
   phGeom.setAttribute("position", new THREE.BufferAttribute(phPos, 3));
   metricsRatesPlayhead = new THREE.Group();
   metricsRatesPlayhead.userData.geom = phGeom;
-  metricsRatesPlayhead.add(new THREE.Line(phGeom, new THREE.LineBasicMaterial({ color: 0xffffff, transparent: true, opacity: 1 })));
+  metricsRatesPlayhead.add(new THREE.Line(phGeom, new THREE.LineBasicMaterial({ color: TH.hex("playhead"), transparent: true, opacity: 1 })));
   const phGeom2 = new THREE.BufferGeometry();
   const phPos2 = new Float32Array(phPos);
   phGeom2.setAttribute("position", new THREE.BufferAttribute(phPos2, 3));
   metricsRatesPlayhead.userData.geomGlow = phGeom2;
-  metricsRatesPlayhead.add(new THREE.Line(phGeom2, new THREE.LineBasicMaterial({ color: 0xffcc66, transparent: true, opacity: 0.45 })));
+  metricsRatesPlayhead.add(new THREE.Line(phGeom2, new THREE.LineBasicMaterial({ color: TH.hex("playheadGlowRates"), transparent: true, opacity: 0.45 })));
   metricsRatesChartGroup.add(metricsRatesPlayhead);
 
   metricsRatesWrapEl.hidden = false;
@@ -2632,7 +2837,7 @@ function rebuildMetricsErrorPlot(){
   const yMax = Math.max(1e-6, ...ctr, ...plane, ...yaw, 1);
   const bg = new THREE.Mesh(
     new THREE.PlaneGeometry(2.05, 1.85),
-    new THREE.MeshBasicMaterial({ color: 0x090b1f, transparent: true, opacity: 0.92 })
+    new THREE.MeshBasicMaterial({ color: TH.hex("chartPanelAlt"), transparent: true, opacity: 0.92 })
   );
   bg.position.z = -0.02;
   metricsErrorChartGroup.add(bg);
@@ -2641,7 +2846,7 @@ function rebuildMetricsErrorPlot(){
     const yy = y0 + (y1 - y0) * t;
     const gg = new THREE.BufferGeometry();
     gg.setAttribute("position", new THREE.Float32BufferAttribute([x0, yy, 0, x1, yy, 0], 3));
-    metricsErrorChartGroup.add(new THREE.Line(gg, new THREE.LineBasicMaterial({ color: 0x31425f, transparent: true, opacity: 0.55 })));
+    metricsErrorChartGroup.add(new THREE.Line(gg, new THREE.LineBasicMaterial({ color: TH.hex("chartGridAlt"), transparent: true, opacity: 0.55 })));
   }
   function lineStripScaled(vals, color, denom, z){
     const pts = [];
@@ -2657,21 +2862,21 @@ function rebuildMetricsErrorPlot(){
     geom.setAttribute("position", new THREE.Float32BufferAttribute(pts, 3));
     return new THREE.Line(geom, new THREE.LineBasicMaterial({ color, transparent: true, opacity: 0.95 }));
   }
-  metricsErrorChartGroup.add(lineStripScaled(ctr, 0x6fe2ff, yMax, 0.02));
-  metricsErrorChartGroup.add(lineStripScaled(plane, 0x8fb1ff, yMax, 0.02));
-  metricsErrorChartGroup.add(lineStripScaled(yaw, 0xffbe78, yMax, 0.02));
-  metricsErrorChartGroup.add(lineStripScaled(sev, 0xff739d, 1, 0.02));
+  metricsErrorChartGroup.add(lineStripScaled(ctr, TH.hex("err1"), yMax, 0.02));
+  metricsErrorChartGroup.add(lineStripScaled(plane, TH.hex("err2"), yMax, 0.02));
+  metricsErrorChartGroup.add(lineStripScaled(yaw, TH.hex("err3"), yMax, 0.02));
+  metricsErrorChartGroup.add(lineStripScaled(sev, TH.hex("err4"), 1, 0.02));
   const phGeom = new THREE.BufferGeometry();
   const phPos = new Float32Array([-0.9, -0.78, 0.04, -0.9, 0.78, 0.04]);
   phGeom.setAttribute("position", new THREE.BufferAttribute(phPos, 3));
   metricsErrorPlayhead = new THREE.Group();
   metricsErrorPlayhead.userData.geom = phGeom;
-  metricsErrorPlayhead.add(new THREE.Line(phGeom, new THREE.LineBasicMaterial({ color: 0xffffff, transparent: true, opacity: 1 })));
+  metricsErrorPlayhead.add(new THREE.Line(phGeom, new THREE.LineBasicMaterial({ color: TH.hex("playhead"), transparent: true, opacity: 1 })));
   const phGeom2 = new THREE.BufferGeometry();
   const phPos2 = new Float32Array(phPos);
   phGeom2.setAttribute("position", new THREE.BufferAttribute(phPos2, 3));
   metricsErrorPlayhead.userData.geomGlow = phGeom2;
-  metricsErrorPlayhead.add(new THREE.Line(phGeom2, new THREE.LineBasicMaterial({ color: 0xffbe78, transparent: true, opacity: 0.45 })));
+  metricsErrorPlayhead.add(new THREE.Line(phGeom2, new THREE.LineBasicMaterial({ color: TH.hex("playheadGlowError"), transparent: true, opacity: 0.45 })));
   metricsErrorChartGroup.add(metricsErrorPlayhead);
   metricsErrorWrapEl.hidden = false;
   layoutMetricsStacks();
@@ -3232,13 +3437,22 @@ function boxEdgesFromCorners(box){
   return out;
 }
 
-/** Aligns with common evaluator color_map: (GT|EST) × (TP|FN|FP). */
-const EVAL_STATUS_COLOR_HEX = {
-  "GT:TP": 0x00cc66,
-  "GT:FN": 0xff9933,
-  "EST:TP": 0x66b3ff,
-  "EST:FP": 0xff6666,
-};
+/** Aligns with common evaluator color_map: (GT|EST) × (TP|FN|FP).
+ *  Rebuilt by `refreshEvalStatusColors()` because the palette is theme-dependent. */
+let EVAL_STATUS_COLOR_HEX = evalStatusColorHex();
+
+function evalStatusColorHex(){
+  return {
+    "GT:TP": TH.hex("boxGtTp"),
+    "GT:FN": TH.hex("boxGtFn"),
+    "EST:TP": TH.hex("boxEstTp"),
+    "EST:FP": TH.hex("boxEstFp"),
+  };
+}
+
+function refreshEvalStatusColors(){
+  EVAL_STATUS_COLOR_HEX = evalStatusColorHex();
+}
 
 function normalizeEvalKind(box, layerId){
   const raw = box.kind ?? box.eval_kind ?? box.role ?? box.source_kind;
@@ -3270,7 +3484,7 @@ function evalLineColor(box, layerId){
   if (Object.prototype.hasOwnProperty.call(EVAL_STATUS_COLOR_HEX, key)) {
     return EVAL_STATUS_COLOR_HEX[key];
   }
-  return layerId === "pred" ? 0x66b3ff : 0x4bd08d;
+  return layerId === "pred" ? TH.hex("boxEstTp") : TH.hex("boxGtFallback");
 }
 
 /** Same pose math as wireframe path; used for GT solid boxes. */
@@ -3407,7 +3621,7 @@ function addTpQualityAura(parent, box, layerId){
   geom.setAttribute("position", new THREE.Float32BufferAttribute(footprintPts, 3));
   const ring = new THREE.Line(
     geom,
-    new THREE.LineBasicMaterial({ color: 0x8de4ff, transparent: true, opacity: 0.2 + sev * 0.18 })
+    new THREE.LineBasicMaterial({ color: TH.hex("haloSev"), transparent: true, opacity: 0.2 + sev * 0.18 })
   );
   ring.userData.effectKind = "footprint";
   ring.userData.effectBaseScale = 1;
@@ -3416,7 +3630,7 @@ function addTpQualityAura(parent, box, layerId){
   ring.userData.effectOpacityAmp = 0.03 + sev * 0.03;
   ring.userData.effectPhase = 1.2;
   parent.add(ring);
-  addEvalPulseMarker(parent, parent && parent.isMesh ? [0, 0, 0] : meta.center, 0x9ce6ff, {
+  addEvalPulseMarker(parent, parent && parent.isMesh ? [0, 0, 0] : meta.center, TH.hex("pulse"), {
     radius: Math.max(0.12, Math.min(0.22, 0.06 * maxSize + sev * 0.05)),
     opacity: 0.14 + sev * 0.08,
     baseScale: 1,
@@ -3562,7 +3776,7 @@ function addGtEvalBoxMesh(group, box, layerId){
       phase: 0.6,
     });
     if (hot) {
-      addEvalShockwaveRing(mesh, [0, 0, floorZ + 0.01], 0xffe1ae, {
+      addEvalShockwaveRing(mesh, [0, 0, floorZ + 0.01], TH.hex("ring"), {
         radius: Math.max(0.56, 0.28 * Math.max(pose.l, pose.w)),
         width: 0.12,
         opacity: 0.22,
@@ -3630,7 +3844,7 @@ function labelsEnabled(){
 /** Rasterized label chips are cached by (text, color): a scene of 200 "car" boxes rasterizes once, not 200×. */
 const labelSpriteCache = new Map();
 function labelSpriteAssets(label, colorHex){
-  const key = `${label}|${colorHex}`;
+  const key = `${label}|${colorHex}|${TH.current}`;
   const cached = labelSpriteCache.get(key);
   if (cached) return cached;
   const dpr = Math.min(2, window.devicePixelRatio || 1);
@@ -3645,14 +3859,14 @@ function labelSpriteAssets(label, colorHex){
   const ctx = cv.getContext("2d");
   ctx.scale(dpr, dpr);
   const r = (colorHex >> 16) & 255, g = (colorHex >> 8) & 255, b = colorHex & 255;
-  ctx.fillStyle = "rgba(6,10,20,0.82)";
+  ctx.fillStyle = TH.css("labelChipBg");
   ctx.strokeStyle = `rgba(${r},${g},${b},0.9)`;
   ctx.lineWidth = 2;
   ctx.beginPath();
   ctx.roundRect(1, 1, w - 2, h - 2, 9);
   ctx.fill();
   ctx.stroke();
-  ctx.fillStyle = "#f4f8ff";
+  ctx.fillStyle = TH.css("labelChipText");
   ctx.font = `700 ${fontPx}px DM Sans, sans-serif`;
   ctx.textBaseline = "middle";
   ctx.fillText(label, padX, h / 2 + 1);
@@ -3859,7 +4073,7 @@ function renderInspectSelection(){
   const meta = current.meta || {};
   const corners = current.corners;
   const upAxis = new THREE.Vector3(0, 1, 0);
-  const bracketMat = new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.98, depthWrite: false });
+  const bracketMat = new THREE.MeshBasicMaterial({ color: TH.hex("bracket"), transparent: true, opacity: 0.98, depthWrite: false });
   const edgeMap = {
     0: [1, 3, 4], 1: [0, 2, 5], 2: [1, 3, 6], 3: [0, 2, 7],
     4: [0, 5, 7], 5: [1, 4, 6], 6: [2, 5, 7], 7: [3, 4, 6],
@@ -3891,7 +4105,7 @@ function renderInspectSelection(){
     }
   }
   const c = current.center;
-  const color = current.status === "FP" ? 0xff8f74 : (current.status === "FN" ? 0xffcf82 : 0x97e6ff);
+  const color = current.status === "FP" ? TH.hex("inspectFp") : (current.status === "FN" ? TH.hex("inspectFn") : TH.hex("inspectTp"));
   const pulse = new THREE.Mesh(
     new THREE.SphereGeometry(0.34, 20, 16),
     new THREE.MeshBasicMaterial({ color, transparent: true, opacity: 0.92, depthWrite: false })
@@ -3944,14 +4158,14 @@ function renderInspectTrail(points){
     g.setAttribute("position", new THREE.Float32BufferAttribute(arr, 3));
     inspectTrailGroup.add(new THREE.Line(
       g,
-      new THREE.LineBasicMaterial({ color: 0x86d4ff, transparent: true, opacity: 0.8 })
+      new THREE.LineBasicMaterial({ color: TH.hex("trailLine"), transparent: true, opacity: 0.8 })
     ));
   }
   points.forEach((p, idx) => {
     const alpha = idx === points.length - 1 ? 0.9 : (0.22 + 0.5 * (idx / Math.max(1, points.length - 1)));
     const m = new THREE.Mesh(
       new THREE.SphereGeometry(idx === points.length - 1 ? 0.16 : 0.11, 12, 10),
-      new THREE.MeshBasicMaterial({ color: idx === points.length - 1 ? 0xffffff : 0x7cb3ff, transparent: true, opacity: alpha })
+      new THREE.MeshBasicMaterial({ color: idx === points.length - 1 ? TH.hex("trailDotLast") : TH.hex("trailDot"), transparent: true, opacity: alpha })
     );
     m.position.set(p[0], p[1], p[2]);
     inspectTrailGroup.add(m);
@@ -4365,7 +4579,7 @@ function addEvalWireframeLinesOnly(group, box, layerId){
         phase: 0.6,
       });
       if (hot) {
-        addEvalShockwaveRing(seg, [meta.center[0], meta.center[1], floorZ + 0.01], 0xffe1ae, {
+        addEvalShockwaveRing(seg, [meta.center[0], meta.center[1], floorZ + 0.01], TH.hex("ring"), {
           radius: Math.max(0.56, 0.28 * Math.max(...(meta.size || [1, 1, 1]))),
           width: 0.12,
           opacity: 0.22,
@@ -4757,7 +4971,7 @@ async function loadLanelet(){
     return;
   }
   const segs = Array.isArray(data.segments) ? data.segments : [];
-  const roleColors = { left: 0x4bd08d, right: 0xff8f5a, centerline: 0x7aa7ff, unknown: 0xd0d7ff };
+  const roleColors = { left: TH.hex("laneLeft"), right: TH.hex("laneRight"), centerline: TH.hex("laneCenter"), unknown: TH.hex("laneUnknown") };
   const byRole = { left: [], right: [], centerline: [], unknown: [] };
   let xmin=Infinity, xmax=-Infinity, ymin=Infinity, ymax=-Infinity;
   for (const s of segs){
@@ -5584,7 +5798,7 @@ function setFrameData(data){
       const g = new THREE.BufferGeometry();
       g.setAttribute("position", new THREE.Float32BufferAttribute(linePts, 3));
       const m = new THREE.LineBasicMaterial({
-        color:0xffd166, transparent:true,
+        color:TH.hex("boxAnnotation"), transparent:true,
         opacity:Number(document.getElementById("boxOpacity").value || "0.9")
       });
       const lines = new THREE.LineSegments(g, m);
@@ -5598,7 +5812,7 @@ function setFrameData(data){
         continue;
       }
       const g = new THREE.BoxGeometry(sx, sy, sz);
-      const m = new THREE.MeshBasicMaterial({color:0xffd166, wireframe:true, transparent:true, opacity:Number(document.getElementById("boxOpacity").value || "0.9")});
+      const m = new THREE.MeshBasicMaterial({color:TH.hex("boxAnnotation"), wireframe:true, transparent:true, opacity:Number(document.getElementById("boxOpacity").value || "0.9")});
       const box = new THREE.Mesh(g, m);
       box.position.set(cx, cy, cz);
       box.rotation.set(0, 0, yaw);
@@ -5610,7 +5824,7 @@ function setFrameData(data){
     const g = new THREE.BufferGeometry();
     g.setAttribute("position", new THREE.Float32BufferAttribute(batchedLinePts, 3));
     const m = new THREE.LineBasicMaterial({
-      color: 0xffd166,
+      color: TH.hex("boxAnnotation"),
       transparent: true,
       opacity: Number(document.getElementById("boxOpacity").value || "0.9"),
     });
@@ -5762,6 +5976,7 @@ document.getElementById("intensityGain").addEventListener("input", async (e) => 
   updateColorbar();
 });
 document.getElementById("pointColormap").addEventListener("change", () => {
+  pointColormapChosen = true;   // stop tracking the theme default from here on
   const data = cache.get(frame);
   if (data) setFrameData(data);
   updateColorbar();
@@ -5814,7 +6029,7 @@ function updateColorbar(){
   }
   ctx.putImageData(img, 0, 0);
   // Labels
-  ctx.fillStyle = "#94a3c8"; ctx.font = "9px JetBrains Mono, monospace";
+  ctx.fillStyle = TH.css("colorbarText"); ctx.font = "9px JetBrains Mono, monospace";
   ctx.textAlign = "right";
   const labelMin = minI === Infinity ? "0.00" : minI.toFixed(2);
   const labelMax = maxI === -Infinity ? "1.00" : maxI.toFixed(2);
@@ -6259,4 +6474,26 @@ function animate(ts){
 })().catch((err) => {
   setStatus(`boot error: ${err.message}`);
 });
+
+// Top level on purpose: the theme toggle must work even when boot fails (missing
+// dataset, fetch error), so it cannot live inside the boot IIFE. The chrome is
+// CSS-driven; the WebGL metrics charts bake colors into materials and need a rebuild.
+if (window.TH) {
+  syncDefaultColormap();
+  TH.bindToggle(document.getElementById("themeToggleBtn"));
+  TH.onChange(() => {
+    try {
+      applySceneTheme();
+    } catch (err) {
+      /* scene not booted yet (no dataset loaded) */
+    }
+    try {
+      rebuildMetricsPlot();
+      rebuildMetricsRatesPlot();
+      rebuildMetricsErrorPlot();
+    } catch (err) {
+      /* charts not built yet */
+    }
+  });
+}
 </script></body></html>
