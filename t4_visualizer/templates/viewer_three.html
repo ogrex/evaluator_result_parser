@@ -593,6 +593,7 @@
           <label title="EST / TP — blue wireframe"><span class="layer-swatch sw-est-tp"></span><input id="showEstTp" type="checkbox" checked> EST·TP <span class="layer-count" id="cntEstTp">0</span></label>
           <label title="EST / FP — red wireframe (fainter)"><span class="layer-swatch sw-est-fp"></span><input id="showEstFp" type="checkbox" checked> EST·FP <span class="layer-count" id="cntEstFp">0</span></label>
         </div>
+        <label title="Polygon-shaped detections (shape_type polygon / invalid_polygon_marker). Most are sub-metre, so a busy scene reads as a scatter of dots; uncheck to leave them out."><input id="showPolygons" type="checkbox" checked> Polygons <span class="layer-count" id="cntPolygon">0</span></label>
         <label title="Draw the class label (truck / unknown / …) above every eval box, including polygon detections shown as points. Hover any box for its label without this on."><input id="showLabels" type="checkbox"> Labels <span class="layer-count" id="cntLabels">0</span></label>
       </div>
       <div id="evalHud" hidden></div>
@@ -1903,7 +1904,10 @@ function addEvalLightPillar(parent, center, height, colorHex, opts){
 
 /** Per-frame eval bucket counts for HUD and metrics (GT×TP|FN, EST×TP|FP). */
 function countEvalBucketsFromBoxes(gtBoxes, predBoxes){
-  const o = { gt_tp: 0, gt_fn: 0, est_tp: 0, est_fp: 0 };
+  const o = { gt_tp: 0, gt_fn: 0, est_tp: 0, est_fp: 0, polygon: 0 };
+  for (const b of [...(gtBoxes || []), ...(predBoxes || [])]) {
+    if (isEvalPolygonBox(b)) o.polygon++;
+  }
   for (const b of gtBoxes || []) {
     const k = normalizeEvalKind(b, "gt");
     const st = normalizeEvalStatus(b);
@@ -2128,7 +2132,7 @@ function updateEvalHud(){
   const hasAny = gt > 0 || pred > 0 || hasFrameMap || b.gt_tp + b.gt_fn + b.est_tp + b.est_fp > 0;
   if (!hasAny) {
     evalHudEl.hidden = true;
-    const ids = ["cntGtTp","cntGtFn","cntEstTp","cntEstFp"];
+    const ids = ["cntGtTp","cntGtFn","cntEstTp","cntEstFp","cntPolygon"];
     for (const id of ids) {
       const el = document.getElementById(id);
       if (el) el.textContent = "0";
@@ -2149,6 +2153,8 @@ function updateEvalHud(){
   if (cntGtFn) cntGtFn.textContent = String(b.gt_fn);
   if (cntEstTp) cntEstTp.textContent = String(b.est_tp);
   if (cntEstFp) cntEstFp.textContent = String(b.est_fp);
+  const cntPolygon = document.getElementById("cntPolygon");
+  if (cntPolygon) cntPolygon.textContent = String(b.polygon || 0);
   evalHudEl.hidden = false;
   const mapCompact = hasFrameMap ? ` · map keys ${mapKeys}` : "";
   evalHudEl.innerHTML = `<div class="eval-rp">R ${rStr} · P ${pStr}${mapCompact}</div>`;
@@ -4597,7 +4603,21 @@ function addEvalWireframeLinesOnly(group, box, layerId){
   return seg;
 }
 
+/** Polygon-shaped rows. The evaluator marks a polygon whose box dimensions are zero as
+ * "invalid_polygon_marker", which is most of them, so both names mean polygon here. */
+function isEvalPolygonBox(box){
+  const shape = String((box && box.shape_type) || "").toLowerCase();
+  return shape === "polygon" || shape === "invalid_polygon_marker";
+}
+function evalPolygonsVisible(){
+  const el = document.getElementById("showPolygons");
+  return !el || !!el.checked;
+}
+
 function isEvalTupleVisible(box, layerId){
+  // Polygons cut across the four tuples rather than forming a fifth one: a polygon is
+  // still a GT or EST row, so this is a second gate, not another bucket.
+  if (isEvalPolygonBox(box) && !evalPolygonsVisible()) return false;
   const kind = normalizeEvalKind(box, layerId);
   const st = normalizeEvalStatus(box);
   const showGtTp = !!(document.getElementById("showGtTp") && document.getElementById("showGtTp").checked);
@@ -5243,7 +5263,8 @@ function normalizeCameraOverlayStatus(b){
   return raw;
 }
 
-function isCameraOverlayEvalVisible(kind, status){
+function isCameraOverlayEvalVisible(kind, status, row){
+  if (isEvalPolygonBox(row) && !evalPolygonsVisible()) return false;
   const st = String(status || "").toUpperCase();
   const showGtTp = !!(document.getElementById("showGtTp") && document.getElementById("showGtTp").checked);
   const showGtFn = !!(document.getElementById("showGtFn") && document.getElementById("showGtFn").checked);
@@ -5267,7 +5288,7 @@ function drawCameraOverlayEvalRows(ctx, canvas, rows, kind, iw, ih, cw, ch){
   const hitRegions = Array.isArray(cameraCanvasHitRegions.get(canvas)) ? cameraCanvasHitRegions.get(canvas).slice() : [];
   for (const r of rows) {
     const st = normalizeCameraOverlayStatus(r);
-    if (!isCameraOverlayEvalVisible(kind, st)) continue;
+    if (!isCameraOverlayEvalVisible(kind, st, r)) continue;
     const relation = cameraRowSelectionRelation(r, sel);
     if (selectionOnly && relation === "none") continue;
     const style = cameraOverlayStyleForRow(r, kind);
@@ -6061,7 +6082,7 @@ document.getElementById("boxOpacity").addEventListener("input", () => {
   applyOpacityToEvalLayerGroup(predLayerGroup, v);
   applyEgoOpacity(v);
 });
-["showGtTp", "showGtFn", "showEstTp", "showEstFp", "showLabels"].forEach((id) => {
+["showGtTp", "showGtFn", "showEstTp", "showEstFp", "showPolygons", "showLabels"].forEach((id) => {
   const el = document.getElementById(id);
   if (el) el.addEventListener("change", () => {
     renderExternalLayers();
