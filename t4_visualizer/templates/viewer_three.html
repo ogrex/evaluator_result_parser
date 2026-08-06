@@ -622,7 +622,7 @@
           <label title="Master toggle for animated emphasis markers"><input type="checkbox" id="fxEnableEmphasis" unchecked> Emphasis effects</label>
           <label title="False negatives: expanding ring under the box"><input type="checkbox" id="fxFnRing" unchecked> FN shockwave ring</label>
           <label>point size <input id="pointSize" type="range" min="0.02" max="0.25" step="0.01" value="0.08"></label>
-          <label>point opacity <input id="pointOpacity" type="range" min="0.2" max="1.0" step="0.05" value="0.95"></label>
+          <label>point opacity <input id="pointOpacity" type="range" min="0.2" max="1.0" step="0.05" value="1.0"></label>
           <label title="False positives: larger pulsing beacon at the box center"><input type="checkbox" id="fxFpPulse" unchecked> FP pulse beacon</label>
           <label title="High-error true positives: object-hugging aura tied to the box footprint"><input type="checkbox" id="fxTpQuality" unchecked> TP severity aura</label>
           <label title="Only emphasize objects above the severe threshold"><input type="checkbox" id="highlightSevereOnly"> Highlight severe only</label>
@@ -910,8 +910,22 @@ grid.rotation.x = Math.PI / 2; // XY ground plane (z-up)
 scene.add(grid);
 
 const pointsGeom = new THREE.BufferGeometry();
-const pointsMat = new THREE.PointsMaterial({size:0.08, vertexColors:true, transparent:true, opacity:0.95});
+// Opaque at full alpha so the cloud renders in the opaque queue and writes
+// depth. As a transparent object it would be depth-sorted by its single
+// centroid, which makes the whole cloud paint over the ghosted ego from far
+// away and behave correctly only up close.
+const pointsMat = new THREE.PointsMaterial({size:0.08, vertexColors:true, transparent:false, opacity:1.0});
+/** Keep the transparent flag in step with alpha; opaque is the correct default. */
+function applyPointOpacity(v){
+  pointsMat.opacity = v;
+  pointsMat.transparent = v < 0.99;
+  pointsMat.depthWrite = true;
+  pointsMat.needsUpdate = true;
+}
 const pointsObj = new THREE.Points(pointsGeom, pointsMat);
+// If alpha is lowered the cloud rejoins the transparent queue; draw it first
+// there too, so it can never paint over the ego regardless of centroid sorting.
+pointsObj.renderOrder = -3;
 scene.add(pointsObj);
 const boxesGroup = new THREE.Group(); scene.add(boxesGroup);
 const gtLayerGroup = new THREE.Group(); scene.add(gtLayerGroup);
@@ -6155,7 +6169,7 @@ document.getElementById("pointSize").addEventListener("input", (e) => {
   pointsMat.size = Number(e.target.value || "0.08");
 });
 document.getElementById("pointOpacity").addEventListener("input", (e) => {
-  pointsMat.opacity = Number(e.target.value || "0.95");
+  applyPointOpacity(Number(e.target.value || "1.0"));
 });
 document.getElementById("intensityGain").addEventListener("input", async (e) => {
   intensityGain = Number(e.target.value || "1.0");
