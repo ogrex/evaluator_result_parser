@@ -7,3 +7,7 @@ build/
 .run/
 *.egg
 .env
+
+# Drop-in ego vehicle mesh. May be a confidential model — never commit it.
+# The viewer falls back to assets/sample_vehicle_description when absent.
+assets/custom_vehicle_description/
