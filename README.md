@@ -546,6 +546,27 @@ t4-server --data-dir /mnt/t4data --port 8080 --tier4-cache 4
 | `--pid-file`     | `.run/t4-server.pid` | PID ファイル                |
 | `--log-file`     | `.run/t4-server.log` | ログファイル                  |
 
+#### 自車 3D モデル (ego vehicle mesh)
+
+3D ビューアの自車表示は、既定でリポジトリ同梱のサンプル車両
+(`assets/sample_vehicle_description/mesh/lexus.dae`) を使う。
+実車の 3D モデルを持っている場合は差し替えられる。解決順は次の通り:
+
+| 優先 | 指定方法                                     | 説明                                |
+| -- | ---------------------------------------- | --------------------------------- |
+| 1  | 環境変数 `EGO_VEHICLE_MESH_PATH`             | `.dae` ファイルへのフルパス                 |
+| 2  | 環境変数 `EGO_VEHICLE_MESH_DIR`              | ディレクトリ。中の最初の `.dae` を使用           |
+| 3  | `assets/custom_vehicle_description/mesh/` | ドロップイン用ディレクトリ (git 管理外)           |
+| 4  | (なし)                                     | 同梱サンプルにフォールバック                    |
+
+前提となるメッシュの座標系は `base_link` (後輪車軸中心・+X 前方・Z-up)。
+カスタムメッシュが見つからない場合や読み込みに失敗した場合は、
+自動的に同梱サンプルへフォールバックする。
+
+モデルファイルが社外秘の場合は、リポジトリにコミットしないこと。
+`assets/custom_vehicle_description/` は git 管理外に置き、
+配信 URL も `/viewer/assets/vehicle-mesh-custom/ego.dae` に正規化されるため、
+実際のファイル名は外部に露出しない。
 
 #### エンドポイント
 

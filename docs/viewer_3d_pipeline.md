@@ -46,7 +46,9 @@ sequenceDiagram
   S->>S: Resolve path, load Tier4, list scenes
   S-->>C: total_frames, scenario_name, binary_endpoint_template
   C->>C: Configure slider, prefetch window helpers
-  C->>S: GET /viewer/assets/vehicle-mesh/lexus.dae (static)
+  C->>S: GET /viewer/assets/vehicle-model.json (ego mesh descriptor)
+  S-->>C: url + base_link rotation/offset (custom mesh if installed, else sample)
+  C->>S: GET descriptor url (Collada mesh)
   Note over C: Optional: parent sends postMessage (layers)
   C->>S: GET /viewer/three/frame.bin?...&frame_index=N
   S-->>C: application/octet-stream (T4V3D002)

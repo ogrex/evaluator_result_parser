@@ -96,6 +96,7 @@ import base64
 import datetime
 import html
 import json
+import logging
 import math
 import os
 import struct
@@ -108,6 +109,8 @@ from functools import lru_cache
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 from urllib.parse import urlencode
+
+logger = logging.getLogger(__name__)
 
 # ---------------------------------------------------------------------------
 # Tier4 in-memory cache
@@ -444,7 +447,8 @@ def _build_app(
             StaticFiles(directory=str(_static_dir)),
             name="static",
         )
-    _vehicle_mesh_dir = Path(__file__).resolve().parent.parent / "assets" / "sample_vehicle_description" / "mesh"
+    _repo_root = Path(__file__).resolve().parent.parent
+    _vehicle_mesh_dir = _repo_root / "assets" / "sample_vehicle_description" / "mesh"
     if _vehicle_mesh_dir.is_dir():
         from starlette.staticfiles import StaticFiles
 
@@ -453,6 +457,91 @@ def _build_app(
             StaticFiles(directory=str(_vehicle_mesh_dir)),
             name="vehicle_mesh",
         )
+
+    # Generic, deployment-supplied URL for the custom ego mesh. The on-disk file name
+    # is deliberately not exposed: the mesh may identify a non-public vehicle.
+    _CUSTOM_VEHICLE_MESH_URL = "/viewer/assets/vehicle-mesh-custom/ego.dae"
+
+    def _resolve_custom_vehicle_mesh() -> Optional[Path]:
+        """Locate an optional (confidential, never-committed) ego vehicle mesh.
+
+        Resolution order:
+
+        1. ``EGO_VEHICLE_MESH_PATH`` — full path to a ``.dae`` file.
+        2. ``EGO_VEHICLE_MESH_DIR`` — directory; first ``.dae`` inside is used.
+        3. ``assets/custom_vehicle_description/mesh/`` — git-ignored drop-in directory.
+
+        Returns ``None`` when no custom mesh is installed, in which case the viewer
+        falls back to the bundled ``sample_vehicle_description`` (lexus) mesh.
+        """
+        env_file = os.environ.get("EGO_VEHICLE_MESH_PATH", "").strip()
+        if env_file:
+            candidate = Path(env_file).expanduser()
+            if candidate.is_file():
+                return candidate
+            logger.warning("EGO_VEHICLE_MESH_PATH points to a missing file: %s", candidate)
+        dirs = []
+        env_dir = os.environ.get("EGO_VEHICLE_MESH_DIR", "").strip()
+        if env_dir:
+            dirs.append(Path(env_dir).expanduser())
+        dirs.append(_repo_root / "assets" / "custom_vehicle_description" / "mesh")
+        for d in dirs:
+            if not d.is_dir():
+                continue
+            meshes = sorted(d.glob("*.dae"))
+            if meshes:
+                return meshes[0]
+        return None
+
+    _custom_vehicle_mesh = _resolve_custom_vehicle_mesh()
+    if _custom_vehicle_mesh is not None:
+        logger.info("Using custom ego vehicle mesh: %s", _custom_vehicle_mesh)
+
+        @app.get(
+            _CUSTOM_VEHICLE_MESH_URL,
+            tags=["viewer"],
+            summary="Custom ego vehicle mesh (Collada)",
+            include_in_schema=False,
+        )
+        def viewer_custom_vehicle_mesh():
+            """Serve the installed custom ego mesh under a name-neutral URL.
+
+            Registered only when a custom mesh is present, so the route 404s
+            otherwise and the viewer falls back to the bundled sample mesh.
+            """
+            from starlette.responses import FileResponse
+
+            return FileResponse(
+                str(_custom_vehicle_mesh),
+                media_type="model/vnd.collada+xml",
+            )
+
+    @app.get(
+        "/viewer/assets/vehicle-model.json",
+        tags=["viewer"],
+        summary="Ego vehicle mesh descriptor (custom mesh if installed, else bundled sample)",
+    )
+    def viewer_vehicle_model():
+        """Describe the ego mesh the viewer should load, plus its base_link transform.
+
+        ``rotation`` / ``offset`` place the mesh so that its origin coincides with
+        ``base_link`` (rear axle centre, +X forward, Z up).
+        """
+        if _custom_vehicle_mesh is not None:
+            return {
+                "source": "custom",
+                "url": _CUSTOM_VEHICLE_MESH_URL,
+                # Authored Z-up with the origin already at base_link, facing +X.
+                "rotation": [0.0, 0.0, 0.0],
+                "offset": [0.0, 0.0, 0.0],
+            }
+        return {
+            "source": "sample",
+            "url": "/viewer/assets/vehicle-mesh/lexus.dae",
+            # Y-up mesh authored facing -X, with its origin at the vehicle centre.
+            "rotation": [-math.pi / 2, 0.0, math.pi],
+            "offset": [2.79 * 0.5, 0.0, 0.0],
+        }
     _cache = _Tier4Cache(max_size=tier4_cache_size)
     _path_cache = _DatasetPathCache(ttl_s=dataset_path_cache_ttl_s)
     _debug_visibility = str(visibility_mode).strip().lower() == "debug"

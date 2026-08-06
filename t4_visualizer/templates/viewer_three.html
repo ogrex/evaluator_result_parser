@@ -943,21 +943,47 @@ function applyEgoOpacity(opacity){
     }
   });
 }
-function loadEgoVehicleMesh(){
+/** Bundled sample (lexus) mesh descriptor; used if /viewer/assets/vehicle-model.json is unreachable. */
+const EGO_MESH_FALLBACK = {
+  source: "sample",
+  url: "/viewer/assets/vehicle-mesh/lexus.dae",
+  rotation: [-Math.PI / 2, 0, Math.PI],
+  offset: [EGO_WHEEL_BASE * 0.5, 0, 0],
+};
+/** Ask the server which ego mesh to use (a confidential custom mesh may be installed). */
+async function fetchEgoMeshDescriptor(){
+  try {
+    const res = await fetch("/viewer/assets/vehicle-model.json", {cache: "no-store"});
+    if (!res.ok) throw new Error("HTTP " + res.status);
+    const d = await res.json();
+    if (!d || typeof d.url !== "string") throw new Error("malformed descriptor");
+    return {
+      source: d.source || "custom",
+      url: d.url,
+      rotation: Array.isArray(d.rotation) && d.rotation.length === 3 ? d.rotation : [0, 0, 0],
+      offset: Array.isArray(d.offset) && d.offset.length === 3 ? d.offset : [0, 0, 0],
+    };
+  } catch (err) {
+    console.warn("Ego mesh descriptor unavailable, using bundled sample mesh:", err);
+    return EGO_MESH_FALLBACK;
+  }
+}
+function loadEgoVehicleMeshFrom(desc){
   const loader = new ColladaLoader();
   return new Promise((resolve, reject) => {
     loader.load(
-      "/viewer/assets/vehicle-mesh/lexus.dae",
+      desc.url,
       (collada) => {
         const v0 = Number(document.getElementById("boxOpacity").value || "0.9");
-        egoRoot.remove(egoFallback);
-        egoFallback.geometry.dispose();
-        egoFallback.material.dispose();
+        if (egoFallback.parent) {
+          egoRoot.remove(egoFallback);
+          egoFallback.geometry.dispose();
+          egoFallback.material.dispose();
+        }
         const visual = new THREE.Group();
-        visual.position.set(EGO_WHEEL_BASE * 0.5, 0, 0);
+        visual.position.set(desc.offset[0], desc.offset[1], desc.offset[2]);
         const meshRoot = collada.scene;
-        meshRoot.rotation.x = -Math.PI / 2;
-        meshRoot.rotation.z = Math.PI;
+        meshRoot.rotation.set(desc.rotation[0], desc.rotation[1], desc.rotation[2]);
         const solid = v0 >= 0.9;
         meshRoot.traverse((o) => {
           if (!o.isMesh || !o.material) return;
@@ -983,6 +1009,17 @@ function loadEgoVehicleMesh(){
       (err) => reject(err || new Error("Collada load failed"))
     );
   });
+}
+/** Load the custom ego mesh when installed, otherwise the bundled sample mesh. */
+async function loadEgoVehicleMesh(){
+  const desc = await fetchEgoMeshDescriptor();
+  try {
+    await loadEgoVehicleMeshFrom(desc);
+  } catch (err) {
+    if (desc.url === EGO_MESH_FALLBACK.url) throw err;
+    console.warn("Custom ego mesh failed to load, falling back to sample mesh:", err);
+    await loadEgoVehicleMeshFrom(EGO_MESH_FALLBACK);
+  }
 }
 const cache = new Map(); const MAX_CACHE = 100;
 let totalFrames = 0; let playing = false; let frame = startFrame; let fps = 6;
