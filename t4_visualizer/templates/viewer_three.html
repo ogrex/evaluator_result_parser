@@ -893,9 +893,17 @@ function fxEnabled(id){
   return !!(el && el.checked);
 }
 
-const ambientLight = new THREE.AmbientLight(TH.hex("ambient"), 0.7);
+const ambientLight = new THREE.AmbientLight(TH.hex("ambient"), 0.45);
 scene.add(ambientLight);
-const dl = new THREE.DirectionalLight(0xffffff, 0.9); dl.position.set(12, -10, 30); scene.add(dl);
+const dl = new THREE.DirectionalLight(0xffffff, 0.85); dl.position.set(12, -10, 30); scene.add(dl);
+// Sky/ground gradient + opposite-side fill so the ego mesh reads as a solid form
+// instead of a flat silhouette. Only the ego mesh is lit; everything else is
+// MeshBasicMaterial and unaffected.
+const egoHemiLight = new THREE.HemisphereLight(0xe6eef7, 0x30353c, 0.6);
+scene.add(egoHemiLight);
+const egoFillLight = new THREE.DirectionalLight(0xffffff, 0.3);
+egoFillLight.position.set(-16, 12, 14);
+scene.add(egoFillLight);
 let grid = new THREE.GridHelper(180, 90, TH.hex("gridMajor"), TH.hex("gridMinor"));
 grid.rotation.x = Math.PI / 2; // XY ground plane (z-up)
 scene.add(grid);
@@ -968,6 +976,47 @@ async function fetchEgoMeshDescriptor(){
     return EGO_MESH_FALLBACK;
   }
 }
+/** Per-part shading for meshes that ship no materials, matched on node name. */
+const EGO_PART_STYLES = [
+  // Match "wheel", not "tire": this file's geometry names are all `TIRE-FR.*`
+  // regardless of the actual part, so "tire" would misclassify the body.
+  {test: /wheel/i,                  color: 0x16181b, roughness: 0.94, metalness: 0.0},
+  {test: /stoplight|rear_light/i,   color: 0x7e1c1c, roughness: 0.35, metalness: 0.0, emissive: 0x2c0707},
+  {test: /turn(left|right)?_light/i, color: 0xa8621b, roughness: 0.35, metalness: 0.0, emissive: 0x2a1704},
+  {test: /white_light|head_light/i, color: 0xdde3e8, roughness: 0.18, metalness: 0.15, emissive: 0x1d2124},
+];
+const EGO_BODY_STYLE = {color: 0xe4e7ea, roughness: 0.34, metalness: 0.14};
+/** Pick a style from the mesh's own name plus its ancestors' names.
+ *
+ * ColladaLoader puts a node's name on the mesh itself when the node holds a
+ * single geometry, and on an ancestor group otherwise, so check the whole chain.
+ * Unmatched parts get the body style, which is the safe default.
+ */
+function egoPartStyle(obj){
+  const names = [];
+  for (let o = obj; o; o = o.parent) { if (o.name) names.push(o.name); }
+  const joined = names.join("/");
+  for (const s of EGO_PART_STYLES) { if (s.test.test(joined)) return s; }
+  return EGO_BODY_STYLE;
+}
+/** Studio environment for reflections; optional, so a fetch failure just degrades. */
+let egoEnvPromise = null;
+function ensureEgoEnvironment(){
+  if (egoEnvPromise) return egoEnvPromise;
+  egoEnvPromise = (async () => {
+    try {
+      const {RoomEnvironment} = await import("three/addons/environments/RoomEnvironment.js");
+      const pmrem = new THREE.PMREMGenerator(renderer);
+      const env = pmrem.fromScene(new RoomEnvironment(), 0.04);
+      // Only the ego mesh uses a lit material, so this affects nothing else.
+      scene.environment = env.texture;
+      pmrem.dispose();
+    } catch (err) {
+      console.warn("Ego environment map unavailable; using lights only:", err);
+    }
+  })();
+  return egoEnvPromise;
+}
 function loadEgoVehicleMeshFrom(desc){
   const loader = new ColladaLoader();
   return new Promise((resolve, reject) => {
@@ -988,20 +1037,37 @@ function loadEgoVehicleMeshFrom(desc){
         meshRoot.traverse((o) => {
           if (!o.isMesh || !o.material) return;
           const mats = Array.isArray(o.material) ? o.material : [o.material];
-          for (const m of mats) {
-            if (!m) continue;
-            if (m.map) {
+          const out = mats.map((m) => {
+            // Textured mesh (the bundled sample): keep its authored material.
+            if (m && m.map) {
               m.map.colorSpace = THREE.SRGBColorSpace;
               if ("color" in m) m.color.setRGB(1, 1, 1);
+              return m;
             }
+            // Untextured: the Collada may carry no effects at all, in which case
+            // every part shares one flat default. Shade parts by node name instead.
+            const st = egoPartStyle(o);
+            const nm = new THREE.MeshStandardMaterial({
+              color: st.color,
+              roughness: st.roughness,
+              metalness: st.metalness,
+              emissive: st.emissive === undefined ? 0x000000 : st.emissive,
+              envMapIntensity: 0.55,
+            });
+            if (m && m.dispose) m.dispose();
+            return nm;
+          });
+          o.material = Array.isArray(o.material) ? out : out[0];
+          for (const m of out) {
+            if (!m) continue;
             m.transparent = !solid;
             m.opacity = solid ? 1 : v0;
             if ("depthWrite" in m) m.depthWrite = true;
-            if ("envMapIntensity" in m) m.envMapIntensity = 1;
           }
         });
         visual.add(meshRoot);
         egoRoot.add(visual);
+        ensureEgoEnvironment();
         applyEgoOpacity(v0);
         resolve();
       },
