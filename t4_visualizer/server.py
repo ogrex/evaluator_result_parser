@@ -458,42 +458,18 @@ def _build_app(
             name="vehicle_mesh",
         )
 
-    # Generic, deployment-supplied URL for the custom ego mesh. The on-disk file name
-    # is deliberately not exposed: the mesh may identify a non-public vehicle.
+    # Drop-in location for an optional (confidential, never-committed) ego vehicle
+    # mesh. Install one by copying it here under exactly this name; nothing else
+    # needs configuring. Absent, the viewer uses the bundled sample mesh.
+    _CUSTOM_VEHICLE_MESH_PATH = (
+        _repo_root / "assets" / "custom_vehicle_description" / "mesh" / "ego.dae"
+    )
+    # Served under a fixed URL so the deployment never reveals the real model name.
     _CUSTOM_VEHICLE_MESH_URL = "/viewer/assets/vehicle-mesh-custom/ego.dae"
 
-    def _resolve_custom_vehicle_mesh() -> Optional[Path]:
-        """Locate an optional (confidential, never-committed) ego vehicle mesh.
-
-        Resolution order:
-
-        1. ``EGO_VEHICLE_MESH_PATH`` — full path to a ``.dae`` file.
-        2. ``EGO_VEHICLE_MESH_DIR`` — directory; first ``.dae`` inside is used.
-        3. ``assets/custom_vehicle_description/mesh/`` — git-ignored drop-in directory.
-
-        Returns ``None`` when no custom mesh is installed, in which case the viewer
-        falls back to the bundled ``sample_vehicle_description`` (lexus) mesh.
-        """
-        env_file = os.environ.get("EGO_VEHICLE_MESH_PATH", "").strip()
-        if env_file:
-            candidate = Path(env_file).expanduser()
-            if candidate.is_file():
-                return candidate
-            logger.warning("EGO_VEHICLE_MESH_PATH points to a missing file: %s", candidate)
-        dirs = []
-        env_dir = os.environ.get("EGO_VEHICLE_MESH_DIR", "").strip()
-        if env_dir:
-            dirs.append(Path(env_dir).expanduser())
-        dirs.append(_repo_root / "assets" / "custom_vehicle_description" / "mesh")
-        for d in dirs:
-            if not d.is_dir():
-                continue
-            meshes = sorted(d.glob("*.dae"))
-            if meshes:
-                return meshes[0]
-        return None
-
-    _custom_vehicle_mesh = _resolve_custom_vehicle_mesh()
+    _custom_vehicle_mesh = (
+        _CUSTOM_VEHICLE_MESH_PATH if _CUSTOM_VEHICLE_MESH_PATH.is_file() else None
+    )
     if _custom_vehicle_mesh is not None:
         logger.info("Using custom ego vehicle mesh: %s", _custom_vehicle_mesh)
 
