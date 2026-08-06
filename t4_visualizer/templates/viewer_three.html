@@ -581,6 +581,7 @@
       <div class="hud-grid">
         <div>projection: <strong id="projMode">perspective</strong></div>
         <label>box opacity <input id="boxOpacity" type="range" min="0.2" max="1.0" step="0.05" value="0.9"></label>
+        <label>ego opacity <input id="egoOpacity" type="range" min="0.1" max="1.0" step="0.05" value="0.5"></label>
       </div>
       <hr class="hud-rule">
       <div class="hud-panel__section-title">Eval &amp; layers</div>
@@ -893,9 +894,9 @@ function fxEnabled(id){
   return !!(el && el.checked);
 }
 
-const ambientLight = new THREE.AmbientLight(TH.hex("ambient"), 0.45);
+const ambientLight = new THREE.AmbientLight(TH.hex("ambient"), 0.34);
 scene.add(ambientLight);
-const dl = new THREE.DirectionalLight(0xffffff, 0.85); dl.position.set(12, -10, 30); scene.add(dl);
+const dl = new THREE.DirectionalLight(0xffffff, 0.72); dl.position.set(12, -10, 30); scene.add(dl);
 // Sky/ground gradient + opposite-side fill so the ego mesh reads as a solid form
 // instead of a flat silhouette. Only the ego mesh is lit; everything else is
 // MeshBasicMaterial and unaffected.
@@ -932,22 +933,35 @@ const egoFallback = new THREE.Mesh(
     color: TH.hex("egoWire"),
     wireframe: true,
     transparent: true,
-    opacity: Number(document.getElementById("boxOpacity").value || "0.9"),
+    opacity: Number(document.getElementById("egoOpacity")?.value || "0.5"),
   })
 );
 egoFallback.position.set(0, 0, 0.8);
 egoRoot.add(egoFallback);
 const EGO_WHEEL_BASE = 2.79;
+let egoContactShadow = null;
+/** Current ego alpha. Translucent by default so the vehicle never hides the
+ *  detections being evaluated (rviz uses 0.3; 0.5 keeps the form readable). */
+function egoOpacityValue(){
+  return Number(document.getElementById("egoOpacity")?.value || "0.5");
+}
 function applyEgoOpacity(opacity){
-  const solid = opacity >= 0.9;
+  const solid = opacity >= 0.99;
   egoRoot.traverse((o) => {
     if (!o.isMesh || !o.material) return;
+    // The contact shadow keeps its own alpha and fades with the vehicle.
+    if (o.userData && o.userData.isEgoShadow) {
+      o.material.opacity = 0.6 * Math.min(1, opacity / 0.5);
+      return;
+    }
     const mats = Array.isArray(o.material) ? o.material : [o.material];
     for (const m of mats) {
       if (!m) continue;
       m.transparent = !solid;
       m.opacity = solid ? 1 : opacity;
-      if ("depthWrite" in m) m.depthWrite = true;
+      // Translucent ego must not depth-occlude: with depthWrite on, anything
+      // drawn later behind the vehicle would vanish instead of showing through.
+      if ("depthWrite" in m) m.depthWrite = solid;
     }
   });
 }
@@ -985,7 +999,52 @@ const EGO_PART_STYLES = [
   {test: /turn(left|right)?_light/i, color: 0xa8621b, roughness: 0.35, metalness: 0.0, emissive: 0x2a1704},
   {test: /white_light|head_light/i, color: 0xdde3e8, roughness: 0.18, metalness: 0.15, emissive: 0x1d2124},
 ];
-const EGO_BODY_STYLE = {color: 0xe4e7ea, roughness: 0.34, metalness: 0.14};
+// Mid neutral rather than near-white: a white body has almost no value
+// separation from the light theme's cream background.
+const EGO_BODY_STYLE = {color: 0xc2c7cd, roughness: 0.46, metalness: 0.10};
+/** Soft contact shadow so the vehicle sits on the ground plane instead of floating. */
+function makeEgoContactShadow(){
+  const size = 256;
+  const cv = document.createElement("canvas");
+  cv.width = cv.height = size;
+  const ctx = cv.getContext("2d");
+  const g = ctx.createRadialGradient(size/2, size/2, 0, size/2, size/2, size/2);
+  g.addColorStop(0.0, "rgba(0,0,0,0.40)");
+  g.addColorStop(0.5, "rgba(0,0,0,0.17)");
+  g.addColorStop(1.0, "rgba(0,0,0,0)");
+  ctx.fillStyle = g;
+  ctx.fillRect(0, 0, size, size);
+  const tex = new THREE.CanvasTexture(cv);
+  tex.colorSpace = THREE.SRGBColorSpace;
+  // Scene is z-up and PlaneGeometry is already in XY, so no rotation needed.
+  const mesh = new THREE.Mesh(
+    new THREE.PlaneGeometry(9.6, 4.2),
+    new THREE.MeshBasicMaterial({map: tex, transparent: true, depthWrite: false, opacity: 0.6})
+  );
+  mesh.position.set(2.1, 0, 0.02); // centred on the body, just above z=0
+  mesh.renderOrder = -1;
+  mesh.userData.isEgoShadow = true;
+  return mesh;
+}
+/** Re-derive vertex normals with a crease angle.
+ *
+ * Low-poly exports often average normals across sharp edges, which shows up as
+ * blotchy angular wedges on flat panels. Splitting normals at creases fixes it.
+ * Optional: on failure the mesh just keeps its original normals.
+ */
+async function creaseEgoNormals(root){
+  try {
+    const {toCreasedNormals} = await import("three/addons/utils/BufferGeometryUtils.js");
+    root.traverse((o) => {
+      if (!o.isMesh || !o.geometry) return;
+      const next = toCreasedNormals(o.geometry, Math.PI / 5); // 36°
+      o.geometry.dispose();
+      o.geometry = next;
+    });
+  } catch (err) {
+    console.warn("Could not recompute creased normals for the ego mesh:", err);
+  }
+}
 /** Pick a style from the mesh's own name plus its ancestors' names.
  *
  * ColladaLoader puts a node's name on the mesh itself when the node holds a
@@ -1023,7 +1082,7 @@ function loadEgoVehicleMeshFrom(desc){
     loader.load(
       desc.url,
       (collada) => {
-        const v0 = Number(document.getElementById("boxOpacity").value || "0.9");
+        const v0 = egoOpacityValue();
         if (egoFallback.parent) {
           egoRoot.remove(egoFallback);
           egoFallback.geometry.dispose();
@@ -1052,7 +1111,7 @@ function loadEgoVehicleMeshFrom(desc){
               roughness: st.roughness,
               metalness: st.metalness,
               emissive: st.emissive === undefined ? 0x000000 : st.emissive,
-              envMapIntensity: 0.55,
+              envMapIntensity: 0.35, // restrained: high values exaggerate facets
             });
             if (m && m.dispose) m.dispose();
             return nm;
@@ -1067,7 +1126,12 @@ function loadEgoVehicleMeshFrom(desc){
         });
         visual.add(meshRoot);
         egoRoot.add(visual);
+        if (!egoContactShadow) {
+          egoContactShadow = makeEgoContactShadow();
+          egoRoot.add(egoContactShadow);
+        }
         ensureEgoEnvironment();
+        creaseEgoNormals(meshRoot);
         applyEgoOpacity(v0);
         resolve();
       },
@@ -6183,7 +6247,9 @@ document.getElementById("boxOpacity").addEventListener("input", () => {
   });
   applyOpacityToEvalLayerGroup(gtLayerGroup, v);
   applyOpacityToEvalLayerGroup(predLayerGroup, v);
-  applyEgoOpacity(v);
+});
+document.getElementById("egoOpacity")?.addEventListener("input", () => {
+  applyEgoOpacity(egoOpacityValue());
 });
 ["showGtTp", "showGtFn", "showEstTp", "showEstFp", "showPolygons", "showLabels"].forEach((id) => {
   const el = document.getElementById(id);
