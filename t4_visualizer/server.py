@@ -2920,6 +2920,11 @@ def _build_app(
             cams = payload.get("available_cameras", []) or []
             all_rows = []
             for ch in cams:
+                if str(ch) == payload.get("camera"):
+                    # The default camera is already computed above — reuse it
+                    # (snapshot, so cameras_payload doesn't self-reference).
+                    all_rows.append(dict(payload))
+                    continue
                 row = _camera_overlay_payload_for_sample(
                     t4,
                     sample,
