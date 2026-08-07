@@ -4934,19 +4934,38 @@ function wireInspectPanelResize(){
   });
 }
 
-function setFrameData(data){
-  sceneSelectionCandidates = buildSceneCandidatesFromFrameData(data, frame);
+// Reused point buffers: dense LiDAR frames are several MB, so allocating fresh
+// Float32Arrays per frame churns the JS heap while scrubbing. Capacity grows
+// as needed; the draw range limits rendering to the current frame's points.
+let pointsCapacity = 0;
+let pointsPosArray = null;
+let pointsColArray = null;
+let lastPointFrameData = null;   // current frame's parsed data, for color-only updates
+let lastPointStep = 1;
+let lastRenderPointCount = 0;
+
+function ensurePointCapacity(count){
+  if (pointsPosArray && count <= pointsCapacity) return;
+  pointsCapacity = Math.ceil(Math.max(1, count) * 1.2);
+  pointsPosArray = new Float32Array(pointsCapacity * 3);
+  pointsColArray = new Float32Array(pointsCapacity * 3);
+  pointsGeom.setAttribute("position", new THREE.BufferAttribute(pointsPosArray, 3));
+  pointsGeom.setAttribute("color", new THREE.BufferAttribute(pointsColArray, 3));
+}
+
+/** Fill pointsColArray for the current frame (colormap/gain/normalize applied). */
+function computePointColors(){
+  const data = lastPointFrameData;
+  if (!data) return;
   const n = data.pointCount;
-  const pointStep = n > MAX_RENDER_POINTS ? Math.ceil(n / MAX_RENDER_POINTS) : 1;
-  const renderPointCount = Math.ceil(n / pointStep);
-  const pos = new Float32Array(renderPointCount * 3);
-  const col = new Float32Array(renderPointCount * 3);
+  const pointStep = lastPointStep;
   const mapName = getPointColormapName();
   const normalize = getPointIntensityNormalize();
   let minI = Infinity;
   let maxI = -Infinity;
   if (normalize && n > 0) {
-    for (let i = 0; i < n; i++) {
+    // min/max over the decimated set — the same points that get colored.
+    for (let i = 0; i < n; i += pointStep) {
       const s = data.pts[i * 4 + 3] * intensityGain;
       if (s < minI) minI = s;
       if (s > maxI) maxI = s;
@@ -4956,15 +4975,7 @@ function setFrameData(data){
   const eps = 1e-9;
   let outPointIndex = 0;
   for (let i = 0; i < n; i += pointStep) {
-    const x = data.pts[i * 4];
-    const y = data.pts[i * 4 + 1];
-    const z = data.pts[i * 4 + 2];
-    const inten = data.pts[i * 4 + 3];
-    const outBase = outPointIndex * 3;
-    pos[outBase] = x;
-    pos[outBase + 1] = y;
-    pos[outBase + 2] = z;
-    const scaled = inten * intensityGain;
+    const scaled = data.pts[i * 4 + 3] * intensityGain;
     let tNorm;
     if (normalize && n > 0) {
       if (rng <= eps) tNorm = 0.5;
@@ -4973,14 +4984,59 @@ function setFrameData(data){
       tNorm = Math.max(0, Math.min(1, scaled));
     }
     const rgb = intensityToRgb(tNorm, mapName);
-    col[outBase] = rgb[0];
-    col[outBase + 1] = rgb[1];
-    col[outBase + 2] = rgb[2];
+    const outBase = outPointIndex * 3;
+    pointsColArray[outBase] = rgb[0];
+    pointsColArray[outBase + 1] = rgb[1];
+    pointsColArray[outBase + 2] = rgb[2];
     outPointIndex++;
   }
-  pointsGeom.setAttribute("position", new THREE.BufferAttribute(pos, 3));
-  pointsGeom.setAttribute("color", new THREE.BufferAttribute(col, 3));
-  pointsGeom.computeBoundingSphere();
+  pointsGeom.getAttribute("color").needsUpdate = true;
+}
+
+/** Recolor the current point cloud without rebuilding geometry, boxes, or candidates.
+ *  For gain / colormap / normalize tweaks — setFrameData is only needed on frame change. */
+function updatePointColorsOnly(){
+  if (!lastPointFrameData) return;
+  computePointColors();
+}
+
+function setFrameData(data){
+  sceneSelectionCandidates = buildSceneCandidatesFromFrameData(data, frame);
+  const n = data.pointCount;
+  const pointStep = n > MAX_RENDER_POINTS ? Math.ceil(n / MAX_RENDER_POINTS) : 1;
+  const renderPointCount = Math.ceil(n / pointStep);
+  ensurePointCapacity(renderPointCount);
+  lastPointFrameData = data;
+  lastPointStep = pointStep;
+  lastRenderPointCount = renderPointCount;
+  let xmin = Infinity, ymin = Infinity, zmin = Infinity;
+  let xmax = -Infinity, ymax = -Infinity, zmax = -Infinity;
+  let outPointIndex = 0;
+  for (let i = 0; i < n; i += pointStep) {
+    const x = data.pts[i * 4];
+    const y = data.pts[i * 4 + 1];
+    const z = data.pts[i * 4 + 2];
+    const outBase = outPointIndex * 3;
+    pointsPosArray[outBase] = x;
+    pointsPosArray[outBase + 1] = y;
+    pointsPosArray[outBase + 2] = z;
+    if (x < xmin) xmin = x; if (x > xmax) xmax = x;
+    if (y < ymin) ymin = y; if (y > ymax) ymax = y;
+    if (z < zmin) zmin = z; if (z > zmax) zmax = z;
+    outPointIndex++;
+  }
+  computePointColors();
+  pointsGeom.getAttribute("position").needsUpdate = true;
+  pointsGeom.setDrawRange(0, renderPointCount);
+  // Bounding sphere from the used range's AABB (computeBoundingSphere would
+  // scan the full capacity buffer, including stale points past the draw range).
+  if (renderPointCount > 0 && Number.isFinite(xmin)) {
+    const cx = (xmin + xmax) / 2, cy = (ymin + ymax) / 2, cz = (zmin + zmax) / 2;
+    const r = Math.sqrt((xmax - xmin) ** 2 + (ymax - ymin) ** 2 + (zmax - zmin) ** 2) / 2;
+    pointsGeom.boundingSphere = new THREE.Sphere(new THREE.Vector3(cx, cy, cz), Math.max(r, 1e-3));
+  } else {
+    pointsGeom.boundingSphere = new THREE.Sphere(new THREE.Vector3(0, 0, 0), 1e-3);
+  }
   clearGroupDeep(boxesGroup);
   const batchSceneBoxes = data.boxCount > SCENE_BOX_BATCH_THRESHOLD;
   const batchedLinePts = batchSceneBoxes ? [] : null;
@@ -5176,21 +5232,18 @@ document.getElementById("pointSize").addEventListener("input", (e) => {
 document.getElementById("pointOpacity").addEventListener("input", (e) => {
   applyPointOpacity(Number(e.target.value || "1.0"));
 });
-document.getElementById("intensityGain").addEventListener("input", async (e) => {
+document.getElementById("intensityGain").addEventListener("input", (e) => {
   intensityGain = Number(e.target.value || "1.0");
-  const data = cache.get(frame);
-  if (data) setFrameData(data);
+  updatePointColorsOnly();
   updateColorbar();
 });
 document.getElementById("pointColormap").addEventListener("change", () => {
   pointColormapChosen = true;   // stop tracking the theme default from here on
-  const data = cache.get(frame);
-  if (data) setFrameData(data);
+  updatePointColorsOnly();
   updateColorbar();
 });
 document.getElementById("pointIntensityNormalize").addEventListener("change", () => {
-  const data = cache.get(frame);
-  if (data) setFrameData(data);
+  updatePointColorsOnly();
   updateColorbar();
 });
 document.getElementById("showColorbar").addEventListener("change", () => {
