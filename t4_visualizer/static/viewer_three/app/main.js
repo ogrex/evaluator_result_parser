@@ -1,6 +1,15 @@
 import * as THREE from "three";
 import { OrbitControls } from "three/addons/controls/OrbitControls.js";
 import { ColladaLoader } from "three/addons/loaders/ColladaLoader.js";
+import { intensityToRgb, intensityToRgbRaw } from "./colormaps.js";
+import { decodeBboxLayersBinaryV1 } from "./bbox_binary.js";
+import {
+  BOX_EDGE_PAIRS,
+  boxCenterFromCornersArray,
+  boxCornersFromPose,
+  boxEdgeSegmentsFromCorners,
+  boxSizeFromCornersArray,
+} from "./box_geometry.js";
 const params = new URLSearchParams(window.__T4_VIEWER_QS__ || window.location.search);
 const dataset = params.get("t4dataset_id");
 const scenario = params.get("scenario_name");
@@ -471,106 +480,6 @@ let hoverTipRaf = 0;
 let hoverTipLastEvent = null;
 const _hoverProjV = new THREE.Vector3();
 
-function lerp(a, b, u){ return a + (b - a) * u; }
-
-/** Piecewise linear colormap: stops sorted by t in [0,1], RGB in [0,1]. */
-function lerpColorStops(t, stops){
-  t = Math.max(0, Math.min(1, t));
-  if (!stops || !stops.length) return [1, 1, 1];
-  if (t <= stops[0].t) return [stops[0].r, stops[0].g, stops[0].b];
-  const last = stops[stops.length - 1];
-  if (t >= last.t) return [last.r, last.g, last.b];
-  for (let i = 0; i < stops.length - 1; i++) {
-    const a = stops[i];
-    const b = stops[i + 1];
-    if (t >= a.t && t <= b.t) {
-      const u = (t - a.t) / (b.t - a.t + 1e-20);
-      return [lerp(a.r, b.r, u), lerp(a.g, b.g, u), lerp(a.b, b.b, u)];
-    }
-  }
-  return [last.r, last.g, last.b];
-}
-
-const TURBO_STOPS = [
-  { t: 0, r: 0.19, g: 0.07, b: 0.48 },
-  { t: 0.25, r: 0.0, g: 0.53, b: 0.99 },
-  { t: 0.5, r: 0.25, g: 0.99, b: 0.51 },
-  { t: 0.75, r: 0.99, g: 0.9, b: 0.25 },
-  { t: 1, r: 0.9, g: 0.15, b: 0.0 },
-];
-const VIRIDIS_STOPS = [
-  { t: 0, r: 0.267004, g: 0.004874, b: 0.329415 },
-  { t: 0.25, r: 0.282623, g: 0.140956, b: 0.457517 },
-  { t: 0.5, r: 0.253935, g: 0.265254, b: 0.529983 },
-  { t: 0.75, r: 0.206756, g: 0.371758, b: 0.553123 },
-  { t: 1, r: 0.993248, g: 0.906157, b: 0.143936 },
-];
-/**
- * Single-hue blue ramp, light -> dark, for use over a light ground.
- *
- * Turbo and jet are rainbows and viridis/plasma run dark -> light, so on paper
- * their bright end lands at the ground's own luminance and those points vanish.
- * This ramp instead darkens monotonically with intensity, putting ink where the
- * signal is. It starts at blue step 300 rather than the lighter steps: a heatmap
- * cell may recede into its surface, but a 1px point that does is simply gone
- * (step 300 = 2.15:1 against the scene ground, the lightest step clearing 2:1).
- */
-const PAPER_STOPS = [
-  { t: 0,    r: 0.427451, g: 0.654902, b: 0.925490 },  /* #6da7ec  blue 300 */
-  { t: 0.25, r: 0.223529, g: 0.529412, b: 0.898039 },  /* #3987e5  blue 400 */
-  { t: 0.5,  r: 0.145098, g: 0.415686, b: 0.749020 },  /* #256abf  blue 500 */
-  { t: 0.75, r: 0.094118, g: 0.309804, b: 0.584314 },  /* #184f95  blue 600 */
-  { t: 1,    r: 0.050980, g: 0.211765, b: 0.419608 },  /* #0d366b  blue 700 */
-];
-const PLASMA_STOPS = [
-  { t: 0, r: 0.050383, g: 0.029803, b: 0.527975 },
-  { t: 0.25, r: 0.493733, g: 0.011988, b: 0.657865 },
-  { t: 0.5, r: 0.798216, g: 0.280197, b: 0.469538 },
-  { t: 0.75, r: 0.987053, g: 0.633744, b: 0.279089 },
-  { t: 1, r: 0.940015, g: 0.975158, b: 0.131326 },
-];
-
-function colormapJet(t){
-  t = Math.max(0, Math.min(1, t));
-  const r = Math.min(1, Math.max(0, 1.5 - Math.abs(4 * t - 3)));
-  const g = Math.min(1, Math.max(0, 1.5 - Math.abs(4 * t - 2)));
-  const b = Math.min(1, Math.max(0, 1.5 - Math.abs(4 * t - 1)));
-  return [r, g, b];
-}
-
-/** Previous viewer mapping (blue ↔ warm). */
-function colormapClassic(t){
-  const u = Math.max(0, Math.min(1, t));
-  return [0.15 + 0.85 * u, 0.35 + 0.5 * (1 - u), 1.0 - 0.6 * u];
-}
-
-function intensityToRgb(tNorm, mapName){
-  const rgb = intensityToRgbRaw(tNorm, mapName);
-  // "paper" is already built for a light ground; the others need toning down.
-  const scale = mapName === "paper" ? 1 : TH.num("pointScale", 1);
-  if (scale === 1) return rgb;
-  // Light ground: darken so the bright end of every map stays visible.
-  return [rgb[0] * scale, rgb[1] * scale, rgb[2] * scale];
-}
-
-/** Raw colormap lookup, before any theme adjustment. */
-function intensityToRgbRaw(tNorm, mapName){
-  switch (mapName) {
-    case "viridis": return lerpColorStops(tNorm, VIRIDIS_STOPS);
-    case "plasma": return lerpColorStops(tNorm, PLASMA_STOPS);
-    case "jet": return colormapJet(tNorm);
-    case "paper": return lerpColorStops(tNorm, PAPER_STOPS);
-    case "grayscale": {
-      let g = Math.max(0, Math.min(1, tNorm));
-      // Light ground: bright grays vanish, so run the ramp dark-on-light.
-      if (TH.num("grayscaleInvert", 0)) g = 1 - g;
-      return [g, g, g];
-    }
-    case "classic": return colormapClassic(tNorm);
-    case "turbo":
-    default: return lerpColorStops(tNorm, TURBO_STOPS);
-  }
-}
 
 /** Set once the operator picks a colormap themselves; suppresses the theme default. */
 let pointColormapChosen = false;
@@ -630,121 +539,6 @@ function normalizeMetricsSeriesPayload(obj){
   };
 }
 
-const BBOX_BINARY_OPTIONAL_NUMERIC_FIELDS = [
-  "vx","vy","confidence","pointcloud_num","x_error","y_error","z_error","yaw_error","vx_error","vy_error",
-  "speed_error","center_distance","plane_distance","pair_dt_sec","dx_min","dy_min","unix_time","frame_index"
-];
-const BBOX_BINARY_TEXT_FIELDS = [
-  "uuid","label","status","frame_id","shape_type","visibility","pair_uuid","topic_name","t4dataset_id",
-  "suite_name","t4dataset_name","scenario_name","run","source"
-];
-
-function decodeBboxLayersBinaryV1(buffer){
-  const raw = buffer instanceof ArrayBuffer ? buffer : (buffer && buffer.buffer instanceof ArrayBuffer ? buffer.buffer : null);
-  if (!raw) throw new Error("bbox binary payload missing ArrayBuffer");
-  const dv = new DataView(raw);
-  let off = 0;
-  const need = (n) => {
-    if (off + n > dv.byteLength) throw new Error("bbox binary payload truncated");
-  };
-  const u8 = () => { need(1); const v = dv.getUint8(off); off += 1; return v; };
-  const u32 = () => { need(4); const v = dv.getUint32(off, true); off += 4; return v; };
-  const i32 = () => { need(4); const v = dv.getInt32(off, true); off += 4; return v; };
-  const f32 = () => { need(4); const v = dv.getFloat32(off, true); off += 4; return v; };
-  need(8);
-  const magic = String.fromCharCode(...new Uint8Array(raw, off, 8));
-  off += 8;
-  if (magic !== "T4BBOX1\0") throw new Error(`unknown bbox binary magic ${JSON.stringify(magic)}`);
-  const frameCount = u32();
-  const stringCount = u32();
-  const boxCount = u32();
-  const pairCount = u32();
-  const runCount = u32();
-  const strings = [];
-  const decoder = new TextDecoder();
-  for (let i = 0; i < stringCount; i++) {
-    const n = u32();
-    need(n);
-    strings.push(n ? decoder.decode(new Uint8Array(raw, off, n)) : "");
-    off += n;
-  }
-  const str = (id) => strings[id] || "";
-  const compare_runs = [];
-  for (let i = 0; i < runCount; i++) {
-    const value = str(u32());
-    if (value) compare_runs.push(value);
-  }
-  const frameRows = [];
-  for (let i = 0; i < frameCount; i++) {
-    frameRows.push({
-      frame_index: i32(),
-      gt_start: u32(),
-      gt_count: u32(),
-      pred_start: u32(),
-      pred_count: u32(),
-      pair_start: u32(),
-      pair_count: u32(),
-    });
-  }
-  const boxes = [];
-  for (let i = 0; i < boxCount; i++) {
-    const box = {
-      x: f32(),
-      y: f32(),
-      z: f32(),
-      width: f32(),
-      length: f32(),
-      height: f32(),
-      yaw: f32(),
-    };
-    for (const field of BBOX_BINARY_OPTIONAL_NUMERIC_FIELDS) {
-      const value = f32();
-      if (Number.isFinite(value)) box[field] = value;
-    }
-    const corners = [];
-    let hasCorners = true;
-    for (let j = 0; j < 24; j++) {
-      const value = f32();
-      if (!Number.isFinite(value)) hasCorners = false;
-      corners.push(value);
-    }
-    if (hasCorners) box.corners = corners;
-    for (const field of BBOX_BINARY_TEXT_FIELDS) {
-      const value = str(u32());
-      if (value) box[field] = value;
-    }
-    if (u8() === 1) box.force_wireframe = true;
-    boxes.push(box);
-  }
-  const pairs = [];
-  for (let i = 0; i < pairCount; i++) {
-    pairs.push({ gt_idx: u32(), pred_idx: u32(), pair_uuid: str(u32()) });
-  }
-  if (off < dv.byteLength) {
-    for (const box of boxes) {
-      if (off >= dv.byteLength) break;
-      const pointCount = u32();
-      if (pointCount > 0) {
-        const footprint = [];
-        for (let j = 0; j < pointCount; j++) {
-          footprint.push([f32(), f32(), f32()]);
-        }
-        if (footprint.length >= 3) box.footprint = footprint;
-      }
-    }
-  }
-  const bbox_layers_by_frame = {};
-  for (const row of frameRows) {
-    bbox_layers_by_frame[String(row.frame_index)] = {
-      gt: boxes.slice(row.gt_start, row.gt_start + row.gt_count),
-      pred: boxes.slice(row.pred_start, row.pred_start + row.pred_count),
-      matched_pairs: pairs.slice(row.pair_start, row.pair_start + row.pair_count),
-    };
-  }
-  const out = { bbox_layers_by_frame };
-  if (compare_runs.length >= 2) out.compare_runs = compare_runs;
-  return out;
-}
 
 function looksLikeFrameMap(obj){
   if (!obj || typeof obj !== "object" || Array.isArray(obj)) return false;
@@ -1015,24 +809,6 @@ function fmtVec3(v, d){
   if (!v || v.length < 3) return "—";
   return `${fmtNum(v[0], d)}, ${fmtNum(v[1], d)}, ${fmtNum(v[2], d)}`;
 }
-function boxCenterFromCornersArray(arr){
-  if (!Array.isArray(arr) || arr.length < 24) return null;
-  let sx = 0, sy = 0, sz = 0;
-  for (let i = 0; i < 8; i++) {
-    sx += Number(arr[i * 3] || 0);
-    sy += Number(arr[i * 3 + 1] || 0);
-    sz += Number(arr[i * 3 + 2] || 0);
-  }
-  return [sx / 8, sy / 8, sz / 8];
-}
-function boxSizeFromCornersArray(arr){
-  if (!Array.isArray(arr) || arr.length < 24) return null;
-  const p0 = new THREE.Vector3(arr[0], arr[1], arr[2]);
-  const p1 = new THREE.Vector3(arr[3], arr[4], arr[5]);
-  const p3 = new THREE.Vector3(arr[9], arr[10], arr[11]);
-  const p4 = new THREE.Vector3(arr[12], arr[13], arr[14]);
-  return [p0.distanceTo(p4), p0.distanceTo(p3), p0.distanceTo(p1)];
-}
 function wrapAngleRad(v){
   if (!Number.isFinite(v)) return null;
   let out = Number(v);
@@ -1259,22 +1035,6 @@ function clearGroupDeep(g){
     disposeObjectDeep(child, false);
   }
 }
-function boxCornersFromPose(cx, cy, cz, l, w, h, yaw){
-  const hl = Math.max(0.01, l) * 0.5;
-  const hw = Math.max(0.01, w) * 0.5;
-  const hh = Math.max(0.01, h) * 0.5;
-  const c = Math.cos(yaw || 0);
-  const s = Math.sin(yaw || 0);
-  const body = [
-    [ hl,  hw,  hh], [ hl, -hw,  hh], [ hl, -hw, -hh], [ hl,  hw, -hh],
-    [-hl,  hw,  hh], [-hl, -hw,  hh], [-hl, -hw, -hh], [-hl,  hw, -hh],
-  ];
-  const out = [];
-  for (const [bx, by, bz] of body) {
-    out.push(cx + bx * c - by * s, cy + bx * s + by * c, cz + bz);
-  }
-  return out;
-}
 
 function addEvalPulseMarker(parent, center, colorHex, opts){
   if (!parent || !center || center.length < 3) return null;
@@ -1300,24 +1060,6 @@ function addEvalPulseMarker(parent, center, colorHex, opts){
   return marker;
 }
 
-/** The 12 edges of a cuboid, as index pairs into an 8-corner list (two quads + verticals).
- *  Single source of truth for every wireframe-box builder in this file. */
-const BOX_EDGE_PAIRS = [[0,1],[1,2],[2,3],[3,0],[4,5],[5,6],[6,7],[7,4],[0,4],[1,5],[2,6],[3,7]];
-
-/** corners: flat [x0,y0,z0,...] of 8 corners (Array or Float32Array view) → flat line-segment vertices. */
-function boxEdgeSegmentsFromCorners(corners){
-  if (!corners || corners.length < 24) return [];
-  const out = [];
-  for (const [a, b] of BOX_EDGE_PAIRS) {
-    const a0 = a * 3;
-    const b0 = b * 3;
-    out.push(
-      corners[a0], corners[a0 + 1], corners[a0 + 2],
-      corners[b0], corners[b0 + 1], corners[b0 + 2]
-    );
-  }
-  return out;
-}
 
 function addEvalShockwaveRing(parent, center, colorHex, opts){
   if (!parent || !center || center.length < 3) return null;
