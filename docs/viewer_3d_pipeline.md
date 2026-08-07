@@ -166,7 +166,7 @@ Programmatic control from the same page: `window.T4ViewerAPI.setLayers`, `clearL
 
 ## 6. Camera viewport — 2D overlay
 
-When the camera panel is visible, the client requests **`/viewer/three/camera-overlay`**.
+When the camera panel is visible, the client requests **`/viewer/three/camera-overlay`** with `include_image=false`: the JSON then carries only box rows plus an `image_url`, and the pixels come from **`GET /viewer/three/camera-image`** — raw bytes with a strong ETag (the sample_data token) and an immutable `Cache-Control`, so scrubbing back to a visited frame costs a 304 instead of re-downloading ~1 MB of base64. Omitting `include_image` (the default, `true`) keeps the legacy inline `image_base64` for existing consumers such as the dashboard.
 
 - **No external layers:** `GET` — server projects **dataset** 3D boxes to 2D (`boxes_2d`), and can draw **external** layers only if you use POST.
 - **With GT/EST in memory:** `POST` with JSON body `{ "gt": [...], "pred": [...] }` — server runs `project_external_eval_box_to_image_roi` per box and returns **`boxes_2d_eval_gt`** and **`boxes_2d_pred`** (plus dataset `boxes_2d` when annotations are on).
@@ -232,7 +232,8 @@ The viewer updates three orthographic charts (`metricsCanvas`, `metricsRatesCanv
 | `GET /viewer/three/meta` | Scenario resolution, `total_frames`, URL template for `frame.bin`. |
 | `GET /viewer/three/frame.bin` | LiDAR + T4 3D boxes (binary `T4V3D002`). |
 | `GET /viewer/three/schema` | Document binary layout for client authors. |
-| `GET/POST /viewer/three/camera-overlay` | Camera image + 2D boxes; **POST** carries GT/EST JSON for projection. |
+| `GET/POST /viewer/three/camera-overlay` | Camera image + 2D boxes; **POST** carries GT/EST JSON for projection. `include_image=false` → box rows + `image_url` only. |
+| `GET /viewer/three/camera-image` | Raw camera image bytes, ETag + immutable Cache-Control (browser-cacheable). |
 | `GET /viewer/three/camera-info` | Camera calibration metadata for one frame / sample. |
 | `GET /viewer/three/lanelet-lines` | Lanelet / map segments near ego. |
 | `GET /viewer/three/frames/window` | Prefetch hints (URLs per frame index). Not used by the built-in client (it prefetches ±3 frames itself); kept for external tools. |

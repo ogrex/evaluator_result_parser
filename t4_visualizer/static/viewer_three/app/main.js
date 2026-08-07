@@ -4411,7 +4411,10 @@ async function fetchCameraOverlay(i){
   const qs =
     `t4dataset_id=${encodeURIComponent(dataset)}` +
     `&scenario_name=${encodeURIComponent(scenario)}&frame_index=${i}${qv}` +
-    `${camParam}${allFlag}&show_annotations=${showAnn ? "true" : "false"}${rangeParam}${maxBoxParam}${extAlignParam}`;
+    `${camParam}${allFlag}&show_annotations=${showAnn ? "true" : "false"}${rangeParam}${maxBoxParam}${extAlignParam}` +
+    // Lean payload: pixels come from the cacheable image_url instead of
+    // riding base64-inflated inside this JSON on every scrub.
+    `&include_image=false`;
   const predN = Array.isArray(externalLayers.pred) ? externalLayers.pred.length : 0;
   const gtN = Array.isArray(externalLayers.gt) ? externalLayers.gt.length : 0;
   const hasExt = predN > 0 || gtN > 0;
@@ -4609,7 +4612,8 @@ function drawPayloadOnCanvas(canvas, payload, labelEl, gen){
     const cw = Math.max(1, Math.floor(iw * scale));
     const ch = Math.max(1, Math.floor(ih * scale));
     const b64 = payload.image_base64;
-    if (!b64) {
+    const imageUrl = payload.image_url;
+    if (!b64 && !imageUrl) {
       canvas.width = cw;
       canvas.height = ch;
       const ctx = canvas.getContext("2d");
@@ -4692,7 +4696,9 @@ function drawPayloadOnCanvas(canvas, payload, labelEl, gen){
       cameraCanvasHitRegions.set(canvas, []);
       resolve();
     };
-    img.src = `data:${mime};base64,${b64}`;
+    // Prefer the cacheable same-origin URL (immutable + ETag → revisited
+    // frames are a 304); base64 remains as a fallback for older servers.
+    img.src = imageUrl || `data:${mime};base64,${b64}`;
   });
 }
 
@@ -4715,7 +4721,7 @@ async function renderCameraViewport(payload, gen){
       if (!slot) continue;
       const c = slot.querySelector("canvas");
       const lbl = slot.querySelector(".cam-slot-label");
-      if (!p || !p.image_base64) {
+      if (!p || (!p.image_base64 && !p.image_url)) {
         if (c) {
           c.width = 160;
           c.height = 90;

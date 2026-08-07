@@ -557,7 +557,7 @@ def _build_app(
     # For backward compatibility, also expose the first data_dir as data_dir
     data_dir = data_dirs[0] if data_dirs else Path("./t4datasets")
     try:
-        from fastapi import Body, Depends, FastAPI, Header, HTTPException, Query
+        from fastapi import Body, Depends, FastAPI, Header, HTTPException, Query, Request
         from fastapi.encoders import jsonable_encoder
         from fastapi.responses import HTMLResponse, JSONResponse, Response
     except ImportError as exc:
@@ -1503,6 +1503,7 @@ def _build_app(
         extra_gt_boxes: Optional[List[Dict[str, Any]]] = None,
         external_yaw_offset: float = math.pi / 2,
         external_swap_lw: bool = False,
+        include_image: bool = True,
     ) -> Dict[str, object]:
         import math
 
@@ -1530,10 +1531,14 @@ def _build_app(
         data_path, _, _ = t4.get_sample_data(token, as_3d=False)
         sample_data = t4.get("sample_data", token)
         img_path = Path(str(data_path))
-        try:
-            img_bytes = img_path.read_bytes()
-        except Exception as exc:
-            _safe_error(500, "camera_image_read_failed", "Failed to read camera image.", exc=exc)
+        img_bytes = b""
+        if include_image:
+            # Legacy inline delivery. Lean clients pass include_image=False and
+            # fetch pixels from the cacheable /viewer/three/camera-image endpoint.
+            try:
+                img_bytes = img_path.read_bytes()
+            except Exception as exc:
+                _safe_error(500, "camera_image_read_failed", "Failed to read camera image.", exc=exc)
         fmt = img_path.suffix.lower().lstrip(".") or "jpeg"
         width = int(getattr(sample_data, "width", 0) or 0)
         height = int(getattr(sample_data, "height", 0) or 0)
@@ -1635,7 +1640,7 @@ def _build_app(
         return {
             "camera": channel,
             "available_cameras": channels,
-            "image_base64": base64.b64encode(img_bytes).decode("ascii"),
+            "image_base64": base64.b64encode(img_bytes).decode("ascii") if img_bytes else "",
             "image_format": fmt,
             "boxes_2d": box_rows,
             "boxes_2d_pred": boxes_2d_pred,
@@ -2624,6 +2629,7 @@ def _build_app(
         extra_gt_boxes: Optional[List[Dict[str, Any]]],
         external_yaw_offset: float,
         external_swap_lw: bool,
+        include_image: bool = True,
     ):
         dataset_path = _resolve_dataset(t4dataset_id)
         t4 = _cache.load(dataset_path, version=version)
@@ -2632,6 +2638,18 @@ def _build_app(
         boxes_3d_scene = None
         if show_annotations:
             boxes_3d_scene = _boxes_3d_ego_for_camera_projection(t4, sample)
+
+        def _camera_image_url(channel) -> str:
+            return "/viewer/three/camera-image?" + urlencode(
+                {
+                    "t4dataset_id": t4dataset_id,
+                    "scenario_name": resolved_scenario,
+                    "frame_index": frame_index,
+                    "camera": str(channel),
+                    **({"version": version} if version else {}),
+                }
+            )
+
         payload = _camera_overlay_payload_for_sample(
             t4,
             sample,
@@ -2644,7 +2662,10 @@ def _build_app(
             extra_gt_boxes=extra_gt_boxes,
             external_yaw_offset=external_yaw_offset,
             external_swap_lw=external_swap_lw,
+            include_image=include_image,
         )
+        if payload.get("camera"):
+            payload["image_url"] = _camera_image_url(payload["camera"])
         if all_cameras:
             cams = payload.get("available_cameras", []) or []
             all_rows = []
@@ -2666,7 +2687,10 @@ def _build_app(
                     extra_gt_boxes=extra_gt_boxes,
                     external_yaw_offset=external_yaw_offset,
                     external_swap_lw=external_swap_lw,
+                    include_image=include_image,
                 )
+                if row.get("camera"):
+                    row["image_url"] = _camera_image_url(row["camera"])
                 all_rows.append(row)
             payload["cameras_payload"] = all_rows
         payload.update(
@@ -2713,6 +2737,13 @@ def _build_app(
             False,
             description="Swap length/width for external eval boxes (match viewer external_bbox_swap_lw).",
         ),
+        include_image: bool = Query(
+            True,
+            description=(
+                "When false, omit image_base64 and let the client fetch pixels from the "
+                "cacheable image_url (/viewer/three/camera-image)."
+            ),
+        ),
     ):
         try:
             return _viewer_three_camera_overlay_core(
@@ -2729,6 +2760,7 @@ def _build_app(
                 None,
                 external_bbox_yaw_offset,
                 external_bbox_swap_lw,
+                include_image=include_image,
             )
         except HTTPException:
             raise
@@ -2737,6 +2769,79 @@ def _build_app(
                 status_code=500,
                 code="viewer_camera_overlay_failed",
                 message="Failed to generate camera overlay payload.",
+                exc=exc,
+            )
+
+    _CAMERA_IMAGE_MEDIA_TYPES = {
+        "jpg": "image/jpeg",
+        "jpeg": "image/jpeg",
+        "png": "image/png",
+        "webp": "image/webp",
+    }
+
+    @app.get(
+        "/viewer/three/camera-image",
+        tags=["viewer"],
+        summary="Raw camera image bytes for a viewer frame (cacheable)",
+    )
+    def viewer_three_camera_image(
+        request: Request,
+        t4dataset_id: str,
+        scenario_name: Optional[str] = None,
+        frame_index: int = Query(..., ge=0),
+        camera: Optional[str] = Query(
+            None,
+            description="Camera channel. Omit to use the first available camera.",
+        ),
+        version: Optional[str] = None,
+    ):
+        """Serve the dataset camera image as raw bytes.
+
+        The image for a given (sample, camera) is immutable dataset content, so
+        the response carries a strong ETag (the sample_data token) and a long
+        immutable Cache-Control — scrubbing back to a visited frame costs a 304.
+        """
+        dataset_path = _resolve_dataset(t4dataset_id)
+        try:
+            from t4_visualizer.visualize import list_camera_channels
+
+            t4 = _cache.load(dataset_path, version=version)
+            resolved_scenario = _resolve_viewer_scenario_name(t4, scenario_name)
+            sample = _get_scenario_sample(t4, resolved_scenario, frame_index)
+            channels = list_camera_channels(t4, sample)
+            if not channels:
+                _public_error(404, "camera_not_found", "No camera channels in this sample.")
+            channel = camera if camera in channels else channels[0]
+            token = sample.data.get(channel)
+            if token is None:
+                _public_error(404, "camera_token_not_found", f"Camera token not found for channel '{channel}'.")
+            etag = f'"{token}"'
+            if request.headers.get("if-none-match") == etag:
+                return Response(status_code=304, headers={"ETag": etag})
+            data_path, _, _ = t4.get_sample_data(token, as_3d=False)
+            img_path = Path(str(data_path))
+            img_bytes = img_path.read_bytes()
+            media_type = _CAMERA_IMAGE_MEDIA_TYPES.get(
+                img_path.suffix.lower().lstrip("."), "application/octet-stream"
+            )
+            return Response(
+                content=img_bytes,
+                media_type=media_type,
+                headers={
+                    "ETag": etag,
+                    # private: authenticated internal tool behind Cloudflare
+                    # Access — browser cache only, no shared caches.
+                    "Cache-Control": "private, max-age=31536000, immutable",
+                    "X-T4V-Camera": str(channel),
+                },
+            )
+        except HTTPException:
+            raise
+        except Exception as exc:
+            _safe_error(
+                status_code=500,
+                code="viewer_camera_image_failed",
+                message="Failed to read the camera image.",
                 exc=exc,
             )
 
@@ -2820,6 +2925,13 @@ def _build_app(
             description="Yaw offset [rad] for external eval boxes.",
         ),
         external_bbox_swap_lw: bool = Query(False, description="Swap length/width for external eval boxes."),
+        include_image: bool = Query(
+            True,
+            description=(
+                "When false, omit image_base64 and let the client fetch pixels from the "
+                "cacheable image_url (/viewer/three/camera-image)."
+            ),
+        ),
     ):
         try:
             pred = list(body.pred) if body and body.pred else []
@@ -2838,6 +2950,7 @@ def _build_app(
                 gt,
                 external_bbox_yaw_offset,
                 external_bbox_swap_lw,
+                include_image=include_image,
             )
         except HTTPException:
             raise
