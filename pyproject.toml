@@ -32,6 +32,13 @@ t4-load-test = "t4_visualizer.load_test:main"
 where = ["."]
 include = ["t4_visualizer*", "result_parser*"]
 
-# HTML templates are loaded at runtime via Path(__file__).parent / "templates" (see server.py).
+# HTML templates and static assets are loaded at runtime via
+# Path(__file__).parent / "templates" (and "static") — see server.py.
 [tool.setuptools.package-data]
-t4_visualizer = ["templates/*.html"]
+t4_visualizer = [
+    "templates/*.html",
+    "static/*",
+    "static/viewer_three/*",
+    "static/viewer_three/jsm/controls/*",
+    "static/viewer_three/jsm/loaders/*",
+]
