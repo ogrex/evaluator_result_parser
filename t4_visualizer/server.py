@@ -2501,12 +2501,18 @@ def _build_app(
         frame_index: int = Query(..., ge=0),
         version: Optional[str] = None,
         response_format: str = Query("binary", alias="format"),
+        if_none_match: Optional[str] = Header(None),
     ):
         dataset_path = _resolve_dataset(t4dataset_id)
         try:
             t4 = _cache.load(dataset_path, version=version)
             resolved_scenario = _resolve_viewer_scenario_name(t4, scenario_name)
             sample = _get_scenario_sample(t4, resolved_scenario, frame_index)
+            # Frame payloads are immutable per sample: answer conditionals
+            # before touching the LiDAR file, so a 304 costs only metadata.
+            etag = f'"{sample.token}"'
+            if response_format == "binary" and if_none_match == etag:
+                return Response(status_code=304, headers={"ETag": etag})
             points, boxes_3d = _pointcloud_and_boxes_for_sample(t4, sample)
             if response_format == "json":
                 if not _debug_visibility:
@@ -2538,6 +2544,9 @@ def _build_app(
                 content=blob,
                 media_type="application/octet-stream",
                 headers={
+                    "ETag": etag,
+                    # private: authenticated tool behind Cloudflare Access.
+                    "Cache-Control": "private, max-age=31536000, immutable",
                     "X-T4V-Format": VIEWER_FRAME_MAGIC.decode("ascii"),
                     "X-T4V-Frame-Index": str(frame_index),
                     "X-T4V-Sample-Token": str(sample.token),
