@@ -1166,6 +1166,28 @@ async function loadEgoVehicleMesh(){
   }
 }
 const cache = new Map(); const MAX_CACHE = 100;
+// Frame cache is byte-budgeted as well as count-capped: dense LiDAR frames run
+// to several MB each, so 100 frames of raw Float32Arrays could hold hundreds
+// of MB of JS heap. Eviction is LRU (hits refresh recency in fetchFrame).
+const CACHE_BYTE_BUDGET = 256 * 1024 * 1024;
+let cacheBytes = 0;
+const inflightFrames = new Map();  // frame index → Promise, dedups concurrent fetches
+function frameByteSize(parsed){
+  return ((parsed && parsed.pts && parsed.pts.byteLength) || 0)
+    + ((parsed && parsed.boxes && parsed.boxes.byteLength) || 0)
+    + 4096;  // header/labels/object overhead estimate
+}
+function cacheStoreFrame(i, parsed){
+  if (cache.has(i)) cacheBytes -= frameByteSize(cache.get(i));
+  cache.delete(i);
+  cache.set(i, parsed);
+  cacheBytes += frameByteSize(parsed);
+  while (cache.size > 1 && (cache.size > MAX_CACHE || cacheBytes > CACHE_BYTE_BUDGET)) {
+    const k = cache.keys().next().value;
+    cacheBytes -= frameByteSize(cache.get(k));
+    cache.delete(k);
+  }
+}
 let totalFrames = 0; let playing = false; let frame = startFrame; let fps = 6;
 let lastFrameTs = 0;
 let followEgo = true;
@@ -5155,17 +5177,30 @@ function applyEvalLayersForFrame(i){
 }
 
 async function fetchFrame(i){
-  if (cache.has(i)) return cache.get(i);
-  const url = `/viewer/three/frame.bin?t4dataset_id=${encodeURIComponent(dataset)}&scenario_name=${encodeURIComponent(scenario)}&frame_index=${i}${qv}`;
-  const res = await fetch(url);
-  if (!res.ok) throw new Error(`frame ${i}: HTTP ${res.status}`);
-  const parsed = parseFrameBuffer(await res.arrayBuffer());
-  cache.set(i, parsed);
-  if (cache.size > MAX_CACHE) {
-    const k = cache.keys().next().value;
-    cache.delete(k);
+  if (cache.has(i)) {
+    // Refresh recency so ping-pong scrubbing doesn't evict the frames in use.
+    const v = cache.get(i);
+    cache.delete(i);
+    cache.set(i, v);
+    return v;
   }
-  return parsed;
+  // Dedup: showFrame and prefetchAround racing on the same index share one
+  // request instead of double-fetching and double-parsing.
+  if (inflightFrames.has(i)) return inflightFrames.get(i);
+  const p = (async () => {
+    const url = `/viewer/three/frame.bin?t4dataset_id=${encodeURIComponent(dataset)}&scenario_name=${encodeURIComponent(scenario)}&frame_index=${i}${qv}`;
+    const res = await fetch(url);
+    if (!res.ok) throw new Error(`frame ${i}: HTTP ${res.status}`);
+    const parsed = parseFrameBuffer(await res.arrayBuffer());
+    cacheStoreFrame(i, parsed);
+    return parsed;
+  })();
+  inflightFrames.set(i, p);
+  try {
+    return await p;
+  } finally {
+    inflightFrames.delete(i);
+  }
 }
 
 async function loadLanelet(){
