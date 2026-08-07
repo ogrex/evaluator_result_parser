@@ -302,6 +302,109 @@ class _DatasetPathCache:
 
 
 # ---------------------------------------------------------------------------
+# Three.js viewer binary frame protocol (T4V3D002)
+# ---------------------------------------------------------------------------
+
+VIEWER_FRAME_MAGIC = b"T4V3D002"
+# Little-endian fixed header; the variable-length sample token follows it,
+# so the body starts at VIEWER_FRAME_HEADER_LEN + sample_token_len.
+# magic[8] + header_len:u32 + frame_index:u32 + timestamp_us:u64
+# + point_count:u32 + box_count:u32 + sample_token_len:u16
+VIEWER_FRAME_HEADER_FMT = "<8sIIQIIH"
+VIEWER_FRAME_HEADER_LEN = struct.calcsize(VIEWER_FRAME_HEADER_FMT)
+
+
+def viewer_frame_schema() -> Dict[str, object]:
+    """Schema document for `/viewer/three/schema`, derived from the packer constants."""
+    return {
+        "format_version": VIEWER_FRAME_MAGIC.decode("ascii"),
+        "endianness": "little",
+        "header_struct_fmt": VIEWER_FRAME_HEADER_FMT,
+        "header_len": VIEWER_FRAME_HEADER_LEN,
+        "header_layout": [
+            "magic:8",
+            "header_len:uint32",
+            "frame_index:uint32",
+            "timestamp_us:uint64",
+            "point_count:uint32",
+            "box_count:uint32",
+            "sample_token_len:uint16",
+            "sample_token:utf8 bytes",
+        ],
+        "body_layout": {
+            "offset": "header_len + sample_token_len",
+            "points_f32": "[point_count][4] -> x,y,z,intensity",
+            "box_corners_f32": "[box_count][24] -> 8 corners * xyz (x forward, y left, z up)",
+            "box_labels_json": "uint32 length + utf8 json list[str]",
+        },
+    }
+
+
+def pack_viewer_frame_binary(
+    *,
+    frame_index: int,
+    sample_token: str,
+    timestamp_us: int,
+    points_xyz_i,
+    boxes_3d,
+) -> bytes:
+    """Pack one viewer frame into the T4V3D002 wire format (see viewer_frame_schema)."""
+    import numpy as np
+
+    token_bytes = str(sample_token).encode("utf-8")
+    pts = np.asarray(points_xyz_i, dtype=np.float32)
+    if pts.size == 0:
+        pts = np.zeros((0, 4), dtype=np.float32)
+    point_count = int(pts.shape[0])
+
+    box_rows = []
+    labels = []
+    for box in boxes_3d:
+        try:
+            corners = box.corners()
+            flat = [float(v) for v in corners.reshape(-1).tolist()]
+        except Exception:
+            # Fallback: axis-aligned cuboid from center/size.
+            center = getattr(box, "center", [0.0, 0.0, 0.0])
+            size = getattr(box, "size", [0.0, 0.0, 0.0])
+            cx, cy, cz = float(center[0]), float(center[1]), float(center[2])
+            sx, sy, sz = float(size[0]), float(size[1]), float(size[2])
+            hx, hy, hz = sx / 2.0, sy / 2.0, sz / 2.0
+            corner_pts = [
+                [cx + hx, cy + hy, cz + hz], [cx + hx, cy - hy, cz + hz],
+                [cx + hx, cy - hy, cz - hz], [cx + hx, cy + hy, cz - hz],
+                [cx - hx, cy + hy, cz + hz], [cx - hx, cy - hy, cz + hz],
+                [cx - hx, cy - hy, cz - hz], [cx - hx, cy + hy, cz - hz],
+            ]
+            flat = [float(v) for p in corner_pts for v in p]
+        box_rows.append(flat)
+        labels.append(str(getattr(box, "label", "") or ""))
+    box_arr = np.asarray(box_rows, dtype=np.float32) if box_rows else np.zeros((0, 24), dtype=np.float32)
+    label_blob = json.dumps(labels, ensure_ascii=True).encode("utf-8")
+    box_count = int(box_arr.shape[0])
+
+    header = struct.pack(
+        VIEWER_FRAME_HEADER_FMT,
+        VIEWER_FRAME_MAGIC,
+        VIEWER_FRAME_HEADER_LEN,
+        int(frame_index),
+        int(timestamp_us),
+        point_count,
+        box_count,
+        len(token_bytes),
+    ) + token_bytes
+    return b"".join(
+        [
+            header,
+            pts.tobytes(order="C"),
+            box_arr.tobytes(order="C"),
+            struct.pack("<I", len(label_blob)),
+            label_blob,
+        ]
+    )
+
+
+# ---------------------------------------------------------------------------
 # Pydantic models (request / response)
 # Must be defined at module level — Pydantic v2 cannot resolve forward
 # references for classes defined inside a function scope.
@@ -2083,82 +2186,6 @@ def _build_app(
             ),
         }
 
-    def _pack_viewer_frame_binary(
-        *,
-        frame_index: int,
-        sample_token: str,
-        timestamp_us: int,
-        points_xyz_i,
-        boxes_3d,
-    ):
-        """
-        Binary wire format (little-endian):
-          magic[8]        : b'T4V3D002'
-          header_len      : uint32
-          frame_index     : uint32
-          timestamp_us    : uint64
-          point_count     : uint32
-          box_count       : uint32
-          sample_token_len: uint16
-          sample_token    : UTF-8 bytes
-          points          : point_count * float32[4]  # x,y,z,intensity
-          box_corners_f32 : box_count * float32[24]   # 8 corners * xyz
-          box_labels_json : UTF-8 JSON list[str], length-prefixed uint32
-        """
-        import numpy as np
-
-        token_bytes = str(sample_token).encode("utf-8")
-        pts = np.asarray(points_xyz_i, dtype=np.float32)
-        if pts.size == 0:
-            pts = np.zeros((0, 4), dtype=np.float32)
-        point_count = int(pts.shape[0])
-
-        box_rows = []
-        labels = []
-        for box in boxes_3d:
-            try:
-                corners = box.corners()
-                flat = [float(v) for v in corners.reshape(-1).tolist()]
-            except Exception:
-                # Fallback: axis-aligned cuboid from center/size.
-                center = getattr(box, "center", [0.0, 0.0, 0.0])
-                size = getattr(box, "size", [0.0, 0.0, 0.0])
-                cx, cy, cz = float(center[0]), float(center[1]), float(center[2])
-                sx, sy, sz = float(size[0]), float(size[1]), float(size[2])
-                hx, hy, hz = sx / 2.0, sy / 2.0, sz / 2.0
-                corner_pts = [
-                    [cx + hx, cy + hy, cz + hz], [cx + hx, cy - hy, cz + hz],
-                    [cx + hx, cy - hy, cz - hz], [cx + hx, cy + hy, cz - hz],
-                    [cx - hx, cy + hy, cz + hz], [cx - hx, cy - hy, cz + hz],
-                    [cx - hx, cy - hy, cz - hz], [cx - hx, cy + hy, cz - hz],
-                ]
-                flat = [float(v) for p in corner_pts for v in p]
-            box_rows.append(flat)
-            labels.append(str(getattr(box, "label", "") or ""))
-        box_arr = np.asarray(box_rows, dtype=np.float32) if box_rows else np.zeros((0, 24), dtype=np.float32)
-        label_blob = json.dumps(labels, ensure_ascii=True).encode("utf-8")
-        box_count = int(box_arr.shape[0])
-
-        header = struct.pack(
-            "<8sIIQIIH",
-            b"T4V3D002",
-            34,  # fixed header bytes
-            int(frame_index),
-            int(timestamp_us),
-            point_count,
-            box_count,
-            len(token_bytes),
-        ) + token_bytes
-        return b"".join(
-            [
-                header,
-                pts.tobytes(order="C"),
-                box_arr.tobytes(order="C"),
-                struct.pack("<I", len(label_blob)),
-                label_blob,
-            ]
-        )
-
     def _render_html_page(payload: RenderResponse, q) -> str:
         """Build a self-contained HTML document with embedded PNG data URLs."""
         esc = html.escape
@@ -2687,25 +2714,7 @@ def _build_app(
         summary="Binary schema for Three.js frame payload",
     )
     def viewer_three_schema():
-        return {
-            "format_version": "T4V3D002",
-            "endianness": "little",
-            "header_layout": [
-                "magic:8",
-                "header_len:uint32",
-                "frame_index:uint32",
-                "timestamp_us:uint64",
-                "point_count:uint32",
-                "box_count:uint32",
-                "sample_token_len:uint16",
-                "sample_token:utf8 bytes",
-            ],
-            "body_layout": {
-                "points_f32": "[point_count][4] -> x,y,z,intensity",
-                "box_corners_f32": "[box_count][24] -> 8 corners * xyz (x forward, y left, z up)",
-                "box_labels_json": "uint32 length + utf8 json list[str]",
-            },
-        }
+        return viewer_frame_schema()
 
     @app.get(
         "/viewer/three/meta",
@@ -2746,7 +2755,7 @@ def _build_app(
             "scenario_name": resolved_scenario,
             "version": version,
             "total_frames": int(scene_meta.get("nbr_samples") or 0),
-            "format_version": "T4V3D002",
+            "format_version": VIEWER_FRAME_MAGIC.decode("ascii"),
             "binary_endpoint_template": (
                 f"/viewer/three/frame.bin?t4dataset_id={t4dataset_id}"
                 f"&scenario_name={resolved_scenario}&frame_index={{frame_index}}"
@@ -2791,7 +2800,7 @@ def _build_app(
                 }
             if response_format != "binary":
                 _public_error(400, "invalid_format", "Use format=binary or format=json.")
-            blob = _pack_viewer_frame_binary(
+            blob = pack_viewer_frame_binary(
                 frame_index=frame_index,
                 sample_token=str(sample.token),
                 timestamp_us=int(sample.timestamp),
@@ -2802,7 +2811,7 @@ def _build_app(
                 content=blob,
                 media_type="application/octet-stream",
                 headers={
-                    "X-T4V-Format": "T4V3D002",
+                    "X-T4V-Format": VIEWER_FRAME_MAGIC.decode("ascii"),
                     "X-T4V-Frame-Index": str(frame_index),
                     "X-T4V-Sample-Token": str(sample.token),
                     "X-T4V-Timestamp-Us": str(sample.timestamp),
