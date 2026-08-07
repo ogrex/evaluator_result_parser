@@ -1958,17 +1958,30 @@ function buildInspectCandidate(meta, extra){
     meta: meta.meta || null,
   };
 }
+function disposeObjectDeep(obj, skipGeometry){
+  // Sprites reuse the three.js-shared plane geometry and a material cached in
+  // labelSpriteCache — the scene graph owns neither, so never dispose them.
+  if (obj.isSprite) return;
+  if (obj.geometry && !skipGeometry) obj.geometry.dispose?.();
+  if (obj.material) {
+    const mats = Array.isArray(obj.material) ? obj.material : [obj.material];
+    mats.forEach((m) => m && m.dispose && m.dispose());
+  }
+  // ArrowHelper children share module-level line/cone geometries (their
+  // materials are per-arrow and safe to dispose).
+  const childSkipGeometry = skipGeometry || !!(obj.userData && obj.userData.velocityVector);
+  if (obj.children) {
+    for (const c of obj.children) {
+      if (c) disposeObjectDeep(c, childSkipGeometry);
+    }
+  }
+}
 function clearGroupDeep(g){
   while (g.children.length) {
     const child = g.children[0];
     if (!child) break;
     g.remove(child);
-    if (child.geometry) child.geometry.dispose?.();
-    if (child.material) {
-      const mats = Array.isArray(child.material) ? child.material : [child.material];
-      mats.forEach((m) => m && m.dispose && m.dispose());
-    }
-    if (child.children && child.children.length) clearGroupDeep(child);
+    disposeObjectDeep(child, false);
   }
 }
 function boxCornersFromPose(cx, cy, cz, l, w, h, yaw){
@@ -3563,10 +3576,6 @@ function buildSceneCandidatesFromFrameData(data, frameIndex){
   return out;
 }
 
-function clearGroup(g){
-  while (g.children.length) g.remove(g.children[0]);
-}
-
 /**
  * Rotated box in ego frame (x forward, y left, z up), same as `visualize.py` TargetObject / `_project_bbox_to_roi`:
  * body-x = length (forward), body-y = width (lateral).
@@ -4823,7 +4832,7 @@ function countVisibleEvalBoxes(boxes, layerId){
 }
 
 function drawLayerBoxes(group, boxes, layerId){
-  clearGroup(group);
+  clearGroupDeep(group);
   const nextCandidates = [];
   if (!Array.isArray(boxes)) {
     if (layerId === "gt") externalSelectionCandidates = externalSelectionCandidates.filter((c) => c && c.source === "eval-pred");
@@ -6041,11 +6050,16 @@ function setFrameData(data){
   metaEl.innerHTML = `<div>sample=<code>${data.sampleToken}</code></div><div>timestamp_us=${data.timestampUs}</div><div>points=${pointMeta} boxes=${boxMeta}</div>`;
 }
 
+let showFrameGeneration = 0;
 async function showFrame(i){
+  // Generation token: while a fetch is in flight the user may scrub further;
+  // a stale response must never overwrite the scene of a newer frame.
+  const gen = ++showFrameGeneration;
   frame = Math.max(0, Math.min(totalFrames-1, i));
   setFrameText();
   setStatus(`loading frame ${frame} ...`);
   const data = await fetchFrame(frame);
+  if (gen !== showFrameGeneration) return;
   setFrameData(data);
   updateColorbar();
   if (followEgo) {
@@ -6054,6 +6068,7 @@ async function showFrame(i){
   }
   if (laneletEnabled) {
     await loadLanelet();
+    if (gen !== showFrameGeneration) return;
     laneletGroup.visible = true;
   }
   prefetchAround(frame);
@@ -6067,6 +6082,7 @@ async function showFrame(i){
   updateSelectedCandidateForFrame();
   if (cameraViewportEnabled) {
     await refreshCameraOverlay();
+    if (gen !== showFrameGeneration) return;
   }
   updateMetricsPlayhead();
   updateMetricsRatesPlayhead();
@@ -6080,7 +6096,9 @@ document.getElementById("playBtn").addEventListener("click", () => {
 document.getElementById("speed").addEventListener("change", (e) => {
   fps = 6 * Number(e.target.value || "1");
 });
-slider.addEventListener("input", () => showFrame(Number(slider.value)));
+slider.addEventListener("input", () => {
+  showFrame(Number(slider.value)).catch((e) => setStatus(`error: ${e.message}`));
+});
 document.getElementById("camReset").addEventListener("click", () => {
   followEgo = false;
   setSelectedInspectCandidate(null);
