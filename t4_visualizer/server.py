@@ -114,6 +114,7 @@ logger = logging.getLogger(__name__)
 
 from t4_visualizer.viewer_data import (
     _box_label_str,
+    default_camera_channel,
     _box_xy_bev_m,
     _box_xy_from_eval_dict,
     _boxes_3d_ego_for_camera_projection,
@@ -1164,9 +1165,7 @@ def _build_app(
 
     def _sample_primary_camera(t4, sample) -> str:
         channels = _sample_camera_names(t4, sample)
-        if not channels:
-            return ""
-        return channels[0]
+        return default_camera_channel(channels) or ""
 
     def _tlr_logical_frames(t4, scenario_name: str) -> List[List[Any]]:
         ordered_samples = _scenario_sample_rows(t4, scenario_name)
@@ -1524,7 +1523,7 @@ def _build_app(
                 "boxes_2d_source": None,
                 "projection": None,
             }
-        channel = camera if camera in channels else channels[0]
+        channel = camera if camera in channels else default_camera_channel(channels)
         token = sample.data.get(channel)
         if token is None:
             _public_error(404, "camera_token_not_found", f"Camera token not found for channel '{channel}'.")
@@ -1679,7 +1678,7 @@ def _build_app(
                 "calibrations": [],
             }
 
-        requested_channel = camera if camera in channels else channels[0]
+        requested_channel = camera if camera in channels else default_camera_channel(channels)
         selected_channels = channels if all_cameras else [requested_channel]
         rows: List[Dict[str, object]] = []
 
@@ -2811,7 +2810,7 @@ def _build_app(
             channels = list_camera_channels(t4, sample)
             if not channels:
                 _public_error(404, "camera_not_found", "No camera channels in this sample.")
-            channel = camera if camera in channels else channels[0]
+            channel = camera if camera in channels else default_camera_channel(channels)
             token = sample.data.get(channel)
             if token is None:
                 _public_error(404, "camera_token_not_found", f"Camera token not found for channel '{channel}'.")

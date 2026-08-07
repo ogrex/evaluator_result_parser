@@ -14,6 +14,23 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
 
+def default_camera_channel(channels: List[str]) -> Optional[str]:
+    """Pick the default camera for a sample: front-facing over alphabetical.
+
+    list_camera_channels sorts alphabetically, so CAM_BACK would win by
+    accident. Prefer the exact CAM_FRONT, then any CAM_FRONT_* variant,
+    then fall back to the first channel.
+    """
+    if not channels:
+        return None
+    if "CAM_FRONT" in channels:
+        return "CAM_FRONT"
+    for ch in channels:
+        if str(ch).upper().startswith("CAM_FRONT"):
+            return ch
+    return channels[0]
+
+
 def _pointcloud_and_boxes_for_sample(t4, sample):
     import numpy as np
     from t4_visualizer.visualize import _load_pointcloud, list_lidar_channels
