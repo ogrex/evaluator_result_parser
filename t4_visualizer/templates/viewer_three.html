@@ -1670,17 +1670,37 @@ async function loadViewerSessionById(sessionId){
   return record;
 }
 
+// One shared offscreen WebGL renderer draws all three metrics charts, blitted
+// onto plain 2D canvases. Browsers cap live WebGL contexts (~8-16, oldest is
+// silently lost); dedicating three contexts to 2D line charts risked killing
+// the main scene's context. The chart scenes/cameras are unchanged.
+const chartRendererCanvas = document.createElement("canvas");
+const chartRenderer = new THREE.WebGLRenderer({ canvas: chartRendererCanvas, antialias: true, alpha: true });
+chartRenderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
+chartRenderer.setClearColor(0x000000, 0);
+chartRenderer.outputColorSpace = THREE.SRGBColorSpace;
+chartRenderer.toneMapping = THREE.NoToneMapping;
+const chartSizes = new Map();  // target canvas → {w, h} CSS px, set by resizeMetricsRenderer
+function renderChartToCanvas(scene, camera, targetCanvas){
+  const size = chartSizes.get(targetCanvas);
+  if (!size || !size.w || !size.h) return;
+  chartRenderer.setSize(size.w, size.h, false);
+  chartRenderer.render(scene, camera);
+  if (targetCanvas.width !== chartRendererCanvas.width || targetCanvas.height !== chartRendererCanvas.height) {
+    targetCanvas.width = chartRendererCanvas.width;
+    targetCanvas.height = chartRendererCanvas.height;
+  }
+  const ctx = targetCanvas.getContext("2d");
+  ctx.clearRect(0, 0, targetCanvas.width, targetCanvas.height);
+  ctx.drawImage(chartRendererCanvas, 0, 0);
+}
+
 const metricsCanvas = document.getElementById("metricsCanvas");
 const metricsWrapEl = document.getElementById("metricsWrap");
 const metricsScene = new THREE.Scene();
 metricsScene.background = null;
 const metricsCamera = new THREE.OrthographicCamera(-1, 1, 1, -1, 0.1, 20);
 metricsCamera.position.set(0, 0, 3);
-const metricsRenderer = new THREE.WebGLRenderer({ canvas: metricsCanvas, antialias: true, alpha: true });
-metricsRenderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
-metricsRenderer.setClearColor(0x000000, 0);
-metricsRenderer.outputColorSpace = THREE.SRGBColorSpace;
-metricsRenderer.toneMapping = THREE.NoToneMapping;
 let metricsChartGroup = new THREE.Group();
 metricsScene.add(metricsChartGroup);
 let metricsPlayhead = null;
@@ -1691,11 +1711,6 @@ const metricsRatesScene = new THREE.Scene();
 metricsRatesScene.background = null;
 const metricsRatesCamera = new THREE.OrthographicCamera(-1, 1, 1, -1, 0.1, 20);
 metricsRatesCamera.position.set(0, 0, 3);
-const metricsRatesRenderer = new THREE.WebGLRenderer({ canvas: metricsRatesCanvas, antialias: true, alpha: true });
-metricsRatesRenderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
-metricsRatesRenderer.setClearColor(0x000000, 0);
-metricsRatesRenderer.outputColorSpace = THREE.SRGBColorSpace;
-metricsRatesRenderer.toneMapping = THREE.NoToneMapping;
 let metricsRatesChartGroup = new THREE.Group();
 metricsRatesScene.add(metricsRatesChartGroup);
 let metricsRatesPlayhead = null;
@@ -1706,11 +1721,6 @@ const metricsErrorScene = new THREE.Scene();
 metricsErrorScene.background = null;
 const metricsErrorCamera = new THREE.OrthographicCamera(-1, 1, 1, -1, 0.1, 20);
 metricsErrorCamera.position.set(0, 0, 3);
-const metricsErrorRenderer = new THREE.WebGLRenderer({ canvas: metricsErrorCanvas, antialias: true, alpha: true });
-metricsErrorRenderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
-metricsErrorRenderer.setClearColor(0x000000, 0);
-metricsErrorRenderer.outputColorSpace = THREE.SRGBColorSpace;
-metricsErrorRenderer.toneMapping = THREE.NoToneMapping;
 let metricsErrorChartGroup = new THREE.Group();
 metricsErrorScene.add(metricsErrorChartGroup);
 let metricsErrorPlayhead = null;
@@ -2560,17 +2570,17 @@ function resizeMetricsRenderer(){
   if (metricsWrapEl && metricsCanvas && !metricsWrapEl.hidden) {
     const w = Math.max(120, metricsWrapEl.clientWidth || 280);
     const h = Math.max(80, metricsWrapEl.clientHeight || 120);
-    metricsRenderer.setSize(w, h, false);
+    chartSizes.set(metricsCanvas, { w, h });
   }
   if (metricsRatesWrapEl && metricsRatesCanvas && !metricsRatesWrapEl.hidden) {
     const w = Math.max(120, metricsRatesWrapEl.clientWidth || 280);
     const h = Math.max(80, metricsRatesWrapEl.clientHeight || 120);
-    metricsRatesRenderer.setSize(w, h, false);
+    chartSizes.set(metricsRatesCanvas, { w, h });
   }
   if (metricsErrorWrapEl && metricsErrorCanvas && !metricsErrorWrapEl.hidden) {
     const w = Math.max(120, metricsErrorWrapEl.clientWidth || 280);
     const h = Math.max(80, metricsErrorWrapEl.clientHeight || 120);
-    metricsErrorRenderer.setSize(w, h, false);
+    chartSizes.set(metricsErrorCanvas, { w, h });
   }
 }
 
@@ -6628,13 +6638,13 @@ function animate(ts){
   const rateOn = document.getElementById("uiShowMetricsRates") && document.getElementById("uiShowMetricsRates").checked;
   const errOn = document.getElementById("uiShowMetricsError") && document.getElementById("uiShowMetricsError").checked;
   if (cntOn && metricsWrapEl && !metricsWrapEl.hidden && metricsChartGroup.children.length) {
-    metricsRenderer.render(metricsScene, metricsCamera);
+    renderChartToCanvas(metricsScene, metricsCamera, metricsCanvas);
   }
   if (rateOn && metricsRatesWrapEl && !metricsRatesWrapEl.hidden && metricsRatesChartGroup.children.length) {
-    metricsRatesRenderer.render(metricsRatesScene, metricsRatesCamera);
+    renderChartToCanvas(metricsRatesScene, metricsRatesCamera, metricsRatesCanvas);
   }
   if (errOn && metricsErrorWrapEl && !metricsErrorWrapEl.hidden && metricsErrorChartGroup.children.length) {
-    metricsErrorRenderer.render(metricsErrorScene, metricsErrorCamera);
+    renderChartToCanvas(metricsErrorScene, metricsErrorCamera, metricsErrorCanvas);
   }
 }
 
