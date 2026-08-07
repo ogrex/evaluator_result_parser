@@ -676,6 +676,32 @@ def _build_app(
             detail["debug"] = str(exc)
         raise HTTPException(status_code=status_code, detail=detail)
 
+    # Session store hygiene: cap individual payloads and garbage-collect old
+    # files so an unauthenticated client cannot fill the disk over time.
+    _VIEWER_SESSION_MAX_BYTES = 32 * 1024 * 1024
+    _VIEWER_SESSION_TTL_S = 30 * 24 * 3600
+    _VIEWER_SESSION_MAX_FILES = 500
+
+    def _prune_viewer_sessions() -> None:
+        """Best-effort GC of the session dir: drop expired files, keep the newest N."""
+        if _viewer_session_dir is None:
+            return
+        try:
+            files = sorted(
+                (p for p in _viewer_session_dir.glob("*.json")),
+                key=lambda p: p.stat().st_mtime,
+                reverse=True,
+            )
+        except OSError:
+            return
+        now = time.time()
+        for idx, p in enumerate(files):
+            try:
+                if idx >= _VIEWER_SESSION_MAX_FILES or now - p.stat().st_mtime > _VIEWER_SESSION_TTL_S:
+                    p.unlink()
+            except OSError:
+                continue
+
     def _normalize_viewer_session_id(raw: str) -> str:
         try:
             return str(uuid.UUID(str(raw)))
@@ -742,7 +768,7 @@ def _build_app(
         elapsed_ms = (time.perf_counter() - t0) * 1000.0
         query = request.url.query
         query_txt = f"?{query}" if query else ""
-        print(
+        logger.info(
             f"[http] {method} {request.url.path}{query_txt} "
             f"-> {response.status_code} ({elapsed_ms:.1f} ms)"
         )
@@ -2678,8 +2704,17 @@ def _build_app(
             },
             "payload": payload,
         }
+        encoded = json.dumps(record, ensure_ascii=False, separators=(",", ":"))
+        if len(encoded.encode("utf-8")) > _VIEWER_SESSION_MAX_BYTES:
+            _public_error(
+                413,
+                "viewer_session_too_large",
+                f"Viewer session payload exceeds {_VIEWER_SESSION_MAX_BYTES // (1024 * 1024)} MB.",
+                hint="Trim bbox_layers_by_frame or share fewer frames per session.",
+            )
+        _prune_viewer_sessions()
         try:
-            path.write_text(json.dumps(record, ensure_ascii=False, separators=(",", ":")), encoding="utf-8")
+            path.write_text(encoded, encoding="utf-8")
         except Exception as exc:
             _safe_error(
                 500,
@@ -2703,7 +2738,6 @@ def _build_app(
         return {
             "ok": True,
             "session_id": session_id,
-            "storage_path": str(path),
             "payload_url": f"/viewer/three/session/{session_id}",
             "share_url": share_url,
         }
@@ -2757,9 +2791,15 @@ def _build_app(
             "total_frames": int(scene_meta.get("nbr_samples") or 0),
             "format_version": VIEWER_FRAME_MAGIC.decode("ascii"),
             "binary_endpoint_template": (
-                f"/viewer/three/frame.bin?t4dataset_id={t4dataset_id}"
-                f"&scenario_name={resolved_scenario}&frame_index={{frame_index}}"
-                f"{f'&version={version}' if version else ''}"
+                "/viewer/three/frame.bin?"
+                + urlencode(
+                    {
+                        "t4dataset_id": t4dataset_id,
+                        "scenario_name": resolved_scenario,
+                        **({"version": version} if version else {}),
+                    }
+                )
+                + "&frame_index={frame_index}"
             ),
         }
 
@@ -2865,9 +2905,15 @@ def _build_app(
                 {
                     "frame_index": i,
                     "binary_url": (
-                        f"/viewer/three/frame.bin?t4dataset_id={t4dataset_id}"
-                        f"&scenario_name={resolved_scenario}&frame_index={i}"
-                        f"{f'&version={version}' if version else ''}"
+                        "/viewer/three/frame.bin?"
+                        + urlencode(
+                            {
+                                "t4dataset_id": t4dataset_id,
+                                "scenario_name": resolved_scenario,
+                                "frame_index": i,
+                                **({"version": version} if version else {}),
+                            }
+                        )
                     ),
                 }
             )
@@ -3177,7 +3223,7 @@ def _build_app(
             description="Number of frame keys when message_type=bbox_layers_by_frame.",
         ),
     ):
-        print(
+        logger.info(
             "[viewer:message] "
             f"dataset={t4dataset_id} "
             f"scenario={scenario_name} "
@@ -3270,7 +3316,7 @@ def _build_app(
             description="Number of frame keys when message_type=tlr_eval_by_frame.",
         ),
     ):
-        print(
+        logger.info(
             "[viewer:tlr-message] "
             f"dataset={t4dataset_id} "
             f"scenario={scenario_name or ''} "
@@ -3360,7 +3406,7 @@ def _build_app(
         Server-side timings are in the JSON body and duplicated on response headers
         so any HTTP client can read them without parsing JSON.
         """
-        print(
+        logger.info(
             "[render:POST] "
             f"dataset={body.t4dataset_id} "
             f"scenario={body.scenario_name} "
@@ -3417,7 +3463,7 @@ def _build_app(
         ),
     ):
         """Render one frame via query string (no ``target_objects``; use POST for those)."""
-        print(
+        logger.info(
             "[render:GET] "
             f"dataset={q.t4dataset_id} "
             f"scenario={q.scenario_name} "
@@ -3452,7 +3498,7 @@ def _build_app(
 
     def _render_get_html_always(q):
         """Shared handler: HTML page with embedded PNGs (same query params as GET /render)."""
-        print(
+        logger.info(
             "[render:GET:HTML] "
             f"dataset={q.t4dataset_id} "
             f"scenario={q.scenario_name} "
@@ -3599,6 +3645,9 @@ def _parse_args(argv=None):
 def main(argv=None):
     """Entry point for the ``t4-server`` command."""
     args = _parse_args(argv)
+    # Request/telemetry lines go through the module logger; make them visible
+    # by default without stealing uvicorn's own logging config.
+    logging.basicConfig(level=logging.INFO, format="%(message)s")
 
     try:
         import uvicorn
