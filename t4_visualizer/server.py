@@ -557,7 +557,7 @@ def _build_app(
     # For backward compatibility, also expose the first data_dir as data_dir
     data_dir = data_dirs[0] if data_dirs else Path("./t4datasets")
     try:
-        from fastapi import Body, Depends, FastAPI, Header, HTTPException, Query, Request
+        from fastapi import Body, Depends, FastAPI, Header, HTTPException, Query
         from fastapi.encoders import jsonable_encoder
         from fastapi.responses import HTMLResponse, JSONResponse, Response
     except ImportError as exc:
@@ -2785,7 +2785,6 @@ def _build_app(
         summary="Raw camera image bytes for a viewer frame (cacheable)",
     )
     def viewer_three_camera_image(
-        request: Request,
         t4dataset_id: str,
         scenario_name: Optional[str] = None,
         frame_index: int = Query(..., ge=0),
@@ -2794,6 +2793,7 @@ def _build_app(
             description="Camera channel. Omit to use the first available camera.",
         ),
         version: Optional[str] = None,
+        if_none_match: Optional[str] = Header(None),
     ):
         """Serve the dataset camera image as raw bytes.
 
@@ -2816,7 +2816,7 @@ def _build_app(
             if token is None:
                 _public_error(404, "camera_token_not_found", f"Camera token not found for channel '{channel}'.")
             etag = f'"{token}"'
-            if request.headers.get("if-none-match") == etag:
+            if if_none_match == etag:
                 return Response(status_code=304, headers={"ETag": etag})
             data_path, _, _ = t4.get_sample_data(token, as_3d=False)
             img_path = Path(str(data_path))
