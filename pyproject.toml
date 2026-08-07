@@ -43,4 +43,5 @@ t4_visualizer = [
     "static/viewer_three/jsm/loaders/*",
     "static/viewer_three/jsm/utils/*",
     "static/viewer_three/jsm/environments/*",
+    "static/viewer_three/app/*",
 ]
