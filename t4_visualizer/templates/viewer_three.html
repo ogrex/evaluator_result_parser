@@ -786,6 +786,15 @@ const initialHidePanels = (() => {
 })();
 const qv = version ? `&version=${encodeURIComponent(version)}` : "";
 const metaUrl = `/viewer/three/meta?t4dataset_id=${encodeURIComponent(dataset)}&scenario_name=${encodeURIComponent(scenario)}${qv}`;
+// Debug instrumentation (console traces, server ack round-trips) is opt-in via
+// ?debug=1 — it must not run as a side effect of normal embedding.
+const viewerDebugEnabled = (() => {
+  const raw = String(params.get("debug") || "").toLowerCase();
+  return raw === "1" || raw === "true" || raw === "yes";
+})();
+function dbg(...args){
+  if (viewerDebugEnabled) console.info("[viewer-debug]", ...args);
+}
 
 /** GT/Pred from postMessage use center+size+yaw; dataset boxes use API corners. Extra yaw (rad) aligns typical eval exports with T4 ego (+x forward, +y left). Omit query param for +π/2; use `external_bbox_yaw_offset=0` if your JSON already matches T4. */
 function getExternalBboxYawOffset(){
@@ -5105,7 +5114,7 @@ function setExternalLayerPayload(payload, opts){
   const norm = normalizeExternalLayerPayload(payload, frame);
   const gt = Array.isArray(norm.gt) ? norm.gt : [];
   const pred = Array.isArray(norm.pred) ? norm.pred : [];
-  if (gt.length) {
+  if (gt.length && viewerDebugEnabled) {
     const b0 = gt[0];
     window.__t4EvalDebugFirstGt = {
       frame,
@@ -5116,9 +5125,7 @@ function setExternalLayerPayload(payload, opts){
       yaw: b0.yaw,
       corners0: Array.isArray(b0.corners) ? b0.corners.slice(0, 6) : null,
     };
-    console.info("[viewer-debug] first normalized GT", {
-      ...window.__t4EvalDebugFirstGt,
-    });
+    dbg("first normalized GT", window.__t4EvalDebugFirstGt);
   }
   externalLayers = { gt, pred };
   renderExternalLayers();
@@ -5127,7 +5134,7 @@ function setExternalLayerPayload(payload, opts){
   const b = countEvalBucketsFromBoxes(gt, pred);
   setStatus(`ready · cached=${cache.size} · ext(GT·TP=${b.gt_tp},GT·FN=${b.gt_fn},EST·TP=${b.est_tp},EST·FP=${b.est_fp})`);
   if (doCameraRefresh && cameraViewportEnabled) refreshCameraOverlay().catch(() => {});
-  if (!doAck) return;
+  if (!doAck || !viewerDebugEnabled) return;
   const ack = `/viewer/three/debug/message-received?t4dataset_id=${encodeURIComponent(dataset)}&scenario_name=${encodeURIComponent(scenario)}&frame_index=${frame}&gt_count=${gt.length}&pred_count=${pred.length}&matched_count=0`;
   fetch(ack)
     .then((r) => {
@@ -5135,10 +5142,10 @@ function setExternalLayerPayload(payload, opts){
       return r.json();
     })
     .then((body) => {
-      console.info("[viewer-debug] bbox_layers ack ok", body);
+      dbg("bbox_layers ack ok", body);
     })
     .catch((err) => {
-      console.warn("[viewer-debug] bbox_layers ack failed", err);
+      dbg("bbox_layers ack failed", err);
     });
 }
 
@@ -6318,9 +6325,16 @@ document.getElementById("projMode").addEventListener("click", () => {
   controls.update();
 });
 window.addEventListener("message", (ev) => {
+  // Only trust windows we have a relationship with: the embedding parent
+  // (cross-origin dashboards included), the opener, or this window itself.
+  // Arbitrary pages holding a reference to this window are ignored.
+  if (!ev.source || (ev.source !== window.parent && ev.source !== window && ev.source !== window.opener)) {
+    dbg("message dropped: untrusted source", { origin: ev.origin || "null" });
+    return;
+  }
   const d = ev && ev.data ? ev.data : null;
   if (!d || typeof d !== "object") return;
-  console.info("[viewer-debug] message received", { type: d.type, origin: ev.origin || "null" });
+  dbg("message received", { type: d.type, origin: ev.origin || "null" });
   if (d.type === "bbox_layers_binary_v1") {
     try {
       const decoded = decodeBboxLayersBinaryV1(d.buffer);
@@ -6328,10 +6342,10 @@ window.addEventListener("message", (ev) => {
       const n = decoded.bbox_layers_by_frame && typeof decoded.bbox_layers_by_frame === "object"
         ? Object.keys(decoded.bbox_layers_by_frame).length
         : 0;
-      console.info("[viewer-debug] bbox_layers_binary_v1 decoded", { frames: n });
+      dbg("bbox_layers_binary_v1 decoded", { frames: n });
       if (cameraViewportEnabled) refreshCameraOverlay().catch(() => {});
     } catch (err) {
-      console.error("[viewer-debug] bbox_layers_binary_v1 decode failed", err);
+      dbg("bbox_layers_binary_v1 decode failed", err);
       setStatus(`bbox binary decode failed: ${err && err.message ? err.message : String(err)}`);
     }
   } else if (d.type === "bbox_layers") {
@@ -6344,11 +6358,13 @@ window.addEventListener("message", (ev) => {
       bboxLayersByFrame = frames;
       compareRunOrder = Array.isArray(d.compare_runs) ? d.compare_runs.map((v) => String(v || "").trim()).filter(Boolean) : [];
       const n = Object.keys(frames).length;
-      const ack = `/viewer/three/debug/message-received?t4dataset_id=${encodeURIComponent(dataset)}&scenario_name=${encodeURIComponent(scenario)}&frame_index=${frame}&gt_count=0&pred_count=0&matched_count=0&message_type=bbox_layers_by_frame&frames_count=${n}`;
-      fetch(ack)
-        .then((r) => r.ok ? r.json() : Promise.reject(new Error(String(r.status))))
-        .then((body) => console.info("[viewer-debug] bbox_layers_by_frame ack ok", body))
-        .catch((err) => console.warn("[viewer-debug] bbox_layers_by_frame ack failed", err));
+      if (viewerDebugEnabled) {
+        const ack = `/viewer/three/debug/message-received?t4dataset_id=${encodeURIComponent(dataset)}&scenario_name=${encodeURIComponent(scenario)}&frame_index=${frame}&gt_count=0&pred_count=0&matched_count=0&message_type=bbox_layers_by_frame&frames_count=${n}`;
+        fetch(ack)
+          .then((r) => r.ok ? r.json() : Promise.reject(new Error(String(r.status))))
+          .then((body) => dbg("bbox_layers_by_frame ack ok", body))
+          .catch((err) => dbg("bbox_layers_by_frame ack failed", err));
+      }
       applyEvalLayersForFrame(frame);
       rebuildAllMetricsPlots();
       if (cameraViewportEnabled) refreshCameraOverlay().catch(() => {});
