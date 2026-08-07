@@ -2047,11 +2047,15 @@ function addEvalPulseMarker(parent, center, colorHex, opts){
   return marker;
 }
 
+/** The 12 edges of a cuboid, as index pairs into an 8-corner list (two quads + verticals).
+ *  Single source of truth for every wireframe-box builder in this file. */
+const BOX_EDGE_PAIRS = [[0,1],[1,2],[2,3],[3,0],[4,5],[5,6],[6,7],[7,4],[0,4],[1,5],[2,6],[3,7]];
+
+/** corners: flat [x0,y0,z0,...] of 8 corners (Array or Float32Array view) → flat line-segment vertices. */
 function boxEdgeSegmentsFromCorners(corners){
-  if (!Array.isArray(corners) || corners.length < 24) return [];
-  const edges = [[0,1],[1,2],[2,3],[3,0],[4,5],[5,6],[6,7],[7,4],[0,4],[1,5],[2,6],[3,7]];
+  if (!corners || corners.length < 24) return [];
   const out = [];
-  for (const [a, b] of edges) {
+  for (const [a, b] of BOX_EDGE_PAIRS) {
     const a0 = a * 3;
     const b0 = b * 3;
     out.push(
@@ -3617,22 +3621,7 @@ function boxEdgesFromCenterWithOpts(box, opts){
     w = t;
   }
   const yaw = Number(box.yaw ?? box.heading ?? 0.0) + yawOff;
-  const hw = w / 2;
-  const hl = l / 2;
-  const hh = h / 2;
-  const c = Math.cos(yaw);
-  const s = Math.sin(yaw);
-  const body = [
-    [ hl,  hw,  hh], [ hl, -hw,  hh], [ hl, -hw, -hh], [ hl,  hw, -hh],
-    [-hl,  hw,  hh], [-hl, -hw,  hh], [-hl, -hw, -hh], [-hl,  hw, -hh],
-  ];
-  const corners = body.map(([bx, by, bz]) => [cx + bx * c - by * s, cy + bx * s + by * c, cz + bz]);
-  const edgePairs = [[0,1],[1,2],[2,3],[3,0],[4,5],[5,6],[6,7],[7,4],[0,4],[1,5],[2,6],[3,7]];
-  const out = [];
-  for (const [a, b] of edgePairs){
-    out.push(...corners[a], ...corners[b]);
-  }
-  return out;
+  return boxEdgeSegmentsFromCorners(boxCornersFromPose(cx, cy, cz, l, w, h, yaw));
 }
 
 /** PostMessage GT/Pred wireframes: apply T4 alignment offset and optional length/width swap (see URL params). */
@@ -3646,13 +3635,7 @@ function boxEdgesFromCenterExternal(box){
 function boxEdgesFromCorners(box){
   const arr = Array.isArray(box.corners) ? box.corners : [];
   if (arr.length !== 24) return null;
-  const edges = [[0,1],[1,2],[2,3],[3,0],[4,5],[5,6],[6,7],[7,4],[0,4],[1,5],[2,6],[3,7]];
-  const out = [];
-  for (const [a,b] of edges){
-    const a0 = a * 3, b0 = b * 3;
-    out.push(arr[a0], arr[a0+1], arr[a0+2], arr[b0], arr[b0+1], arr[b0+2]);
-  }
-  return out;
+  return boxEdgeSegmentsFromCorners(arr);
 }
 
 /** Aligns with common evaluator color_map: (GT|EST) × (TP|FN|FP).
@@ -6000,43 +5983,13 @@ function setFrameData(data){
   pointsGeom.setAttribute("color", new THREE.BufferAttribute(col, 3));
   pointsGeom.computeBoundingSphere();
   clearGroupDeep(boxesGroup);
-  const edges = [
-    [0,1],[1,2],[2,3],[3,0],
-    [4,5],[5,6],[6,7],[7,4],
-    [0,4],[1,5],[2,6],[3,7]
-  ];
   const batchSceneBoxes = data.boxCount > SCENE_BOX_BATCH_THRESHOLD;
   const batchedLinePts = batchSceneBoxes ? [] : null;
-  const appendCenterBoxEdges = (out, cx, cy, cz, sx, sy, sz, yaw) => {
-    const hx = Number(sx || 0) * 0.5;
-    const hy = Number(sy || 0) * 0.5;
-    const hz = Number(sz || 0) * 0.5;
-    const c = Math.cos(Number(yaw || 0));
-    const s = Math.sin(Number(yaw || 0));
-    const local = [
-      [ hx,  hy, -hz], [ hx, -hy, -hz], [-hx, -hy, -hz], [-hx,  hy, -hz],
-      [ hx,  hy,  hz], [ hx, -hy,  hz], [-hx, -hy,  hz], [-hx,  hy,  hz],
-    ];
-    const corners = local.map(([x, y, z]) => [
-      Number(cx || 0) + x * c - y * s,
-      Number(cy || 0) + x * s + y * c,
-      Number(cz || 0) + z,
-    ]);
-    for (const [a, b] of edges) out.push(...corners[a], ...corners[b]);
-  };
   for (let i=0;i<data.boxCount;i++) {
     const candidate = sceneSelectionCandidates[i] || null;
     if (data.format === "T4V3D002") {
       const base = i * 24;
-      const linePts = [];
-      for (const [a,b] of edges) {
-        const a0 = base + a * 3;
-        const b0 = base + b * 3;
-        linePts.push(
-          data.boxes[a0], data.boxes[a0 + 1], data.boxes[a0 + 2],
-          data.boxes[b0], data.boxes[b0 + 1], data.boxes[b0 + 2]
-        );
-      }
+      const linePts = boxEdgeSegmentsFromCorners(data.boxes.subarray(base, base + 24));
       if (batchSceneBoxes) {
         batchedLinePts.push(...linePts);
         continue;
@@ -6054,7 +6007,7 @@ function setFrameData(data){
       const cx=data.boxes[i*7], cy=data.boxes[i*7+1], cz=data.boxes[i*7+2];
       const sx=data.boxes[i*7+3], sy=data.boxes[i*7+4], sz=data.boxes[i*7+5], yaw=data.boxes[i*7+6];
       if (batchSceneBoxes) {
-        appendCenterBoxEdges(batchedLinePts, cx, cy, cz, sx, sy, sz, yaw);
+        batchedLinePts.push(...boxEdgeSegmentsFromCorners(boxCornersFromPose(cx, cy, cz, sx, sy, sz, yaw)));
         continue;
       }
       const g = new THREE.BoxGeometry(sx, sy, sz);
