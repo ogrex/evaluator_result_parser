@@ -55,15 +55,21 @@ sequenceDiagram
   C->>C: parseFrameBuffer → setFrameData (points + dataset 3D boxes)
 ```
 
-**Schema reference:** `GET /viewer/three/schema` documents the binary layout (`T4V3D002`: header + float32 points + 8-corner boxes + JSON labels).
+**Schema reference:** `GET /viewer/three/schema` documents the binary layout (`T4V3D002`: header + float32 points + 8-corner boxes + JSON labels). The document is generated from the packer's own constants (`VIEWER_FRAME_MAGIC`, `VIEWER_FRAME_HEADER_FMT` in `server.py`), so it cannot drift from the wire format.
+
+**Dependencies:** three.js 0.161 and its addons are vendored under `t4_visualizer/static/viewer_three/` and served same-origin — the viewer has no CDN dependency and works offline (fonts fall back to system fonts).
 
 ---
 
 ## 3. Per-frame update (scrub / play)
 
-When the user changes `frame_index`, the client runs `showFrame(i)`:
+When the user changes `frame_index`, the client runs `showFrame(i)`. Each call
+takes a **generation token**; a stale response that lands after a newer frame is
+discarded instead of overwriting the scene.
 
-1. **`fetchFrame(i)`** — GET `frame.bin` (client-side LRU `Map`, `MAX_CACHE` frames).
+1. **`fetchFrame(i)`** — GET `frame.bin` (client-side LRU `Map`: hits refresh
+   recency, concurrent requests for the same index share one fetch, and
+   eviction honors both `MAX_CACHE` frames and a byte budget).
 2. **`setFrameData`** — uploads LiDAR to `THREE.Points`; rebuilds **dataset** 3D boxes in `boxesGroup` (wireframe from 8 corners for `T4V3D002`).
 3. **`applyEvalLayersForFrame`** — if the parent sent **`bbox_layers_by_frame`**, pick `gt` / `pred` arrays for frame `i` and call `setExternalLayerPayload`.
 4. **`renderExternalLayers`** — draws **GT** and **EST** into separate groups (`gtLayerGroup`, `predLayerGroup`) using center+size+yaw JSON (see §5).
@@ -137,8 +143,18 @@ flowchart TD
   SET --> R["renderExternalLayers"]
   APPLY --> R
   R --> HUD["HUD: GT×TP/FN, EST×TP/FP counts"]
-  R --> ACK["Optional: GET /viewer/three/debug/message-received\n(ack / telemetry)"]
 ```
+
+**Trust model:** the `message` listener only accepts events whose `source` is the
+embedding parent window (cross-origin dashboards included), the opener, or the
+window itself; messages from arbitrary window references are dropped.
+
+**Binary variant:** `bbox_layers_binary_v1` carries the same per-frame layers as
+a packed `ArrayBuffer` (`decodeBboxLayersBinaryV1`) for large payloads.
+
+**Debug mode:** with `?debug=1` the viewer logs `[viewer-debug]` traces and acks
+layer pushes via `GET /viewer/three/debug/message-received`. Without the flag,
+no debug logging or ack round-trips happen.
 
 - **GT** is drawn with filled/glass styling; **EST** as wireframe on top (`predLayerGroup.renderOrder` > `gtLayerGroup`).
 - External bbox rows may now include optional rich metadata such as `pair_uuid`, `vx`, `vy`, `confidence`, `x_error`, `y_error`, `z_error`, `yaw_error`, `center_distance`, `plane_distance`, `pair_dt_sec`, and dataset/scenario context fields. The viewer treats these as optional and derives inspector chips, spotlight severity, and camera fusion behavior when present.
@@ -205,7 +221,7 @@ The parent can send **`postMessage` `eval_metrics_series`** with per-frame serie
 - Count/rate inputs: `gt_tp`, `gt_fn`, `est_tp`, `est_fp`, plus legacy `gt` / `pred` / `tpr`
 - Optional TP-quality inputs: `tp_center_distance_mean`, `tp_plane_distance_mean`, `tp_yaw_error_abs_mean`, `frame_severity_max`
 
-The viewer updates three orthographic charts (`metricsCanvas`, `metricsRatesCanvas`, `metricsErrorCanvas`) plus spotlight ranking. If the TP-quality series are not provided, the viewer derives them from `bbox_layers_by_frame` when the richer bbox metadata is available. This path is **orthogonal** to `frame.bin` (no server round-trip for the series data itself).
+The viewer updates three orthographic charts (`metricsCanvas`, `metricsRatesCanvas`, `metricsErrorCanvas`) plus spotlight ranking. All three charts are drawn by **one shared offscreen WebGL renderer** and blitted onto plain 2D canvases, so the page holds two WebGL contexts total (main scene + charts) regardless of how many panels are open. If the TP-quality series are not provided, the viewer derives them from `bbox_layers_by_frame` when the richer bbox metadata is available. This path is **orthogonal** to `frame.bin` (no server round-trip for the series data itself).
 
 ---
 
@@ -219,8 +235,9 @@ The viewer updates three orthographic charts (`metricsCanvas`, `metricsRatesCanv
 | `GET/POST /viewer/three/camera-overlay` | Camera image + 2D boxes; **POST** carries GT/EST JSON for projection. |
 | `GET /viewer/three/camera-info` | Camera calibration metadata for one frame / sample. |
 | `GET /viewer/three/lanelet-lines` | Lanelet / map segments near ego. |
-| `GET /viewer/three/frames/window` | Prefetch hints (URLs per frame index). |
-| `GET /viewer/three/debug/message-received` | Optional ack when layers are applied (debug/telemetry). |
+| `GET /viewer/three/frames/window` | Prefetch hints (URLs per frame index). Not used by the built-in client (it prefetches ±3 frames itself); kept for external tools. |
+| `GET/POST /viewer/three/session` | Persist/share a viewer session payload (32 MB cap, TTL'd store). |
+| `GET /viewer/three/debug/message-received` | Ack when layers are applied. Only called by the client with `?debug=1`. |
 
 ---
 
