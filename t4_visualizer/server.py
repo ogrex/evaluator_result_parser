@@ -117,64 +117,82 @@ logger = logging.getLogger(__name__)
 # ---------------------------------------------------------------------------
 
 class _Tier4Cache:
-    """Thread-safe LRU cache for Tier4 instances keyed by dataset path."""
+    """Thread-safe LRU cache for Tier4 instances keyed by (dataset path, version)."""
 
     def __init__(self, max_size: int = 8):
-        self._cache: Dict[Path, object] = {}   # Path → Tier4
-        self._order: List[Path] = []           # LRU order (most-recent last)
+        self._cache: Dict[Tuple[Path, Optional[str]], object] = {}   # (path, version) → Tier4
+        self._order: List[Tuple[Path, Optional[str]]] = []           # LRU order (most-recent last)
         self._max_size = max_size
         self._lock = threading.Lock()
+        self._load_locks: Dict[Tuple[Path, Optional[str]], threading.Lock] = {}
         self._hits = 0
         self._misses = 0
         self._loads = 0
         self._evictions = 0
 
-    def get(self, path: Path):
-        """Return cached Tier4 for *path*, or None if not present."""
+    def get(self, path: Path, version: Optional[str] = None):
+        """Return cached Tier4 for *(path, version)*, or None if not present."""
+        key = (path, version)
         with self._lock:
-            if path in self._cache:
-                self._order.remove(path)
-                self._order.append(path)
+            if key in self._cache:
+                self._order.remove(key)
+                self._order.append(key)
                 self._hits += 1
-                return self._cache[path]
+                return self._cache[key]
             self._misses += 1
         return None
 
-    def put(self, path: Path, t4) -> None:
-        """Store *t4* for *path*, evicting the LRU entry if over capacity."""
+    def put(self, path: Path, t4, version: Optional[str] = None) -> None:
+        """Store *t4* for *(path, version)*, evicting the LRU entry if over capacity."""
+        key = (path, version)
         with self._lock:
-            if path in self._cache:
-                self._order.remove(path)
+            if key in self._cache:
+                self._order.remove(key)
             elif len(self._cache) >= self._max_size:
                 evict = self._order.pop(0)
                 del self._cache[evict]
                 self._evictions += 1
-            self._cache[path] = t4
-            self._order.append(path)
+            self._cache[key] = t4
+            self._order.append(key)
 
     def load(self, path: Path, version: Optional[str] = None):
-        """Return a Tier4 instance for *path*, loading it if not cached."""
-        t4 = self.get(path)
+        """Return a Tier4 instance for *(path, version)*, loading it if not cached.
+
+        Concurrent requests for the same key share a single load (singleflight):
+        one thread runs the expensive Tier4 construction while the others block
+        on the per-key lock and then hit the cache.
+        """
+        key = (path, version)
+        t4 = self.get(path, version)
         if t4 is not None:
             return t4
 
-        try:
-            from t4_devkit import Tier4
-        except ImportError as exc:
-            raise ImportError(
-                "t4_devkit is not installed. "
-                "Install with: pip install git+https://github.com/tier4/t4-devkit.git"
-            ) from exc
-
-        from t4_visualizer.downloader import find_t4_root, prepare_dataset_root, patch_missing_t4_tables
-        t4_root = find_t4_root(path)
-        t4_root = prepare_dataset_root(t4_root)
-        patch_missing_t4_tables(t4_root)
-        kwargs = {"version": version} if version else {}
-        t4 = Tier4(str(t4_root), **kwargs)
         with self._lock:
-            self._loads += 1
-        self.put(path, t4)
+            load_lock = self._load_locks.setdefault(key, threading.Lock())
+        with load_lock:
+            t4 = self.get(path, version)
+            if t4 is not None:
+                return t4
+
+            try:
+                from t4_devkit import Tier4
+            except ImportError as exc:
+                raise ImportError(
+                    "t4_devkit is not installed. "
+                    "Install with: pip install git+https://github.com/tier4/t4-devkit.git"
+                ) from exc
+
+            from t4_visualizer.downloader import find_t4_root, prepare_dataset_root, patch_missing_t4_tables
+            t4_root = find_t4_root(path)
+            t4_root = prepare_dataset_root(t4_root)
+            patch_missing_t4_tables(t4_root)
+            kwargs = {"version": version} if version else {}
+            t4 = Tier4(str(t4_root), **kwargs)
+            with self._lock:
+                self._loads += 1
+            self.put(path, t4, version)
+        with self._lock:
+            self._load_locks.pop(key, None)
         return t4
 
     def stats(self) -> Dict[str, object]:
@@ -187,7 +205,9 @@ class _Tier4Cache:
                 "misses": self._misses,
                 "loads": self._loads,
                 "evictions": self._evictions,
-                "keys": [str(p) for p in self._order],
+                "keys": [
+                    f"{p}@{v}" if v else str(p) for p, v in self._order
+                ],
             }
 
 
@@ -769,12 +789,34 @@ def _build_app(
         )
 
     def _resolve_dataset(t4dataset_id: str) -> Path:
+        # A dataset id is a single directory name; path separators or parent
+        # references would let a client resolve paths outside --data-dir.
+        if (
+            not t4dataset_id
+            or t4dataset_id in (".", "..")
+            or "/" in t4dataset_id
+            or "\\" in t4dataset_id
+        ):
+            _public_error(
+                status_code=400,
+                code="invalid_dataset_id",
+                message=f"Dataset id '{t4dataset_id}' is not a valid dataset name.",
+                hint="Dataset ids must be a bare directory name without path separators.",
+            )
         path = _path_cache.resolve(
             data_dirs,
             search_depth,
             t4dataset_id,
             lambda: find_dataset_in_dirs(data_dirs, t4dataset_id, search_depth),
         )
+        if path is not None:
+            # Lexical containment check (no symlink resolution: data dirs may
+            # legitimately symlink to a shared dataset mount).
+            normalized = Path(os.path.normpath(path))
+            if not any(
+                normalized.is_relative_to(Path(os.path.normpath(d))) for d in data_dirs
+            ):
+                path = None
         if path is None:
             _public_error(
                 status_code=404,
@@ -2084,13 +2126,13 @@ def _build_app(
                 cx, cy, cz = float(center[0]), float(center[1]), float(center[2])
                 sx, sy, sz = float(size[0]), float(size[1]), float(size[2])
                 hx, hy, hz = sx / 2.0, sy / 2.0, sz / 2.0
-                pts = [
+                corner_pts = [
                     [cx + hx, cy + hy, cz + hz], [cx + hx, cy - hy, cz + hz],
                     [cx + hx, cy - hy, cz - hz], [cx + hx, cy + hy, cz - hz],
                     [cx - hx, cy + hy, cz + hz], [cx - hx, cy - hy, cz + hz],
                     [cx - hx, cy - hy, cz - hz], [cx - hx, cy + hy, cz - hz],
                 ]
-                flat = [float(v) for p in pts for v in p]
+                flat = [float(v) for p in corner_pts for v in p]
             box_rows.append(flat)
             labels.append(str(getattr(box, "label", "") or ""))
         box_arr = np.asarray(box_rows, dtype=np.float32) if box_rows else np.zeros((0, 24), dtype=np.float32)
