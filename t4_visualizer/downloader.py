@@ -1032,17 +1032,37 @@ def find_t4_root(path: Path) -> Path:
         path/<uuid>/annotation/...
         path/map/             →  returns path/<uuid>/
 
-    Falls back to *path* if neither layout is recognised (lets Tier4
+    Version-then-UUID layout — both levels present::
+
+        path/0/<uuid>/annotation/...
+        path/0/map/           →  returns path/0/<uuid>/
+
+    The third shape is what some webauto downloads produce: the version
+    directory holds another id-named directory instead of the tables, so
+    neither of the first two checks matches and Tier4 was handed a directory
+    with no annotations at all (a 500 with nothing in the log to explain it).
+
+    Falls back to *path* if no layout is recognised (lets Tier4
     raise its own informative error).
     """
     if _is_t4_root(path):
         return path
     try:
-        for subdir in sorted(path.iterdir()):
-            if subdir.is_dir() and _is_t4_root(subdir):
-                return subdir
+        children = sorted(c for c in path.iterdir() if c.is_dir())
     except OSError:
-        pass
+        return path
+    for subdir in children:
+        if _is_t4_root(subdir):
+            return subdir
+    # One level deeper, e.g. a version directory wrapping the real root.
+    for subdir in children:
+        try:
+            grandchildren = sorted(g for g in subdir.iterdir() if g.is_dir())
+        except OSError:
+            continue
+        for candidate in grandchildren:
+            if _is_t4_root(candidate):
+                return candidate
     return path
 
 

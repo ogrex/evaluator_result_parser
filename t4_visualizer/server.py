@@ -506,6 +506,10 @@ try:
 
         t4dataset_id: str
         available: bool
+        # Why it is unavailable, when the answer is more useful than a bare false:
+        # callers gate the 3D viewer on this and otherwise have nothing to show
+        # the user but "not available".
+        reason: Optional[str] = None
         dataset_path: Optional[str] = None
 
     class TlrFrameAnnotationOut(BaseModel):
@@ -710,8 +714,14 @@ def _build_app(
 
     def _safe_error(status_code: int, code: str, message: str, exc: Optional[Exception] = None):
         detail: Dict[str, object] = {"code": code, "message": message}
-        if _debug_visibility and exc is not None:
-            detail["debug"] = str(exc)
+        if exc is not None:
+            # The response stays deliberately terse, but a 500 used to leave no
+            # trace anywhere: the log showed the request and its status and
+            # nothing about the cause, so "meta HTTP 500" was undiagnosable
+            # without reproducing it by hand. Server-side always logs.
+            logger.exception("%s (%s): %s", message, code, exc)
+            if _debug_visibility:
+                detail["debug"] = str(exc)
         raise HTTPException(status_code=status_code, detail=detail)
 
     # Session store hygiene: cap individual payloads and garbage-collect old
@@ -2164,7 +2174,10 @@ def _build_app(
         """Return whether *t4dataset_id* resolves under any of the configured ``data_dirs``.
 
         Uses the same lookup as ``POST /render`` and ``GET /datasets/.../scenarios``
-        (:func:`t4_visualizer.batch.find_dataset_in_dirs`). Does not load Tier4.
+        (:func:`t4_visualizer.batch.find_dataset_in_dirs`). Does not load Tier4,
+        but does check that the directory actually holds T4 tables: callers gate
+        the viewer on this answer, and a dataset that resolves yet cannot be
+        loaded used to report available and then fail at boot with a 500.
         Results are cached briefly (see ``--dataset-path-cache-ttl``).
         """
         found = _path_cache.resolve(
@@ -2174,6 +2187,18 @@ def _build_app(
             lambda: find_dataset_in_dirs(data_dirs, t4dataset_id, search_depth),
         )
         if found is not None:
+            from t4_visualizer.downloader import find_t4_root, _is_t4_root
+
+            if not _is_t4_root(find_t4_root(found)):
+                return DatasetAvailabilityResponse(
+                    t4dataset_id=t4dataset_id,
+                    available=False,
+                    reason=(
+                        "The dataset directory exists but holds no T4 annotation tables "
+                        "(no annotation/sample.json under it)."
+                    ),
+                    dataset_path=str(found.resolve()) if _debug_visibility else None,
+                )
             return DatasetAvailabilityResponse(
                 t4dataset_id=t4dataset_id,
                 available=True,

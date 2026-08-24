@@ -5787,7 +5787,18 @@ function animate(ts){
     console.warn("[viewer] ego vehicle mesh unavailable, using box fallback", err);
   });
   const metaRes = await fetch(metaUrl);
-  if (!metaRes.ok) throw new Error(`meta HTTP ${metaRes.status}`);
+  if (!metaRes.ok) {
+    // The server explains itself in the body (code + message); showing only the
+    // status turned "this dataset has no annotation tables on disk" into a bare
+    // "meta HTTP 500" that told the user nothing about what to do next.
+    let why = "";
+    try {
+      const body = await metaRes.json();
+      const d = (body && body.detail) || body || {};
+      why = [d.message, d.hint, d.debug].filter(Boolean).join(" ");
+    } catch (e) { /* not JSON */ }
+    throw new Error(`meta HTTP ${metaRes.status}${why ? ` - ${why}` : ""}`);
+  }
   const meta = await metaRes.json();
   totalFrames = Number(meta.total_frames || 0);
   slider.max = String(Math.max(0, totalFrames - 1));
