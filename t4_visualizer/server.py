@@ -355,6 +355,29 @@ def viewer_frame_schema() -> Dict[str, object]:
     }
 
 
+def _decimate_points(points, max_points: Optional[int]):
+    """Thin a point cloud down to ``max_points`` with a uniform stride.
+
+    Stride rather than random sampling or voxelisation: it is O(1) (a numpy
+    view, no copy of the discarded points), deterministic, and keeps the sweep's
+    angular coverage, so a decimated frame reads as the same scene at lower
+    density instead of a different cloud each time it is fetched.
+    """
+    if not max_points:
+        return points
+    try:
+        import numpy as np
+
+        arr = np.asarray(points)
+        n = int(arr.shape[0])
+        if n <= int(max_points):
+            return points
+        step = -(-n // int(max_points))          # ceil, so the result fits the cap
+        return arr[::step]
+    except Exception:
+        return points
+
+
 def pack_viewer_frame_binary(
     *,
     frame_index: int,
@@ -2501,6 +2524,18 @@ def _build_app(
         frame_index: int = Query(..., ge=0),
         version: Optional[str] = None,
         response_format: str = Query("binary", alias="format"),
+        max_points: Optional[int] = Query(
+            None,
+            ge=1000,
+            le=5_000_000,
+            description=(
+                "Cap on returned LiDAR points. A dense frame is ~300k points / ~4.9 MB, "
+                "which is what makes slider scrubbing wait on the network; the viewer "
+                "asks for a decimated frame while dragging and the full one once it "
+                "settles. Points are taken with a uniform stride, so the same frame "
+                "always yields the same subset and the cloud does not shimmer."
+            ),
+        ),
         if_none_match: Optional[str] = Header(None),
     ):
         dataset_path = _resolve_dataset(t4dataset_id)
@@ -2510,10 +2545,13 @@ def _build_app(
             sample = _get_scenario_sample(t4, resolved_scenario, frame_index)
             # Frame payloads are immutable per sample: answer conditionals
             # before touching the LiDAR file, so a 304 costs only metadata.
-            etag = f'"{sample.token}"'
+            # The point budget is part of the identity, or a decimated frame
+            # would be revalidated as if it were the full one.
+            etag = f'"{sample.token}"' if not max_points else f'"{sample.token}:{int(max_points)}"'
             if response_format == "binary" and if_none_match == etag:
                 return Response(status_code=304, headers={"ETag": etag})
             points, boxes_3d = _pointcloud_and_boxes_for_sample(t4, sample)
+            points = _decimate_points(points, max_points)
             if response_format == "json":
                 if not _debug_visibility:
                     _public_error(403, "json_debug_only", "JSON frame format is allowed in debug mode only.")

@@ -419,6 +419,13 @@ async function loadEgoVehicleMesh(){
 }
 const cache = new Map(); const MAX_CACHE = 100;
 const PREFETCH_RADIUS = 3;   // frames kept warm on each side of the current one
+// While the slider is moving, a decimated frame is fetched instead of the full
+// one: a dense sweep is ~300k points / ~4.9 MB, and waiting on that is what made
+// dragging feel heavy. The frame the user settles on is then loaded at full
+// density, so the picture they actually look at is never the reduced one.
+const SCRUB_MAX_POINTS = 120000;
+const previewCache = new Map();     // frame index → decimated frame
+const PREVIEW_CACHE_MAX = 24;
 // Frame cache is byte-budgeted as well as count-capped: dense LiDAR frames run
 // to several MB each, so 100 frames of raw Float32Arrays could hold hundreds
 // of MB of JS heap. Eviction is LRU (hits refresh recency in fetchFrame).
@@ -4174,7 +4181,38 @@ function applyEvalLayersForFrame(i){
   }
 }
 
-async function fetchFrame(i, { prefetch = false } = {}){
+async function fetchFrame(i, { prefetch = false, scrub = false } = {}){
+  // A full frame already in hand always beats fetching a reduced one.
+  if (scrub && !cache.has(i)) {
+    if (previewCache.has(i)) {
+      const v = previewCache.get(i);
+      previewCache.delete(i); previewCache.set(i, v);   // refresh LRU recency
+      return v;
+    }
+    if (inflightFrames.has(i)) return inflightFrames.get(i);
+    const ctrl = new AbortController();
+    const p = (async () => {
+      const url = `/viewer/three/frame.bin?t4dataset_id=${encodeURIComponent(dataset)}`
+        + `&scenario_name=${encodeURIComponent(scenario)}&frame_index=${i}${qv}`
+        + `&max_points=${SCRUB_MAX_POINTS}`;
+      const res = await fetch(url, { signal: ctrl.signal });
+      if (!res.ok) throw new Error(`frame ${i}: HTTP ${res.status}`);
+      const parsed = parseFrameBuffer(await res.arrayBuffer());
+      previewCache.set(i, parsed);
+      while (previewCache.size > PREVIEW_CACHE_MAX) {
+        previewCache.delete(previewCache.keys().next().value);
+      }
+      return parsed;
+    })();
+    inflightFrames.set(i, p);
+    inflightControllers.set(i, { ctrl, prefetch });
+    try {
+      return await p;
+    } finally {
+      inflightFrames.delete(i);
+      inflightControllers.delete(i);
+    }
+  }
   if (cache.has(i)) {
     // Refresh recency so ping-pong scrubbing doesn't evict the frames in use.
     const v = cache.get(i);
@@ -5121,7 +5159,7 @@ function setFrameData(data){
 }
 
 let showFrameGeneration = 0;
-async function showFrame(i){
+async function showFrame(i, { scrub = false } = {}){
   // Generation token: while a fetch is in flight the user may scrub further;
   // a stale response must never overwrite the scene of a newer frame.
   const gen = ++showFrameGeneration;
@@ -5132,7 +5170,7 @@ async function showFrame(i){
   abortStaleFrames(frame);
   let data;
   try {
-    data = await fetchFrame(frame);
+    data = await fetchFrame(frame, { scrub });
   } catch (err) {
     if (isAbort(err)) return;                 // superseded by a newer scrub
     throw err;
@@ -5149,7 +5187,9 @@ async function showFrame(i){
     if (gen !== showFrameGeneration) return;
     laneletGroup.visible = true;
   }
-  prefetchAround(frame);
+  // Readahead only for a frame the user has settled on: warming six full-density
+  // neighbours (~30 MB) around one they are merely dragging past is pure waste.
+  if (!scrub) prefetchAround(frame);
   if (bboxLayersByFrame) {
     applyEvalLayersForFrame(frame);
   } else {
@@ -5186,13 +5226,15 @@ function scrubTo(value, { immediate = false } = {}) {
   if (scrubTimer) { clearTimeout(scrubTimer); scrubTimer = 0; }
   const run = () => {
     scrubTimer = 0;
-    showFrame(target).catch((e) => setStatus(`error: ${e.message}`));
+    // Mid-drag: a light frame, fast. On release: the full one.
+    showFrame(target, { scrub: !immediate }).catch((e) => setStatus(`error: ${e.message}`));
   };
   if (immediate) run();
   else scrubTimer = setTimeout(run, 80);
 }
 slider.addEventListener("input", () => scrubTo(slider.value));
-// Release (and keyboard/click stepping) loads without waiting out the debounce.
+// Release (and keyboard/click stepping) loads the full frame without waiting out
+// the debounce, replacing whatever preview the drag left on screen.
 slider.addEventListener("change", () => scrubTo(slider.value, { immediate: true }));
 document.getElementById("camReset").addEventListener("click", () => {
   followEgo = false;
