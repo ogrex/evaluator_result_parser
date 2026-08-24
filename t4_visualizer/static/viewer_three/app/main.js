@@ -418,12 +418,34 @@ async function loadEgoVehicleMesh(){
   }
 }
 const cache = new Map(); const MAX_CACHE = 100;
+const PREFETCH_RADIUS = 3;   // frames kept warm on each side of the current one
 // Frame cache is byte-budgeted as well as count-capped: dense LiDAR frames run
 // to several MB each, so 100 frames of raw Float32Arrays could hold hundreds
 // of MB of JS heap. Eviction is LRU (hits refresh recency in fetchFrame).
 const CACHE_BYTE_BUDGET = 256 * 1024 * 1024;
 let cacheBytes = 0;
 const inflightFrames = new Map();  // frame index → Promise, dedups concurrent fetches
+// Each in-flight frame keeps its AbortController: a LiDAR frame is several MB,
+// so a drag across the slider used to start one full download per intermediate
+// value and never cancel any of them. The generation token stopped stale frames
+// from being *drawn*, but the bytes still arrived, and the frame the user landed
+// on queued behind them (browsers allow ~6 requests per origin). Superseded
+// fetches are aborted instead.
+const inflightControllers = new Map();  // frame index → {ctrl, prefetch}
+// Cancel the trail a scrub leaves behind, without cutting the prefetch pipeline
+// that makes playback smooth: a request is dropped when it was requested for
+// display and is no longer the frame wanted, or when it sits outside the
+// prefetch window around the new frame (a jump makes those useless too).
+function abortStaleFrames(keep){
+  for (const [i, rec] of Array.from(inflightControllers.entries())) {
+    const nearby = Math.abs(i - keep) <= PREFETCH_RADIUS;
+    if (i === keep || (rec.prefetch && nearby)) continue;
+    try { rec.ctrl.abort(); } catch (e) { /* already settled */ }
+    inflightControllers.delete(i);
+    inflightFrames.delete(i);
+  }
+}
+const isAbort = (err) => err && (err.name === "AbortError" || err.code === 20);
 function frameByteSize(parsed){
   return ((parsed && parsed.pts && parsed.pts.byteLength) || 0)
     + ((parsed && parsed.boxes && parsed.boxes.byteLength) || 0)
@@ -4152,7 +4174,7 @@ function applyEvalLayersForFrame(i){
   }
 }
 
-async function fetchFrame(i){
+async function fetchFrame(i, { prefetch = false } = {}){
   if (cache.has(i)) {
     // Refresh recency so ping-pong scrubbing doesn't evict the frames in use.
     const v = cache.get(i);
@@ -4163,19 +4185,22 @@ async function fetchFrame(i){
   // Dedup: showFrame and prefetchAround racing on the same index share one
   // request instead of double-fetching and double-parsing.
   if (inflightFrames.has(i)) return inflightFrames.get(i);
+  const ctrl = new AbortController();
   const p = (async () => {
     const url = `/viewer/three/frame.bin?t4dataset_id=${encodeURIComponent(dataset)}&scenario_name=${encodeURIComponent(scenario)}&frame_index=${i}${qv}`;
-    const res = await fetch(url);
+    const res = await fetch(url, { signal: ctrl.signal });
     if (!res.ok) throw new Error(`frame ${i}: HTTP ${res.status}`);
     const parsed = parseFrameBuffer(await res.arrayBuffer());
     cacheStoreFrame(i, parsed);
     return parsed;
   })();
   inflightFrames.set(i, p);
+  inflightControllers.set(i, { ctrl, prefetch });
   try {
     return await p;
   } finally {
     inflightFrames.delete(i);
+    inflightControllers.delete(i);
   }
 }
 
@@ -4219,10 +4244,12 @@ async function loadLanelet(){
 
 async function prefetchAround(i){
   const tasks = [];
-  for (let d = 1; d <= 3; d++) {
+  for (let d = 1; d <= PREFETCH_RADIUS; d++) {
     for (const j of [i + d, i - d]) {
       if (j >= 0 && j < totalFrames && !cache.has(j)) {
-        tasks.push(fetchFrame(j).catch(() => null));
+        // Aborted prefetches are normal now (a scrub cancels them), so they stay
+        // silent -- they were already best-effort.
+        tasks.push(fetchFrame(j, { prefetch: true }).catch(() => null));
       }
     }
   }
@@ -5101,7 +5128,15 @@ async function showFrame(i){
   frame = Math.max(0, Math.min(totalFrames-1, i));
   setFrameText();
   setStatus(`loading frame ${frame} ...`);
-  const data = await fetchFrame(frame);
+  // Free the connection for the frame actually being asked for.
+  abortStaleFrames(frame);
+  let data;
+  try {
+    data = await fetchFrame(frame);
+  } catch (err) {
+    if (isAbort(err)) return;                 // superseded by a newer scrub
+    throw err;
+  }
   if (gen !== showFrameGeneration) return;
   setFrameData(data);
   updateColorbar();
@@ -5139,9 +5174,26 @@ document.getElementById("playBtn").addEventListener("click", () => {
 document.getElementById("speed").addEventListener("change", (e) => {
   fps = 6 * Number(e.target.value || "1");
 });
-slider.addEventListener("input", () => {
-  showFrame(Number(slider.value)).catch((e) => setStatus(`error: ${e.message}`));
-});
+// Dragging fires `input` for every value crossed. Moving the marker is free, but
+// fetching is not, so the load is coalesced: the position and label follow the
+// thumb immediately and only the value the user rests on (or the last one, on
+// release) is fetched.
+let scrubTimer = 0;
+function scrubTo(value, { immediate = false } = {}) {
+  const target = Number(value);
+  frame = Math.max(0, Math.min(totalFrames - 1, target));
+  setFrameText();
+  if (scrubTimer) { clearTimeout(scrubTimer); scrubTimer = 0; }
+  const run = () => {
+    scrubTimer = 0;
+    showFrame(target).catch((e) => setStatus(`error: ${e.message}`));
+  };
+  if (immediate) run();
+  else scrubTimer = setTimeout(run, 80);
+}
+slider.addEventListener("input", () => scrubTo(slider.value));
+// Release (and keyboard/click stepping) loads without waiting out the debounce.
+slider.addEventListener("change", () => scrubTo(slider.value, { immediate: true }));
 document.getElementById("camReset").addEventListener("click", () => {
   followEgo = false;
   setSelectedInspectCandidate(null);
