@@ -429,7 +429,15 @@ const PREVIEW_CACHE_MAX = 24;
 // Frame cache is byte-budgeted as well as count-capped: dense LiDAR frames run
 // to several MB each, so 100 frames of raw Float32Arrays could hold hundreds
 // of MB of JS heap. Eviction is LRU (hits refresh recency in fetchFrame).
-const CACHE_BYTE_BUDGET = 256 * 1024 * 1024;
+// A parsed frame is ~4.9 MB, so 256 MB holds ~53 of them: on a 156-frame scene,
+// visiting more than that guarantees eviction and a re-download later, which is
+// why frames already looked at can still hit the network. Machines reporting
+// 8 GB+ (the Device Memory API caps there) get twice the budget, ~105 frames.
+const CACHE_BYTE_BUDGET = (() => {
+  let gb = 0;
+  try { gb = Number(navigator.deviceMemory || 0); } catch (e) { gb = 0; }
+  return (gb >= 8 ? 512 : 256) * 1024 * 1024;
+})();
 let cacheBytes = 0;
 const inflightFrames = new Map();  // frame index → Promise, dedups concurrent fetches
 // Each in-flight frame keeps its AbortController: a LiDAR frame is several MB,
@@ -4147,7 +4155,7 @@ function setExternalLayerPayload(payload, opts){
   updateEvalHud();
   syncSpotlightFrames();
   const b = countEvalBucketsFromBoxes(gt, pred);
-  setStatus(`ready · cached=${cache.size} · ext(GT·TP=${b.gt_tp},GT·FN=${b.gt_fn},EST·TP=${b.est_tp},EST·FP=${b.est_fp})`);
+  setStatus(`ready · cached=${cache.size}/${totalFrames} · ext(GT·TP=${b.gt_tp},GT·FN=${b.gt_fn},EST·TP=${b.est_tp},EST·FP=${b.est_fp})`);
   if (doCameraRefresh && cameraViewportEnabled) refreshCameraOverlay().catch(() => {});
   if (!doAck || !viewerDebugEnabled) return;
   const ack = `/viewer/three/debug/message-received?t4dataset_id=${encodeURIComponent(dataset)}&scenario_name=${encodeURIComponent(scenario)}&frame_index=${frame}&gt_count=${gt.length}&pred_count=${pred.length}&matched_count=0`;
@@ -4177,11 +4185,41 @@ function applyEvalLayersForFrame(i){
     externalLayers = { gt: [], pred: [] };
     renderExternalLayers();
     updateEvalHud();
-    setStatus(`ready · cached=${cache.size} · ext(empty)`);
+    setStatus(`ready · cached=${cache.size}/${totalFrames} · ext(empty)`);
   }
 }
 
-async function fetchFrame(i, { prefetch = false, scrub = false } = {}){
+// Read a frame body, reporting bytes as they arrive. Frames run to several MB,
+// so "loading frame 12 ..." with no number cannot be told apart from a stall.
+// Falls back to arrayBuffer() when the length is unknown or the body is not
+// streamable.
+async function readFrameBody(res, onProgress){
+  const total = Number(res.headers.get("content-length") || 0);
+  if (!onProgress || !total || !res.body || typeof res.body.getReader !== "function") {
+    return res.arrayBuffer();
+  }
+  const reader = res.body.getReader();
+  const chunks = [];
+  let got = 0, lastTick = 0;
+  for (;;) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    chunks.push(value);
+    got += value.byteLength;
+    const now = (typeof performance !== "undefined" ? performance.now() : Date.now());
+    if (now - lastTick > 90) { lastTick = now; onProgress(got, total); }   // ~11 updates/s
+  }
+  onProgress(got, total);
+  const out = new Uint8Array(got);
+  let off = 0;
+  for (const c of chunks) { out.set(c, off); off += c.byteLength; }
+  return out.buffer;
+}
+
+// Already in memory: no request, and so no "loading" claim either.
+const frameIsResident = (i, scrub) => cache.has(i) || (!!scrub && previewCache.has(i));
+
+async function fetchFrame(i, { prefetch = false, scrub = false, onProgress = null } = {}){
   // A full frame already in hand always beats fetching a reduced one.
   if (scrub && !cache.has(i)) {
     if (previewCache.has(i)) {
@@ -4228,7 +4266,7 @@ async function fetchFrame(i, { prefetch = false, scrub = false } = {}){
     const url = `/viewer/three/frame.bin?t4dataset_id=${encodeURIComponent(dataset)}&scenario_name=${encodeURIComponent(scenario)}&frame_index=${i}${qv}`;
     const res = await fetch(url, { signal: ctrl.signal });
     if (!res.ok) throw new Error(`frame ${i}: HTTP ${res.status}`);
-    const parsed = parseFrameBuffer(await res.arrayBuffer());
+    const parsed = parseFrameBuffer(await readFrameBody(res, onProgress));
     cacheStoreFrame(i, parsed);
     return parsed;
   })();
@@ -5165,12 +5203,22 @@ async function showFrame(i, { scrub = false } = {}){
   const gen = ++showFrameGeneration;
   frame = Math.max(0, Math.min(totalFrames-1, i));
   setFrameText();
-  setStatus(`loading frame ${frame} ...`);
+  // Saying "loading" for a frame already in memory made re-visits look like
+  // downloads; only a real fetch reports, and it reports how far along it is.
+  const resident = frameIsResident(frame, scrub);
+  const mib = (n) => (n / 1048576).toFixed(1);
+  const shown = frame;                        // snapshot: `frame` moves as the user scrubs
+  const onProgress = resident ? null : (got, total) => {
+    if (gen !== showFrameGeneration) return;
+    const pct = total ? Math.round((100 * got) / total) : 0;
+    setStatus(`loading frame ${shown} · ${mib(got)}/${mib(total)} MB (${pct}%)`);
+  };
+  if (!resident) setStatus(`loading frame ${frame} ...`);
   // Free the connection for the frame actually being asked for.
   abortStaleFrames(frame);
   let data;
   try {
-    data = await fetchFrame(frame, { scrub });
+    data = await fetchFrame(frame, { scrub, onProgress });
   } catch (err) {
     if (isAbort(err)) return;                 // superseded by a newer scrub
     throw err;
@@ -5194,7 +5242,7 @@ async function showFrame(i, { scrub = false } = {}){
     applyEvalLayersForFrame(frame);
   } else {
     updateEvalHud();
-    setStatus(`ready · cached=${cache.size}`);
+    setStatus(`ready · cached=${cache.size}/${totalFrames}`);
   }
   updateSpotlightHud();
   updateSelectedCandidateForFrame();
@@ -5517,6 +5565,10 @@ window.addEventListener("message", (ev) => {
 });
 window.T4ViewerAPI = {
   setLayers(payload){ bboxLayersByFrame = null; setExternalLayerPayload(payload || {}); },
+  // Exposed for the smoke harness: frame progress reporting is otherwise only
+  // observable as a status line that a fast response overwrites immediately.
+  _readFrameBody: readFrameBody,
+  _frameIsResident: frameIsResident,
   clearLayers(){ clearCurrentViewerLayers({ clearMetrics: false }); },
   debugState(){
     const firstGt = Array.isArray(externalLayers.gt) && externalLayers.gt.length ? externalLayers.gt[0] : null;
