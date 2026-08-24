@@ -417,7 +417,7 @@ async function loadEgoVehicleMesh(){
     await loadEgoVehicleMeshFrom(EGO_MESH_FALLBACK);
   }
 }
-const cache = new Map(); const MAX_CACHE = 100;
+const cache = new Map();
 const PREFETCH_RADIUS = 3;   // frames kept warm on each side of the current one
 // While the slider is moving, a decimated frame is fetched instead of the full
 // one: a dense sweep is ~300k points / ~4.9 MB, and waiting on that is what made
@@ -425,20 +425,50 @@ const PREFETCH_RADIUS = 3;   // frames kept warm on each side of the current one
 // density, so the picture they actually look at is never the reduced one.
 const SCRUB_MAX_POINTS = 120000;
 const previewCache = new Map();     // frame index → decimated frame
-const PREVIEW_CACHE_MAX = 24;
-// Frame cache is byte-budgeted as well as count-capped: dense LiDAR frames run
-// to several MB each, so 100 frames of raw Float32Arrays could hold hundreds
-// of MB of JS heap. Eviction is LRU (hits refresh recency in fetchFrame).
-// A parsed frame is ~4.9 MB, so 256 MB holds ~53 of them: on a 156-frame scene,
-// visiting more than that guarantees eviction and a re-download later, which is
-// why frames already looked at can still hit the network. Machines reporting
-// 8 GB+ (the Device Memory API caps there) get twice the budget, ~105 frames.
-const CACHE_BYTE_BUDGET = (() => {
+// The frame caches are budgeted in bytes, not frames: a parsed frame is ~4.9 MB
+// and a preview ~1.55 MB, so any count-based cap either wastes memory on light
+// scenes or blows past it on dense ones. Eviction is LRU (hits refresh recency).
+//
+// Sizing: a 156-frame scene is ~760 MB at full density, ~240 MB as previews.
+// deviceMemory is coarse and caps at 8, so "8" means "8 GB or more" and gets the
+// large tier; anything smaller, or a browser that will not say, stays modest
+// because overshooting here kills the tab rather than degrading. `?cache_mb=`
+// overrides it for a machine the API cannot describe (Chrome reports 8 on a
+// 64 GB workstation), clamped to something a renderer can actually hold.
+const CACHE_BUDGET_MB = (() => {
+  const clamp = (v) => Math.max(128, Math.min(4096, Math.round(v)));
+  // An explicit ?cache_mb= wins and is remembered for this browser, so a big
+  // workstation is configured once instead of on every link.
+  let url = 0;
+  try { url = Number(new URLSearchParams(location.search).get("cache_mb") || 0); } catch (e) {}
+  if (Number.isFinite(url) && url > 0) {
+    const v = clamp(url);
+    try { localStorage.setItem("t4ViewerCacheMb", String(v)); } catch (e) {}
+    return v;
+  }
+  let saved = 0;
+  try { saved = Number(localStorage.getItem("t4ViewerCacheMb") || 0); } catch (e) {}
+  if (Number.isFinite(saved) && saved > 0) return clamp(saved);
+  // deviceMemory caps at 8, so an 8 GB laptop and a 64 GB workstation report the
+  // same number. The automatic tier therefore aims at "one typical scene"
+  // (156 frames x 4.9 MB ~= 760 MB) rather than at the largest machine it might
+  // be running on: overshooting costs the whole tab, and anyone who wants more
+  // says so with ?cache_mb=.
   let gb = 0;
   try { gb = Number(navigator.deviceMemory || 0); } catch (e) { gb = 0; }
-  return (gb >= 8 ? 512 : 256) * 1024 * 1024;
+  return gb >= 8 ? 768 : gb >= 4 ? 512 : 256;
 })();
+const CACHE_BYTE_BUDGET = CACHE_BUDGET_MB * 1024 * 1024;
+// Previews are cheap and cover the whole scene: a quarter of the budget holds
+// ~165 of them at 1.55 MB, so scrubbing back over ground already covered stays
+// off the network even when the full-density cache has long since evicted it.
+const PREVIEW_BYTE_BUDGET = Math.round(CACHE_BYTE_BUDGET * 0.25);
+// Count caps only exist to bound Map overhead; they must never bind before the
+// byte budget does, or the budget stops meaning anything.
+const MAX_CACHE = Math.max(120, Math.ceil(CACHE_BYTE_BUDGET / (3 * 1024 * 1024)));
+const PREVIEW_CACHE_MAX = Math.max(48, Math.ceil(PREVIEW_BYTE_BUDGET / (1024 * 1024)));
 let cacheBytes = 0;
+let previewBytes = 0;
 const inflightFrames = new Map();  // frame index → Promise, dedups concurrent fetches
 // Each in-flight frame keeps its AbortController: a LiDAR frame is several MB,
 // so a drag across the slider used to start one full download per intermediate
@@ -465,6 +495,25 @@ function frameByteSize(parsed){
   return ((parsed && parsed.pts && parsed.pts.byteLength) || 0)
     + ((parsed && parsed.boxes && parsed.boxes.byteLength) || 0)
     + 4096;  // header/labels/object overhead estimate
+}
+// What the caches hold, so "why is it fetching again?" has a visible answer.
+function cacheSummary(){
+  const mb = (n) => Math.round(n / 1048576);
+  const frames = totalFrames ? `${cache.size}/${totalFrames}` : String(cache.size);
+  return `cached=${frames} · ${mb(cacheBytes)}/${CACHE_BUDGET_MB} MB`;
+}
+
+function previewStore(i, parsed){
+  if (previewCache.has(i)) previewBytes -= frameByteSize(previewCache.get(i));
+  previewCache.delete(i);
+  previewCache.set(i, parsed);
+  previewBytes += frameByteSize(parsed);
+  while (previewCache.size > 1
+         && (previewCache.size > PREVIEW_CACHE_MAX || previewBytes > PREVIEW_BYTE_BUDGET)) {
+    const k = previewCache.keys().next().value;
+    previewBytes -= frameByteSize(previewCache.get(k));
+    previewCache.delete(k);
+  }
 }
 function cacheStoreFrame(i, parsed){
   if (cache.has(i)) cacheBytes -= frameByteSize(cache.get(i));
@@ -4155,7 +4204,7 @@ function setExternalLayerPayload(payload, opts){
   updateEvalHud();
   syncSpotlightFrames();
   const b = countEvalBucketsFromBoxes(gt, pred);
-  setStatus(`ready · cached=${cache.size}/${totalFrames} · ext(GT·TP=${b.gt_tp},GT·FN=${b.gt_fn},EST·TP=${b.est_tp},EST·FP=${b.est_fp})`);
+  setStatus(`ready · ${cacheSummary()} · ext(GT·TP=${b.gt_tp},GT·FN=${b.gt_fn},EST·TP=${b.est_tp},EST·FP=${b.est_fp})`);
   if (doCameraRefresh && cameraViewportEnabled) refreshCameraOverlay().catch(() => {});
   if (!doAck || !viewerDebugEnabled) return;
   const ack = `/viewer/three/debug/message-received?t4dataset_id=${encodeURIComponent(dataset)}&scenario_name=${encodeURIComponent(scenario)}&frame_index=${frame}&gt_count=${gt.length}&pred_count=${pred.length}&matched_count=0`;
@@ -4185,7 +4234,7 @@ function applyEvalLayersForFrame(i){
     externalLayers = { gt: [], pred: [] };
     renderExternalLayers();
     updateEvalHud();
-    setStatus(`ready · cached=${cache.size}/${totalFrames} · ext(empty)`);
+    setStatus(`ready · ${cacheSummary()} · ext(empty)`);
   }
 }
 
@@ -4236,10 +4285,7 @@ async function fetchFrame(i, { prefetch = false, scrub = false, onProgress = nul
       const res = await fetch(url, { signal: ctrl.signal });
       if (!res.ok) throw new Error(`frame ${i}: HTTP ${res.status}`);
       const parsed = parseFrameBuffer(await res.arrayBuffer());
-      previewCache.set(i, parsed);
-      while (previewCache.size > PREVIEW_CACHE_MAX) {
-        previewCache.delete(previewCache.keys().next().value);
-      }
+      previewStore(i, parsed);
       return parsed;
     })();
     inflightFrames.set(i, p);
@@ -5242,7 +5288,7 @@ async function showFrame(i, { scrub = false } = {}){
     applyEvalLayersForFrame(frame);
   } else {
     updateEvalHud();
-    setStatus(`ready · cached=${cache.size}/${totalFrames}`);
+    setStatus(`ready · ${cacheSummary()}`);
   }
   updateSpotlightHud();
   updateSelectedCandidateForFrame();
@@ -5569,6 +5615,19 @@ window.T4ViewerAPI = {
   // observable as a status line that a fast response overwrites immediately.
   _readFrameBody: readFrameBody,
   _frameIsResident: frameIsResident,
+  // Cache occupancy, for diagnosing "it is downloading a frame I already saw".
+  cacheStats(){
+    return {
+      budget_mb: CACHE_BUDGET_MB,
+      frames: cache.size,
+      frame_bytes: cacheBytes,
+      max_frames: MAX_CACHE,
+      previews: previewCache.size,
+      preview_bytes: previewBytes,
+      preview_budget_mb: Math.round(PREVIEW_BYTE_BUDGET / 1048576),
+      total_frames: totalFrames,
+    };
+  },
   clearLayers(){ clearCurrentViewerLayers({ clearMetrics: false }); },
   debugState(){
     const firstGt = Array.isArray(externalLayers.gt) && externalLayers.gt.length ? externalLayers.gt[0] : null;
