@@ -898,6 +898,10 @@ function setFrameText(){
 function setShareSessionState(t){ if (shareSessionStateEl) shareSessionStateEl.textContent = t; }
 function revealShareSessionUrl(url){
   if (!shareSessionUrlEl) return;
+  // The field now lives in the Session menu next to the button that fills it;
+  // focus() is a no-op while that disclosure is closed.
+  const menu = document.getElementById("sessionMenu");
+  if (menu) menu.open = true;
   shareSessionUrlEl.hidden = false;
   shareSessionUrlEl.value = String(url || "");
   shareSessionUrlEl.title = String(url || "");

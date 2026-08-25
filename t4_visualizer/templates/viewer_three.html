@@ -138,13 +138,14 @@
   .frameNav{display:flex;gap:.35rem;align-items:center;flex-shrink:0}
   .frameNav button{min-width:2rem;padding:.28rem .45rem;border-radius:9px}
   .frameJump{display:flex;align-items:center;gap:.2rem;flex-shrink:0}
-  #frameTxt{width:4.2rem;text-align:right;font:.78rem var(--font-mono);padding:.26rem .4rem;background:rgb(var(--c-s2) / .9);color:var(--text);border:1px solid rgb(var(--c-line) / .35);border-radius:9px}
+  #frameTxt{width:4.2rem;text-align:right;font-variant-numeric:tabular-nums;font:.78rem var(--font-mono);padding:.26rem .4rem;background:rgb(var(--c-s2) / .9);color:var(--text);border:1px solid rgb(var(--c-line) / .35);border-radius:9px}
   #frameTxt::-webkit-outer-spin-button,#frameTxt::-webkit-inner-spin-button{-webkit-appearance:none;margin:0}
   #frameTxt{-moz-appearance:textfield}
-  #frameTotal{font-family:var(--font-mono);font-size:.75rem}
-  .share-url{min-width:min(32vw,26rem);max-width:36vw;background:rgb(var(--c-s2) / .9);color:var(--t1);border:1px solid rgb(var(--c-line) / .35);border-radius:9px;padding:.28rem .45rem;font:11px var(--font-mono)}
+  #frameTotal{font-family:var(--font-mono);font-size:.75rem;font-variant-numeric:tabular-nums;min-width:2.6rem}
+  .share-url{width:100%;min-width:0;background:rgb(var(--c-s2) / .9);color:var(--t1);border:1px solid rgb(var(--c-line) / .35);border-radius:9px;padding:.28rem .45rem;font:11px var(--font-mono)}
   .share-url[hidden]{display:none}
   .pill{font-size:.8rem;color:var(--muted)}
+  .scrub-aside #shareSessionState{flex:0 0 auto;max-width:11rem;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
   .pill code{font-family:var(--font-mono);font-size:.78em;color:var(--t2)}
   .controls{display:flex;gap:.45rem .7rem;align-items:center;flex-wrap:wrap;flex:1}
   /* Groups so the row chunks by job (playback / view / session) instead of
@@ -356,10 +357,14 @@
   #evalHud .nMt{color:var(--s-err-1);font-weight:600;text-shadow:0 0 20px rgb(var(--c-cyan) / .28)}
   /* Status lives in the scrubber row, not in #hud: hiding the settings panel used to
      take download progress and every error message down with it. */
-  .status-strip{display:flex;align-items:center;gap:.3rem;min-width:0;flex:0 1 auto}
+  /* Every readout whose text changes length lives in one fixed-width box. Otherwise
+     a status line growing from "ready ..." to "loading frame 12 · 3/8 MB (37%)"
+     steals width from the flex:1 track and the slider visibly resizes mid-load. */
+  .scrub-aside{display:flex;align-items:center;gap:.5rem;flex:0 0 min(34vw,27rem);min-width:0;overflow:hidden}
+  .status-strip{display:flex;align-items:center;gap:.3rem;min-width:0;flex:1 1 auto}
   #status{
     font:.72rem/1.3 var(--font-mono);color:var(--muted);
-    min-width:0;max-width:min(38vw,30rem);
+    min-width:0;flex:1 1 auto;
     overflow:hidden;text-overflow:ellipsis;white-space:nowrap;
     padding:.22rem .55rem;border-radius:999px;border:1px solid transparent;
     transition:color .15s,border-color .15s,background .15s;
@@ -538,6 +543,7 @@
               <button id="importSessionBtn" type="button" title="Load evaluation overlay data from a local file">Load Eval</button>
               <button id="exportSessionBtn" type="button" title="Download the current evaluation overlay data as a local file">Export Eval</button>
               <button id="shareSessionBtn" type="button" title="Persist current imported layers and copy a shareable link">Save Share Link</button>
+              <input id="shareSessionUrl" type="text" readonly hidden title="Generated viewer share URL" class="share-url" />
             </div>
           </details>
           <input id="viewerSessionFileInput" type="file" accept="application/json,.json" hidden>
@@ -572,14 +578,13 @@
         <button id="framePrev" type="button" aria-label="Previous frame" title="Previous frame (← · Shift for ×10)">◀</button>
         <button id="frameNext" type="button" aria-label="Next frame" title="Next frame (→ · Shift for ×10)">▶</button>
       </div>
-      <div class="status-strip">
-        <div id="status" role="status" aria-live="polite">loading...</div>
-        <button type="button" id="statusDismiss" class="status-dismiss" aria-label="Dismiss error" title="Dismiss error" hidden>✕</button>
+      <div class="scrub-aside">
+        <div class="status-strip">
+          <div id="status" role="status" aria-live="polite">loading...</div>
+          <button type="button" id="statusDismiss" class="status-dismiss" aria-label="Dismiss error" title="Dismiss error" hidden>✕</button>
+        </div>
+        <span id="shareSessionState" class="pill" title="Imported/shared overlay session state">session local-only</span>
       </div>
-      <span id="shareSessionState" class="pill" title="Imported/shared overlay session state">session local-only</span>
-      <input id="shareSessionUrl" type="text" readonly hidden
-        title="Generated viewer share URL"
-        class="share-url" />
     </div>
   </div>
   <div id="canvasWrap"><canvas id="canvas"></canvas>
@@ -893,4 +898,4 @@
 </div>
 <script type="importmap">{"imports":{"three":"/static/viewer_three/three.module.js","three/addons/":"/static/viewer_three/jsm/"}}</script>
 <script>window.__T4_VIEWER_QS__ = "__QS__";</script>
-<script type="module" src="/static/viewer_three/app/main.js?v=20260824f"></script></body></html>
+<script type="module" src="/static/viewer_three/app/main.js?v=20260825a"></script></body></html>
