@@ -547,6 +547,7 @@ let externalSelectionCandidates = [];
 let selectedInspectState = null;
 let inspectTrackGeneration = 0;
 let spotlightFrames = [];
+let frameSeverityScores = [];
 let spotlightIndex = -1;
 let spotlightTouring = false;
 let spotlightLastSwitchTs = 0;
@@ -857,8 +858,43 @@ if (initialHidePanels) {
     if (el) el.checked = false;
   });
 }
-function setStatus(t){ statusEl.textContent = t; }
-function setFrameText(){ frameTxt.textContent = `frame ${frame}/${Math.max(0,totalFrames-1)}`; slider.value = String(frame); }
+const statusDismissEl = document.getElementById("statusDismiss");
+const frameTotalEl = document.getElementById("frameTotal");
+// An error that is instantly overwritten by the next "loading frame ..." never gets
+// read. Errors stick until the user dismisses them or a frame loads cleanly; the
+// progress messages that arrive meanwhile are held and flushed on recovery.
+let statusErrorSticky = false;
+let statusPendingText = "";
+function setStatus(t, level = "info"){
+  const text = String(t);
+  if (level === "error") {
+    statusErrorSticky = true;
+    statusEl.dataset.level = "error";
+    statusEl.setAttribute("aria-live", "assertive");
+    if (statusDismissEl) statusDismissEl.hidden = false;
+  } else if (statusErrorSticky) {
+    statusPendingText = text;                 // held behind the error, not lost
+    return;
+  }
+  statusEl.textContent = text;
+  statusEl.title = text;
+}
+function clearStatusError(){
+  if (!statusErrorSticky) return;
+  statusErrorSticky = false;
+  statusEl.dataset.level = "info";
+  statusEl.setAttribute("aria-live", "polite");
+  if (statusDismissEl) statusDismissEl.hidden = true;
+  if (statusPendingText) { setStatus(statusPendingText); statusPendingText = ""; }
+}
+if (statusDismissEl) statusDismissEl.addEventListener("click", clearStatusError);
+function setFrameText(){
+  const last = Math.max(0, totalFrames - 1);
+  if (document.activeElement !== frameTxt) frameTxt.value = String(frame);
+  frameTxt.max = String(last);
+  if (frameTotalEl) frameTotalEl.textContent = `/ ${last}`;
+  slider.value = String(frame);
+}
 function setShareSessionState(t){ if (shareSessionStateEl) shareSessionStateEl.textContent = t; }
 function revealShareSessionUrl(url){
   if (!shareSessionUrlEl) return;
@@ -1261,7 +1297,10 @@ function metricsFromEntry(entry){
 
 function buildSpotlightFrames(){
   const series = computeMetricsSeries();
-  if (!series || series.n <= 0) return [];
+  if (!series || series.n <= 0) { frameSeverityScores = []; return []; }
+  // The ranked list is truncated to the worst 24; the scrub track needs a score for
+  // every frame, so the per-frame values are kept as they are computed.
+  frameSeverityScores = new Float64Array(series.n);
   const err = computeErrorSeries();
   const modeEl = document.getElementById("spotlightMode");
   const mode = modeEl && modeEl.value ? modeEl.value : "composite";
@@ -1274,6 +1313,7 @@ function buildSpotlightFrames(){
     if (mode === "fn") {
       if (fn <= 0 || gt <= 0) continue;
       const rate = fn / gt;
+      frameSeverityScores[i] = rate;
       ranked.push({
         frameIndex: i,
         fnCount: fn,
@@ -1290,6 +1330,7 @@ function buildSpotlightFrames(){
     const sev = err ? Number(err.frame_severity_max[i] || 0) : 0;
     const fnRate = gt > 0 ? fn / gt : 0;
     const score = sev * 1000 + fn * 95 + fp * 36 + ctr * 110 + plane * 80 + yaw * 65 + fnRate * 180;
+    frameSeverityScores[i] = score;
     if (score <= 0.01) continue;
     ranked.push({
       frameIndex: i,
@@ -1316,6 +1357,7 @@ function syncSpotlightFrames(){
     ? spotlightFrames[spotlightIndex].frameIndex
     : null;
   spotlightFrames = buildSpotlightFrames();
+  drawFrameSeverityTrack();
   if (!spotlightFrames.length) {
     spotlightIndex = -1;
     spotlightTouring = false;
@@ -1369,6 +1411,52 @@ async function jumpToSpotlightIndex(nextIdx){
     updateSpotlightHud();
   } finally {
     spotlightJumpInFlight = false;
+  }
+}
+
+/**
+ * Paint the per-frame severity under the scrub track. The whole point of the
+ * timeline is "which of these 400 frames are broken?" — the data exists, so the
+ * widget the user touches most should answer it without opening a panel.
+ * Renders nothing when no eval data is loaded: a plain track is the honest default.
+ */
+function drawFrameSeverityTrack(){
+  const cv = document.getElementById("frameSeverityTrack");
+  if (!cv) return;
+  const n = frameSeverityScores ? frameSeverityScores.length : 0;
+  let peak = 0;
+  for (let i = 0; i < n; i++) if (frameSeverityScores[i] > peak) peak = frameSeverityScores[i];
+  if (n <= 1 || peak <= 0) { cv.classList.remove("visible"); return; }
+  cv.classList.add("visible");
+  const rect = cv.getBoundingClientRect();
+  const dpr = Math.min(2, window.devicePixelRatio || 1);
+  const w = Math.max(1, Math.round(rect.width));
+  const h = Math.max(1, Math.round(rect.height));
+  if (cv.width !== Math.round(w * dpr) || cv.height !== Math.round(h * dpr)) {
+    cv.width = Math.round(w * dpr);
+    cv.height = Math.round(h * dpr);
+  }
+  const ctx = cv.getContext("2d");
+  if (!ctx) return;
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  ctx.clearRect(0, 0, w, h);
+  const css = getComputedStyle(document.documentElement);
+  const rgb = (name, a) => `rgb(${css.getPropertyValue(name).trim()} / ${a})`;
+  ctx.fillStyle = rgb("--c-line", .14);
+  ctx.fillRect(0, 0, w, h);
+  // One column per frame, so the strip stays readable whether there are 40 or 4000.
+  const colW = w / n;
+  // Almost every frame carries some residual error, so an absolute floor paints the
+  // whole strip and says nothing. Ink starts at a fraction of the worst frame, which
+  // is the question the strip answers: where are the bad ones, relative to this run.
+  const FLOOR = 0.28;
+  for (let i = 0; i < n; i++) {
+    const t = Math.min(1, frameSeverityScores[i] / peak);
+    if (t <= FLOOR) continue;
+    const u = (t - FLOOR) / (1 - FLOOR);
+    // warn -> bad, matching the colors the eval layers already use
+    ctx.fillStyle = rgb(u < 0.5 ? "--c-warn" : "--c-bad", 0.4 + 0.6 * u);
+    ctx.fillRect(i * colW, 0, Math.max(1, colW), h);
   }
 }
 
@@ -1464,6 +1552,7 @@ function syncFullscreenButton(){
   const btn = document.getElementById("toggleFullscreen");
   if (!btn) return;
   btn.textContent = document.fullscreenElement ? "Exit fullscreen" : "Fullscreen";
+  btn.setAttribute("aria-pressed", document.fullscreenElement ? "true" : "false");
 }
 
 function applyMainCameraAspect(aspect){
@@ -1514,6 +1603,25 @@ function layoutMetricsStacks(){
   if (metricsErrorWrapEl && !metricsErrorWrapEl.dataset.userPos) {
     metricsErrorWrapEl.style.bottom = errorOn ? `${nextBottom}px` : "";
   }
+  layoutRightDock();
+}
+
+/**
+ * The inspector is docked to the same right edge as the HUD, so when it opens the
+ * HUD slides inboard instead of being buried. A dragged panel opts out, the same
+ * way layoutMetricsStacks() respects dataset.userPos.
+ */
+function layoutRightDock(){
+  const inspectEl = document.getElementById("inspectPanel");
+  const inspectOpen = !!(inspectEl && !inspectEl.hidden && !inspectEl.dataset.userPos);
+  const w = inspectOpen ? Math.round(inspectEl.getBoundingClientRect().width) : 0;
+  // The HUD and the metrics stack share the right edge with the inspector; they
+  // slide inboard together so opening the inspector buries nothing.
+  [["hud", 14], ["metricsWrap", 12], ["metricsCompareWrap", 12], ["metricsRatesWrap", 12], ["metricsErrorWrap", 12]].forEach(([id, base]) => {
+    const el = document.getElementById(id);
+    if (!el || el.dataset.userPos) return;
+    el.style.right = inspectOpen ? `${base + w + 10}px` : "";
+  });
 }
 
 function clampPanelToParent(panelEl, parentEl){
@@ -2463,8 +2571,9 @@ function applyPanelVisibility(){
   }
   if (camOn !== lastCameraPanelCheckbox) {
     lastCameraPanelCheckbox = camOn;
-    if (camOn) refreshCameraOverlay().catch((e) => setStatus(`camera: ${e.message}`));
+    if (camOn) refreshCameraOverlay().catch((e) => setStatus(`camera: ${e.message}`, "error"));
   }
+  layoutRightDock();
   syncMetricsPlotVisibility();
   updateMetricsComparePanel();
   syncMetricsRatesPlotVisibility();
@@ -4334,7 +4443,7 @@ async function loadLanelet(){
   if (!res.ok) throw new Error(`lanelet HTTP ${res.status}`);
   const data = await res.json();
   if (!data.available) {
-    setStatus(`lanelet unavailable: ${data.reason || "not found"}`);
+    setStatus(`lanelet unavailable: ${data.reason || "not found"}`, "error");
     laneletLoaded = true;
     return;
   }
@@ -4906,7 +5015,7 @@ async function refreshCameraOverlay(){
       await renderCameraViewport(payload, gen);
     }
   } catch (e) {
-    if (gen === cameraOverlayGeneration) setStatus(`camera: ${e.message}`);
+    if (gen === cameraOverlayGeneration) setStatus(`camera: ${e.message}`, "error");
   }
 }
 
@@ -5270,6 +5379,7 @@ async function showFrame(i, { scrub = false } = {}){
     throw err;
   }
   if (gen !== showFrameGeneration) return;
+  clearStatusError();
   setFrameData(data);
   updateColorbar();
   if (followEgo) {
@@ -5303,7 +5413,9 @@ async function showFrame(i, { scrub = false } = {}){
 
 document.getElementById("playBtn").addEventListener("click", () => {
   playing = !playing;
-  document.getElementById("playBtn").textContent = playing ? "Pause" : "Play";
+  const btn = document.getElementById("playBtn");
+  btn.textContent = playing ? "Pause" : "Play";
+  btn.setAttribute("aria-pressed", playing ? "true" : "false");
 });
 document.getElementById("speed").addEventListener("change", (e) => {
   fps = 6 * Number(e.target.value || "1");
@@ -5321,7 +5433,7 @@ function scrubTo(value, { immediate = false } = {}) {
   const run = () => {
     scrubTimer = 0;
     // Mid-drag: a light frame, fast. On release: the full one.
-    showFrame(target, { scrub: !immediate }).catch((e) => setStatus(`error: ${e.message}`));
+    showFrame(target, { scrub: !immediate }).catch((e) => setStatus(`error: ${e.message}`, "error"));
   };
   if (immediate) run();
   else scrubTimer = setTimeout(run, 80);
@@ -5380,11 +5492,12 @@ document.getElementById("toggleLanelet").addEventListener("click", async () => {
   laneletEnabled = !laneletEnabled;
   const btn = document.getElementById("toggleLanelet");
   btn.textContent = laneletEnabled ? "Lanelet ON" : "Lanelet OFF";
+  btn.setAttribute("aria-pressed", laneletEnabled ? "true" : "false");
   if (laneletEnabled && !laneletLoaded) {
     try {
       await loadLanelet();
     } catch (err) {
-      setStatus(`lanelet error: ${err.message}`);
+      setStatus(`lanelet error: ${err.message}`, "error");
       laneletEnabled = false;
       btn.textContent = "Lanelet OFF";
     }
@@ -5579,7 +5692,7 @@ window.addEventListener("message", (ev) => {
       if (cameraViewportEnabled) refreshCameraOverlay().catch(() => {});
     } catch (err) {
       dbg("bbox_layers_binary_v1 decode failed", err);
-      setStatus(`bbox binary decode failed: ${err && err.message ? err.message : String(err)}`);
+      setStatus(`bbox binary decode failed: ${err && err.message ? err.message : String(err)}`, "error");
     }
   } else if (d.type === "bbox_layers") {
     bboxLayersByFrame = null;
@@ -5691,7 +5804,7 @@ if (viewerSessionFileInput) {
       setShareSessionState(`imported ${String(file.name).slice(0, 18)}`);
       setStatus(`imported ${file.name}`);
     } catch (err) {
-      setStatus(`import error: ${err && err.message ? err.message : String(err)}`);
+      setStatus(`import error: ${err && err.message ? err.message : String(err)}`, "error");
     } finally {
       input.value = "";
     }
@@ -5740,7 +5853,7 @@ document.getElementById("shareSessionBtn").addEventListener("click", async () =>
     }
     setStatus(copied ? `share link copied · ${activeViewerSessionId.slice(0, 8)}` : `share link ready in URL field · ${activeViewerSessionId.slice(0, 8)}`);
   } catch (err) {
-    setStatus(`share error: ${err && err.message ? err.message : String(err)}`);
+    setStatus(`share error: ${err && err.message ? err.message : String(err)}`, "error");
   }
 });
 document.getElementById("toggleFullscreen").addEventListener("click", async () => {
@@ -5762,10 +5875,10 @@ document.addEventListener("fullscreenchange", () => {
   resizeMetricsRenderer();
 });
 document.getElementById("framePrev").addEventListener("click", () => {
-  showFrame(frame - 1).catch((e) => setStatus(`error: ${e.message}`));
+  showFrame(frame - 1).catch((e) => setStatus(`error: ${e.message}`, "error"));
 });
 document.getElementById("frameNext").addEventListener("click", () => {
-  showFrame(frame + 1).catch((e) => setStatus(`error: ${e.message}`));
+  showFrame(frame + 1).catch((e) => setStatus(`error: ${e.message}`, "error"));
 });
 document.getElementById("toggleCameraViewport")?.addEventListener("click", () => {
   const c = document.getElementById("uiShowCameraViewport");
@@ -5781,19 +5894,19 @@ document.getElementById("cameraLayoutMode")?.addEventListener("change", () => {
   resetCameraViewportUserSize();
   updateCameraToolbarMode();
   if (lastCameraPayload) autoSizeCameraViewport(lastCameraPayload);
-  refreshCameraOverlay().catch((e) => setStatus(`camera: ${e.message}`));
+  refreshCameraOverlay().catch((e) => setStatus(`camera: ${e.message}`, "error"));
 });
 document.getElementById("overlayCamera")?.addEventListener("change", () => {
-  refreshCameraOverlay().catch((e) => setStatus(`camera: ${e.message}`));
+  refreshCameraOverlay().catch((e) => setStatus(`camera: ${e.message}`, "error"));
 });
 document.getElementById("showOverlayAnnotations")?.addEventListener("change", () => {
-  refreshCameraOverlay().catch((e) => setStatus(`camera: ${e.message}`));
+  refreshCameraOverlay().catch((e) => setStatus(`camera: ${e.message}`, "error"));
 });
 document.getElementById("cameraOverlayMaxRange")?.addEventListener("change", () => {
-  refreshCameraOverlay().catch((e) => setStatus(`camera: ${e.message}`));
+  refreshCameraOverlay().catch((e) => setStatus(`camera: ${e.message}`, "error"));
 });
 document.getElementById("cameraOverlayMaxBoxes")?.addEventListener("change", () => {
-  refreshCameraOverlay().catch((e) => setStatus(`camera: ${e.message}`));
+  refreshCameraOverlay().catch((e) => setStatus(`camera: ${e.message}`, "error"));
 });
 document.getElementById("compareViewMode")?.addEventListener("change", () => {
   const mode = compareModeValue();
@@ -5834,21 +5947,97 @@ window.addEventListener("resize", () => {
   resizeMetricsRenderer();
   resizeCameraViewport();
   clampAllMovablePanels();
+  layoutRightDock();
+  drawFrameSeverityTrack();
 });
+// Jump-to-frame: the frame readout is an input, so reaching frame 287 of 400 does
+// not mean dragging a range and overshooting.
+function commitFrameJump(){
+  const last = Math.max(0, totalFrames - 1);
+  const want = Math.max(0, Math.min(last, Math.round(Number(frameTxt.value))));
+  if (!Number.isFinite(want)) { setFrameText(); return; }
+  frameTxt.value = String(want);
+  if (want !== frame) showFrame(want).catch((e) => setStatus(`error: ${e.message}`, "error"));
+}
+frameTxt.addEventListener("change", commitFrameJump);
+frameTxt.addEventListener("keydown", (ev) => {
+  if (ev.key === "Enter") { ev.preventDefault(); commitFrameJump(); frameTxt.blur(); }
+});
+
+function stepFrame(delta){
+  if (totalFrames <= 0) return;
+  const last = totalFrames - 1;
+  const want = Math.max(0, Math.min(last, frame + delta));
+  if (want === frame) return;
+  showFrame(want).catch((e) => setStatus(`error: ${e.message}`, "error"));
+}
+function clickIfPresent(id){
+  const el = document.getElementById(id);
+  if (el && !el.hidden && !el.disabled) el.click();
+}
+function toggleShortcutHelp(force){
+  const el = document.getElementById("shortcutHelp");
+  if (!el) return;
+  el.hidden = typeof force === "boolean" ? !force : !el.hidden;
+}
+
+// Scrubbing is the central task of this tool; it used to be mouse-only.
 window.addEventListener("keydown", (ev) => {
-  if (ev.key === "Escape" && selectedInspectState) {
-    setSelectedInspectCandidate(null);
+  const t = ev.target;
+  // Arrows belong to the widget when one has focus (slider, speed, frame input).
+  if (t && t.matches && t.matches("input,select,textarea,[contenteditable=true]")) {
+    if (ev.key === "Escape" && t.blur) t.blur();
+    return;
+  }
+  if (ev.ctrlKey || ev.metaKey || ev.altKey) return;
+  const step = ev.shiftKey ? 10 : 1;
+  switch (ev.key) {
+    case "ArrowLeft":  ev.preventDefault(); stepFrame(-step); return;
+    case "ArrowRight": ev.preventDefault(); stepFrame(step); return;
+    case "Home":       ev.preventDefault(); stepFrame(-totalFrames); return;
+    case "End":        ev.preventDefault(); stepFrame(totalFrames); return;
+    case " ":
+    case "Spacebar":   ev.preventDefault(); clickIfPresent("playBtn"); return;
+    case "[":          ev.preventDefault(); clickIfPresent("spotlightPrevBtn"); return;
+    case "]":          ev.preventDefault(); clickIfPresent("spotlightNextBtn"); return;
+    case "?":          ev.preventDefault(); toggleShortcutHelp(); return;
+    default: break;
+  }
+  if (ev.key === "Escape") {
+    const help = document.getElementById("shortcutHelp");
+    if (help && !help.hidden) { toggleShortcutHelp(false); return; }
+    if (selectedInspectState) setSelectedInspectCandidate(null);
   } else if ((ev.key === "f" || ev.key === "F") && selectedInspectState && selectedInspectState.current) {
     focusCameraOnCandidate(selectedInspectState.current, false);
   }
 });
+// Inspector detail tabs: Pose / Match / Context.
+{
+  const tabs = Array.from(document.querySelectorAll(".inspect-tab"));
+  const panelFor = { pose: "inspectTabPanelPose", match: "inspectTabPanelMatch", context: "inspectTabPanelContext" };
+  tabs.forEach((tab) => {
+    tab.addEventListener("click", () => {
+      const want = tab.dataset.tab;
+      tabs.forEach((t) => {
+        const on = t.dataset.tab === want;
+        t.classList.toggle("is-active", on);
+        t.setAttribute("aria-selected", on ? "true" : "false");
+        const panel = document.getElementById(panelFor[t.dataset.tab]);
+        if (panel) panel.hidden = !on;
+      });
+    });
+  });
+}
+
+const shortcutHelpCloseEl = document.getElementById("shortcutHelpClose");
+if (shortcutHelpCloseEl) shortcutHelpCloseEl.addEventListener("click", () => toggleShortcutHelp(false));
 
 function animate(ts){
   requestAnimationFrame(animate);
   if (playing && totalFrames > 0 && ts - lastFrameTs > (1000 / Math.max(1, fps))) {
     lastFrameTs = ts;
     const nxt = frame + 1 >= totalFrames ? 0 : frame + 1;
-    showFrame(nxt).catch((err) => setStatus(`error: ${err.message}`));
+    showFrame(nxt).catch((err) => setStatus(`error: ${err.message}`, "error"));
   }
   if (spotlightTouring && spotlightFrames.length > 0 && !spotlightJumpInFlight) {
     if (!spotlightLastSwitchTs || ts - spotlightLastSwitchTs > 1800) {
@@ -5959,7 +6148,7 @@ function animate(ts){
   egoMeshPromise.catch(() => {});
   animate(0);
 })().catch((err) => {
-  setStatus(`boot error: ${err.message}`);
+  setStatus(`boot error: ${err.message}`, "error");
 });
 
 // Top level on purpose: the theme toggle must work even when boot fails (missing

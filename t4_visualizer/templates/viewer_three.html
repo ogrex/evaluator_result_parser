@@ -128,12 +128,40 @@
   .topRowMain>strong{font-size:.95rem;font-weight:700;letter-spacing:-.03em;background:var(--title-wash);-webkit-background-clip:text;background-clip:text;color:transparent}
   .topRowScrubber{display:flex;gap:.6rem;align-items:center;width:100%;min-height:2.1rem;padding:.15rem 0}
   .scrubberLabel{font-size:.75rem;font-weight:600;letter-spacing:.06em;text-transform:uppercase;color:var(--muted)}
-  #slider{flex:1;min-width:120px;height:1.35rem;cursor:pointer;accent-color:var(--accent)}
+  .scrub-track{flex:1;min-width:120px;display:flex;flex-direction:column;gap:1px}
+  #slider{width:100%;height:1.35rem;cursor:pointer;accent-color:var(--accent)}
+  /* Severity strip under the scrub track: the app already ranks every frame
+     (buildSpotlightFrames), so the timeline shows where the bad frames are.
+     Inset by the range input's own horizontal padding so columns line up. */
+  #frameSeverityTrack{display:none;width:calc(100% - 1.1rem);height:6px;margin:0 .55rem;border-radius:3px;pointer-events:none}
+  #frameSeverityTrack.visible{display:block}
   .frameNav{display:flex;gap:.35rem;align-items:center;flex-shrink:0}
   .frameNav button{min-width:2rem;padding:.28rem .45rem;border-radius:9px}
+  .frameJump{display:flex;align-items:center;gap:.2rem;flex-shrink:0}
+  #frameTxt{width:4.2rem;text-align:right;font:.78rem var(--font-mono);padding:.26rem .4rem;background:rgb(var(--c-s2) / .9);color:var(--text);border:1px solid rgb(var(--c-line) / .35);border-radius:9px}
+  #frameTxt::-webkit-outer-spin-button,#frameTxt::-webkit-inner-spin-button{-webkit-appearance:none;margin:0}
+  #frameTxt{-moz-appearance:textfield}
+  #frameTotal{font-family:var(--font-mono);font-size:.75rem}
+  .share-url{min-width:min(32vw,26rem);max-width:36vw;background:rgb(var(--c-s2) / .9);color:var(--t1);border:1px solid rgb(var(--c-line) / .35);border-radius:9px;padding:.28rem .45rem;font:11px var(--font-mono)}
+  .share-url[hidden]{display:none}
   .pill{font-size:.8rem;color:var(--muted)}
   .pill code{font-family:var(--font-mono);font-size:.78em;color:var(--t2)}
-  .controls{display:flex;gap:.45rem;align-items:center;flex-wrap:wrap}
+  .controls{display:flex;gap:.45rem .7rem;align-items:center;flex-wrap:wrap;flex:1}
+  /* Groups so the row chunks by job (playback / view / session) instead of
+     re-shuffling into arbitrary runs whenever flex-wrap breaks. */
+  .ctl-group{display:flex;gap:.45rem;align-items:center;flex-wrap:nowrap}
+  .ctl-group+.ctl-group{padding-left:.7rem;border-left:1px solid rgb(var(--c-line) / .3)}
+  .ctl-group--end{margin-left:auto;border-left:none;padding-left:0}
+  .ctl-group label{display:flex;align-items:center;gap:.3rem;font-size:.78rem;color:var(--muted)}
+  .view-panels__body--actions{gap:.35rem}
+  .view-panels__body--actions button{width:100%;text-align:left;font-size:.78rem}
+  .cam-preset-cluster{
+    position:absolute;left:14px;top:14px;z-index:5;display:flex;gap:.3rem;
+    padding:.28rem;border-radius:12px;
+    background:rgb(var(--c-s1) / .78);border:1px solid var(--hud-edge);
+    backdrop-filter:blur(10px) saturate(1.15);box-shadow:0 6px 24px rgb(var(--c-shadow) / .38);
+  }
+  .cam-preset-cluster button{font-size:.72rem;padding:.26rem .5rem;border-radius:9px}
   button,input[type=range],select{background:rgb(var(--c-s2) / .9);color:var(--text);border:1px solid rgb(var(--c-line) / .35);border-radius:9px;padding:.32rem .55rem;box-shadow:0 1px 0 rgb(var(--c-sheen) / .04) inset;transition:border-color .15s,background .15s}
   button:hover,input[type=range]:hover,select:hover{border-color:rgb(var(--c-accent) / .45)}
   #canvasWrap{position:relative;min-height:0}
@@ -182,7 +210,8 @@
     padding:.85rem .95rem 1rem;
     box-shadow:0 8px 40px rgb(var(--c-shadow) / .45),0 0 0 1px rgb(var(--c-sheen) / .04) inset,0 1px 0 rgb(var(--c-sheen) / .06) inset;
   }
-  .hud-header-bar{display:flex;align-items:stretch;margin:-.85rem -.95rem .65rem -.95rem;border-radius:14px 14px 0 0;border-bottom:1px solid rgb(var(--c-line) / .22);overflow:hidden}
+  .hud-panel .hud-header-bar{margin:-.85rem -.95rem .65rem -.95rem}
+  .hud-header-bar{display:flex;align-items:stretch;margin:0;border-radius:14px 14px 0 0;border-bottom:1px solid rgb(var(--c-line) / .22);overflow:hidden}
   .hud-header-bar .hud-drag-handle.panel-drag-handle{
     flex:1;margin:0;border-radius:0;border-bottom:none;min-height:32px;
     position:relative;left:auto;right:auto;top:auto;
@@ -199,7 +228,7 @@
   .hud-panel__hint{font-size:.62rem;color:var(--t3);line-height:1.35;margin:-.15rem 0 .4rem;opacity:.92}
   .hud-panel .hud-grid{display:grid;gap:.38rem;font-size:.8rem}
   .inspect-panel{
-    position:absolute;left:14px;top:14px;bottom:14px;min-width:min(56vw,620px);width:min(64vw,900px);max-width:min(95vw,1120px);
+    position:absolute;right:14px;top:14px;bottom:14px;min-width:min(88vw,320px);width:min(34vw,440px);max-width:min(92vw,620px);
     background:linear-gradient(165deg,rgb(var(--c-s1) / .96) 0%,rgb(var(--c-s0) / .96) 52%,rgb(var(--c-s1) / .97) 100%);
     backdrop-filter:blur(18px) saturate(1.18);
     border:1px solid rgb(var(--c-line-strong) / .26);border-radius:16px;
@@ -207,7 +236,7 @@
     overflow:hidden;z-index:6;display:flex;flex-direction:column;
   }
   .inspect-panel[hidden]{display:none !important}
-  .inspect-panel__body{padding:.9rem .95rem .95rem;overflow:visible;flex:1;min-height:0}
+  .inspect-panel__body{padding:.9rem .95rem .95rem;overflow-y:auto;overflow-x:hidden;flex:1;min-height:0}
   .inspect-panel .inspect-panel-hide{
     flex-shrink:0;width:34px;border:none;background:rgb(var(--c-s2) / .9);color:var(--t2);cursor:pointer;font-size:1.05rem;line-height:1;padding:0;
     border-left:1px solid rgb(var(--c-line) / .28);transition:background .15s,color .15s;
@@ -273,11 +302,21 @@
   #inspectHud .inspect-actions button{font-size:.76rem;padding:.34rem .58rem}
   #inspectHud .inspect-note{margin-top:.36rem;color:var(--t3);font-size:.7rem;line-height:1.4}
   #inspectHud .inspect-main-grid{display:grid;grid-template-columns:minmax(0,1fr);gap:.58rem}
+  /* Six cards at once was ~28 value slots with no hierarchy; three tabs make the
+     panel answer one question at a time. */
+  #inspectHud .inspect-tabs{display:flex;gap:.25rem;padding:.22rem;border-radius:10px;background:rgb(var(--c-s0) / .6);border:1px solid rgb(var(--c-line) / .22)}
+  #inspectHud .inspect-tab{
+    flex:1;padding:.28rem .4rem;border:1px solid transparent;background:transparent;border-radius:8px;
+    font-size:.68rem;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:var(--t3);cursor:pointer;
+  }
+  #inspectHud .inspect-tab:hover{color:var(--t1)}
+  #inspectHud .inspect-tab.is-active{background:rgb(var(--c-s2) / .92);border-color:rgb(var(--c-accent) / .32);color:var(--t-max)}
+  #inspectHud .inspect-info-grid[hidden]{display:none !important}
   #inspectHud .inspect-info-grid{display:grid;grid-template-columns:minmax(0,1fr);gap:.5rem}
   #inspectHud .inspect-card{padding:.58rem .66rem;border-radius:12px;background:rgb(var(--c-s1) / .78);border:1px solid rgb(var(--c-line) / .24)}
   #inspectHud .inspect-card strong{display:block;margin-bottom:.32rem;font-size:.6rem;letter-spacing:.12em;text-transform:uppercase;color:var(--t3)}
   #inspectHud .inspect-card canvas{width:100%;height:auto;display:block;background:radial-gradient(circle at 50% 50%,rgb(var(--c-line) / .16),rgb(var(--c-s0) / .72));border-radius:10px;border:1px solid rgb(var(--c-line) / .22)}
-  #inspectHud .inspect-card.inspect-hero-card canvas{min-height:320px}
+  #inspectHud .inspect-card.inspect-hero-card canvas{min-height:190px}
   #inspectHud .inspect-summary{margin-top:.38rem;color:var(--t1);font-size:.72rem;line-height:1.46}
   #inspectHud .inspect-kpi-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:.4rem}
   #inspectHud .inspect-kpi{padding:.42rem .5rem;border-radius:10px;background:rgb(var(--c-s2) / .82);border:1px solid rgb(var(--c-line) / .2)}
@@ -294,6 +333,12 @@
   #spotlightHud .spotlight-actions button{font-size:.68rem;padding:.25rem .45rem}
   #spotlightHud .spotlight-note{margin-top:.35rem;color:var(--t3);font-size:.62rem;line-height:1.35}
   #spotlightHud select{font-size:.68rem;min-width:8rem;padding:.2rem .35rem}
+  .spotlight-detail{margin-top:.4rem;border-top:1px solid rgb(var(--c-line) / .2);padding-top:.35rem}
+  .spotlight-detail>summary{cursor:pointer;list-style:none;user-select:none;font-size:.58rem;font-weight:700;letter-spacing:.1em;text-transform:uppercase;color:var(--t3)}
+  .spotlight-detail>summary::-webkit-details-marker{display:none}
+  .spotlight-detail[open]>summary{color:var(--t2);margin-bottom:.3rem}
+  .adv-section{margin-top:.55rem}
+  .hud-advanced>summary+.adv-section{margin-top:0}
   #inspectHud[data-status="TP"] .inspect-hero-strip{box-shadow:inset 0 1px 0 rgb(var(--c-sheen) / .06),0 0 32px rgb(var(--c-cyan) / .12)}
   #inspectHud[data-status="FP"] .inspect-hero-strip{background:linear-gradient(155deg,rgb(var(--c-bad-bg) / .94) 0%,rgb(var(--c-bad-bg) / .92) 56%,rgb(var(--c-bad-bg) / .94) 100%);border-color:rgb(var(--c-bad) / .28);box-shadow:inset 0 1px 0 rgb(var(--c-sheen) / .05),0 0 32px rgb(var(--c-bad) / .12)}
   #inspectHud[data-status="FN"] .inspect-hero-strip{background:linear-gradient(155deg,rgb(var(--c-warn-bg) / .94) 0%,rgb(var(--c-warn-bg) / .92) 56%,rgb(var(--c-warn-bg) / .94) 100%);border-color:rgb(var(--c-warn) / .28);box-shadow:inset 0 1px 0 rgb(var(--c-sheen) / .05),0 0 32px rgb(var(--c-warn) / .11)}
@@ -309,7 +354,19 @@
   #evalHud .nGt{color:var(--s-rate-1);font-weight:600;text-shadow:0 0 20px rgb(var(--c-ok) / .35)}
   #evalHud .nPr{color:var(--accent);font-weight:600;text-shadow:0 0 20px rgb(var(--c-accent) / .3)}
   #evalHud .nMt{color:var(--s-err-1);font-weight:600;text-shadow:0 0 20px rgb(var(--c-cyan) / .28)}
-  #status{font-size:.8rem;color:var(--muted);line-height:1.4}
+  /* Status lives in the scrubber row, not in #hud: hiding the settings panel used to
+     take download progress and every error message down with it. */
+  .status-strip{display:flex;align-items:center;gap:.3rem;min-width:0;flex:0 1 auto}
+  #status{
+    font:.72rem/1.3 var(--font-mono);color:var(--muted);
+    min-width:0;max-width:min(38vw,30rem);
+    overflow:hidden;text-overflow:ellipsis;white-space:nowrap;
+    padding:.22rem .55rem;border-radius:999px;border:1px solid transparent;
+    transition:color .15s,border-color .15s,background .15s;
+  }
+  #status[data-level="error"]{color:var(--bad-fg);border-color:rgb(var(--c-bad) / .45);background:rgb(var(--c-bad-bg) / .6)}
+  .status-dismiss{width:1.35rem;min-width:0;padding:0;font-size:.7rem;line-height:1;border-radius:999px;color:var(--bad-fg);border-color:rgb(var(--c-bad) / .4)}
+  .status-dismiss[hidden]{display:none}
   #meta{font-size:.75rem;color:var(--t2);margin-top:.35rem;font-family:var(--font-mono);line-height:1.45;word-break:break-all}
   a{color:var(--accent);text-decoration:none;border-bottom:1px solid rgb(var(--c-accent) / .35);transition:color .15s,border-color .15s}
   a:hover{color:var(--t1);border-bottom-color:rgb(var(--c-line-pale) / .55)}
@@ -366,6 +423,19 @@
     box-shadow:0 6px 24px rgb(var(--c-shadow) / .45);backdrop-filter:blur(8px);
   }
   #hudRevealBtn:hover{border-color:rgb(var(--c-line-pale) / .55)}
+  #shortcutHelp{
+    position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);z-index:21;
+    min-width:min(90vw,340px);padding:.9rem 1rem 1rem;
+    background:var(--hud-inner);backdrop-filter:blur(16px) saturate(1.15);
+    border:1px solid var(--hud-edge);border-radius:14px;
+    box-shadow:0 12px 48px rgb(var(--c-shadow) / .5),0 0 0 1px rgb(var(--c-sheen) / .04) inset;
+  }
+  #shortcutHelp[hidden]{display:none !important}
+  #shortcutHelp .shortcut-head{display:flex;justify-content:space-between;align-items:center;gap:.6rem;margin-bottom:.55rem}
+  #shortcutHelp .shortcut-head strong{font-size:.62rem;font-weight:700;letter-spacing:.12em;text-transform:uppercase;color:var(--t3)}
+  #shortcutHelp dl{display:grid;grid-template-columns:auto minmax(0,1fr);gap:.3rem .8rem;margin:0;font-size:.76rem;align-items:baseline}
+  #shortcutHelp dt{font-family:var(--font-mono);font-size:.72rem;color:var(--t-max);white-space:nowrap}
+  #shortcutHelp dd{margin:0;color:var(--t2)}
   .hud-grid label{display:flex;align-items:center;gap:.45rem;cursor:pointer;user-select:none}
   .hud-grid--layers{gap:.35rem}
   .layer-eval-grid{
@@ -433,14 +503,13 @@
   .cam-slot{position:relative;min-height:100px;background:rgb(var(--c-s0));display:flex;align-items:center;justify-content:center}
   .cam-slot canvas{width:100%;height:auto;display:block}
   .cam-slot-label{position:absolute;left:3px;bottom:3px;font-size:9px;font-weight:600;color:var(--t1);text-shadow:0 0 6px rgb(var(--c-shadow));padding:2px 5px;background:rgb(var(--c-shadow) / .45);border-radius:4px;pointer-events:none;max-width:calc(100% - 8px);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-  @media (min-width:960px){
-    #inspectHud .inspect-info-grid{grid-template-columns:repeat(2,minmax(0,1fr))}
-  }
-  @media (max-width:960px){
-    #inspectHud .inspect-head{grid-template-columns:minmax(0,1fr)}
-    #inspectHud .inspect-hero-strip{grid-template-columns:minmax(0,1fr)}
-    #inspectHud .inspect-score-stack{justify-items:start;text-align:left}
-  }
+  /* Keyed to the panel, not the window: the inspector is a fixed-width right dock now. */
+  #inspectHud .inspect-info-grid{grid-template-columns:minmax(0,1fr)}
+  #inspectHud .inspect-head{grid-template-columns:minmax(0,1fr)}
+  #inspectHud .inspect-hero-strip{grid-template-columns:minmax(0,1fr)}
+  #inspectHud .inspect-score-stack{justify-items:start;text-align:left}
+  #inspectHud .inspect-panel__body{overflow-y:auto}
+  .inspect-panel__body{overflow-y:auto}
 </style>
 </head><body><div id="app" class="app-root">
   <div class="top">
@@ -449,52 +518,76 @@
       <span class="pill">dataset=<code>__DATASET_ID__</code></span>
       <span class="pill">scenario=<code>__SCENARIO_NAME__</code></span>
       <div class="controls">
-        <button type="button" id="themeToggleBtn" title="Switch theme">☀</button>
-        <button id="playBtn">Play</button>
-        <label>speed <select id="speed"><option>0.25</option><option>0.5</option><option selected>1</option><option>2</option><option>4</option></select>x</label>
-        <button id="camReset">Reset Cam</button>
-        <button id="camTop">Top</button>
-        <button id="camFollow">Follow</button>
-        <button id="toggleLanelet">Lanelet OFF</button>
-        <label title="Compare eval boxes by run with synchronized camera"><select id="compareViewMode">
-          <option value="overlay" selected>Overlay</option>
-          <option value="side_by_side">A | B</option>
-          <option value="curtain">Curtain</option>
-        </select></label>
-        <button type="button" id="toggleCameraViewport" aria-pressed="false" title="Camera images overlay (off)">Cameras: off</button>
-        <button id="toggleFullscreen" type="button" title="Fullscreen viewer">Fullscreen</button>
-        <button id="importSessionBtn" type="button" title="Load evaluation overlay data from a local file">Load Eval</button>
-        <button id="exportSessionBtn" type="button" title="Download the current evaluation overlay data as a local file">Export Eval</button>
-        <button id="shareSessionBtn" type="button" title="Persist current imported layers and copy a shareable link">Save Share Link</button>
-        <input id="viewerSessionFileInput" type="file" accept="application/json,.json" hidden>
-        <details class="view-panels" id="viewPanels">
-          <summary>Panels</summary>
-          <div class="view-panels__body">
-            <label title="Scene, layers, and point controls"><input type="checkbox" id="uiShowHud" checked> Settings panel</label>
-            <label title="Large floating inspector for selected boxes"><input type="checkbox" id="uiShowInspector" checked> Inspector panel</label>
-            <label title="GT/EST per-frame counts"><input type="checkbox" id="uiShowMetricsCounts" checked> Count chart</label>
-            <label title="TPR, precision, F1, FDR (from counts)"><input type="checkbox" id="uiShowMetricsRates" checked> Rate chart</label>
-            <label title="TP quality and frame severity trends"><input type="checkbox" id="uiShowMetricsError" checked> Error chart</label>
-            <label title="Dataset camera images (bottom-left)"><input type="checkbox" id="uiShowCameraViewport"> Camera images</label>
-          </div>
-        </details>
+        <div class="ctl-group" role="group" aria-label="Playback">
+          <button id="playBtn" type="button" aria-pressed="false" title="Play / pause (Space)">Play</button>
+          <label>speed <select id="speed" aria-label="Playback speed multiplier"><option>0.25</option><option>0.5</option><option selected>1</option><option>2</option><option>4</option></select><span>x</span></label>
+        </div>
+        <div class="ctl-group" role="group" aria-label="View">
+          <button id="toggleLanelet" type="button" aria-pressed="false" title="Overlay the lanelet map">Lanelet OFF</button>
+          <label title="Compare eval boxes by run with synchronized camera"><select id="compareViewMode" aria-label="Run comparison layout">
+            <option value="overlay" selected>Overlay</option>
+            <option value="side_by_side">A | B</option>
+            <option value="curtain">Curtain</option>
+          </select></label>
+          <button type="button" id="toggleCameraViewport" aria-pressed="false" title="Camera images overlay (off)">Cameras: off</button>
+        </div>
+        <div class="ctl-group ctl-group--end" role="group" aria-label="Session and layout">
+          <details class="view-panels" id="sessionMenu">
+            <summary>Session</summary>
+            <div class="view-panels__body view-panels__body--actions">
+              <button id="importSessionBtn" type="button" title="Load evaluation overlay data from a local file">Load Eval</button>
+              <button id="exportSessionBtn" type="button" title="Download the current evaluation overlay data as a local file">Export Eval</button>
+              <button id="shareSessionBtn" type="button" title="Persist current imported layers and copy a shareable link">Save Share Link</button>
+            </div>
+          </details>
+          <input id="viewerSessionFileInput" type="file" accept="application/json,.json" hidden>
+          <details class="view-panels" id="viewPanels">
+            <summary>Panels</summary>
+            <div class="view-panels__body">
+              <label title="Scene, layers, and point controls"><input type="checkbox" id="uiShowHud" checked> Settings panel</label>
+              <label title="Large floating inspector for selected boxes"><input type="checkbox" id="uiShowInspector" checked> Inspector panel</label>
+              <label title="GT/EST per-frame counts"><input type="checkbox" id="uiShowMetricsCounts" checked> Count chart</label>
+              <label title="TPR, precision, F1, FDR (from counts)"><input type="checkbox" id="uiShowMetricsRates" checked> Rate chart</label>
+              <label title="TP quality and frame severity trends"><input type="checkbox" id="uiShowMetricsError" checked> Error chart</label>
+              <label title="Dataset camera images (bottom-left)"><input type="checkbox" id="uiShowCameraViewport"> Camera images</label>
+            </div>
+          </details>
+          <button id="toggleFullscreen" type="button" aria-pressed="false" title="Fullscreen viewer">Fullscreen</button>
+          <button type="button" id="themeToggleBtn" aria-label="Switch theme" title="Switch theme">☀</button>
+        </div>
       </div>
     </div>
     <div class="topRowScrubber">
-      <span class="scrubberLabel">Frame</span>
-      <input id="slider" type="range" min="0" max="0" value="0" />
-      <span id="frameTxt" class="pill" style="min-width:7.5rem;text-align:right">frame 0/0</span>
+      <label class="scrubberLabel" for="slider">Frame</label>
+      <div class="scrub-track">
+        <input id="slider" type="range" min="0" max="0" value="0" aria-label="Frame position" />
+        <canvas id="frameSeverityTrack" aria-hidden="true" title="Frame severity — brighter columns are harder frames"></canvas>
+      </div>
+      <div class="frameJump">
+        <input id="frameTxt" type="number" min="0" max="0" step="1" value="0"
+               aria-label="Current frame number" title="Jump to frame (Enter)">
+        <span id="frameTotal" class="pill">/ 0</span>
+      </div>
+      <div class="frameNav">
+        <button id="framePrev" type="button" aria-label="Previous frame" title="Previous frame (← · Shift for ×10)">◀</button>
+        <button id="frameNext" type="button" aria-label="Next frame" title="Next frame (→ · Shift for ×10)">▶</button>
+      </div>
+      <div class="status-strip">
+        <div id="status" role="status" aria-live="polite">loading...</div>
+        <button type="button" id="statusDismiss" class="status-dismiss" aria-label="Dismiss error" title="Dismiss error" hidden>✕</button>
+      </div>
       <span id="shareSessionState" class="pill" title="Imported/shared overlay session state">session local-only</span>
       <input id="shareSessionUrl" type="text" readonly hidden
         title="Generated viewer share URL"
-        style="min-width:min(42vw,34rem);max-width:42vw;background:rgba(18,24,48,.9);color:#dbe8ff;border:1px solid rgba(90,110,180,.35);border-radius:9px;padding:.28rem .45rem;font:11px var(--font-mono);" />
-      <div class="frameNav">
-        <button id="framePrev" type="button" title="Previous frame">◀</button>
-        <button id="frameNext" type="button" title="Next frame">▶</button>
-      </div>
+        class="share-url" />
     </div>
   </div>
   <div id="canvasWrap"><canvas id="canvas"></canvas>
+    <div class="cam-preset-cluster" role="group" aria-label="Camera presets">
+      <button id="camReset" type="button" title="Reset the camera to the default view">Reset Cam</button>
+      <button id="camTop" type="button" title="Top-down view">Top</button>
+      <button id="camFollow" type="button" title="Follow the ego vehicle">Follow</button>
+    </div>
     <div id="compareLabelA" class="compare-label">A</div>
     <div id="compareLabelB" class="compare-label">B</div>
     <div id="hoverTip" class="hover-tip"></div>
@@ -505,16 +598,16 @@
     <div id="cameraViewportWrap" class="cam-viewport-wrap cam-mode-single" hidden>
       <div class="cam-viewport-head" id="cameraViewportDragHandle" title="Drag to move">Camera images</div>
       <div class="cam-viewport-toolbar">
-        <label>layout <select id="cameraLayoutMode" title="Single feed or 2×3 ring of all cameras">
+        <label>layout <select id="cameraLayoutMode" aria-label="Camera image layout" title="Single feed or 2×3 ring of all cameras">
           <option value="single">Single</option>
           <option value="grid6">All cameras (2×3)</option>
         </select></label>
-        <label>camera <select id="overlayCamera"></select></label>
+        <label>camera <select id="overlayCamera" aria-label="Camera to display"></select></label>
         <label title="Dataset 3D boxes + optional GT/EST from parent (postMessage)"><input type="checkbox" id="showOverlayAnnotations" checked> Overlays</label>
         <label title="Only draw the currently selected object and its paired mate when selection exists"><input type="checkbox" id="cameraSelectionOnly"> Selection only</label>
         <label title="Ego xy radius [m]">r≤<input type="number" id="cameraOverlayMaxRange" min="5" max="500" step="5" value="120" style="width:3.25rem"></label>
         <label title="Max boxes to draw (nearest first)">max <input type="number" id="cameraOverlayMaxBoxes" min="1" max="500" step="1" value="128" style="width:3rem"></label>
-        <button type="button" id="cameraViewportHideBtn" title="Hide camera panel">✕</button>
+        <button type="button" id="cameraViewportHideBtn" aria-label="Hide camera images" title="Hide camera panel">✕</button>
       </div>
       <div class="cam-viewport-body" id="cameraViewportBody">
         <div id="cameraSingleWrap" class="cam-single-wrap">
@@ -528,19 +621,19 @@
       <div class="panel-drag-handle metrics-drag-head" title="Drag to move · double-click to snap back to default"><span class="metrics-title">Rates · TPR / P / F1 / FDR</span></div>
       <div id="metricsRatesCaption" class="metrics-caption"></div>
       <canvas id="metricsRatesCanvas"></canvas>
-      <div class="metrics-legend rates-legend" aria-hidden="true"><span class="r1">●</span>TPR <span class="r2">●</span>Prec <span class="r3">●</span>F1 <span class="r4">●</span>FDR</div>
+      <div class="metrics-legend rates-legend"><span class="r1">●</span>TPR <span class="r2">●</span>Prec <span class="r3">●</span>F1 <span class="r4">●</span>FDR</div>
     </div>
     <div id="metricsErrorWrap" class="metrics-wrap metrics-error-wrap" hidden title="TP quality and composite severity trend">
       <div class="panel-drag-handle metrics-drag-head" title="Drag to move · double-click to snap back to default"><span class="metrics-title">Error Trend · TP quality / severity</span></div>
       <div id="metricsErrorCaption" class="metrics-caption"></div>
       <canvas id="metricsErrorCanvas"></canvas>
-      <div class="metrics-legend error-legend" aria-hidden="true"><span class="e1">●</span>TP ctr <span class="e2">●</span>TP plane <span class="e3">●</span>|yaw| <span class="e4">●</span>severity</div>
+      <div class="metrics-legend error-legend"><span class="e1">●</span>TP ctr <span class="e2">●</span>TP plane <span class="e3">●</span>|yaw| <span class="e4">●</span>severity</div>
     </div>
     <div id="metricsWrap" class="metrics-wrap" hidden>
       <div class="panel-drag-handle metrics-drag-head" title="Drag to move · double-click to snap back to default"><span class="metrics-title">Counts · GT/EST buckets</span></div>
       <div id="metricsCaption" class="metrics-caption"></div>
       <canvas id="metricsCanvas"></canvas>
-      <div class="metrics-legend" aria-hidden="true"><span class="c1">●</span>GT/TP <span class="c2">●</span>GT/FN <span class="c3">●</span>EST/TP <span class="c4">●</span>EST/FP</div>
+      <div class="metrics-legend"><span class="c1">●</span>GT/TP <span class="c2">●</span>GT/FN <span class="c3">●</span>EST/TP <span class="c4">●</span>EST/FP</div>
     </div>
     <div id="metricsCompareWrap" class="metrics-wrap metrics-compare-wrap" hidden title="Compare current frame and total eval counts for the first two runs">
       <div class="panel-drag-handle metrics-drag-head" title="Drag to move · double-click to snap back to default"><span class="metrics-title">Compare Counts · A vs B</span></div>
@@ -568,13 +661,28 @@
         <span>ΔFP <b>0</b></span>
       </div>
     </div>
-    <button type="button" id="hudRevealBtn" hidden title="Show settings panel">⚙</button>
+    <button type="button" id="hudRevealBtn" aria-label="Show settings panel" hidden title="Show settings panel">⚙</button>
+    <div id="shortcutHelp" role="dialog" aria-label="Keyboard shortcuts" hidden>
+      <div class="shortcut-head">
+        <strong>Keyboard</strong>
+        <button type="button" id="shortcutHelpClose" class="hud-panel-hide" aria-label="Close shortcuts" title="Close">✕</button>
+      </div>
+      <dl>
+        <dt>← / →</dt><dd>step one frame</dd>
+        <dt>⇧ ← / →</dt><dd>step ten frames</dd>
+        <dt>Home / End</dt><dd>first / last frame</dd>
+        <dt>Space</dt><dd>play / pause</dd>
+        <dt>[ / ]</dt><dd>previous / next hotspot</dd>
+        <dt>F</dt><dd>focus camera on selection</dd>
+        <dt>Esc</dt><dd>clear selection</dd>
+        <dt>?</dt><dd>this list</dd>
+      </dl>
+    </div>
     <div id="hud" class="hud-panel">
       <div class="hud-header-bar">
         <div class="hud-drag-handle panel-drag-handle" id="hudDragHandle" title="Drag to move · double-click to reset position">Settings</div>
-        <button type="button" class="hud-panel-hide" id="hudHideBtn" title="Hide settings panel">✕</button>
+        <button type="button" class="hud-panel-hide" id="hudHideBtn" aria-label="Hide settings panel" title="Hide settings panel">✕</button>
       </div>
-      <div id="status">loading...</div>
       <div id="meta"></div>
       <hr class="hud-rule">
       <div class="hud-panel__section-title">Scene</div>
@@ -598,67 +706,78 @@
         <label title="Draw the class label (truck / unknown / …) above every eval box, including polygon detections shown as points. Hover any box for its label without this on."><input id="showLabels" type="checkbox"> Labels <span class="layer-count" id="cntLabels">0</span></label>
       </div>
       <div id="evalHud" hidden></div>
+      <div id="spotlightHud" hidden>
+        <div class="spotlight-head">
+          <strong>Error spotlight</strong>
+          <span class="spotlight-chip" id="spotlightChip">idle</span>
+        </div>
+        <div class="spotlight-row"><span>Current</span><code id="spotlightCurrent">No hotspot selected</code></div>
+        <div class="spotlight-actions">
+          <button type="button" id="spotlightPrevBtn" title="Previous hotspot ([)">Prev hotspot</button>
+          <button type="button" id="spotlightNextBtn" title="Next hotspot (])">Next hotspot</button>
+          <button type="button" id="spotlightPlayBtn">Tour hotspots</button>
+        </div>
+        <details class="spotlight-detail" id="spotlightDetail">
+          <summary>Ranking detail</summary>
+          <div class="spotlight-row"><span>Mode</span><select id="spotlightMode" aria-label="Hotspot ranking mode"><option value="composite" selected>Composite</option><option value="fn">FN hotspots</option></select></div>
+          <div class="spotlight-row"><span>Rank</span><code id="spotlightRank">&mdash;</code></div>
+          <div class="spotlight-row"><span>Severity</span><code id="spotlightRate">&mdash;</code></div>
+          <div class="spotlight-row"><span>Counts</span><code id="spotlightCount">&mdash;</code></div>
+          <div class="spotlight-row"><span>Worst object</span><code id="spotlightWorst">&mdash;</code></div>
+          <div class="spotlight-row"><span>Reason</span><code id="spotlightReason">&mdash;</code></div>
+          <div id="spotlightNote" class="spotlight-note">Ranks hard moments using composite severity by default, with FN-only mode still available.</div>
+        </details>
+      </div>
       <details class="hud-advanced" id="hudAdvanced">
         <summary>Advanced</summary>
+        <div class="hud-panel__section-title adv-section">Point cloud</div>
         <div class="hud-grid">
+          <label>point size <input id="pointSize" type="range" min="0.02" max="0.25" step="0.01" value="0.08"></label>
+          <label>point opacity <input id="pointOpacity" type="range" min="0.2" max="1.0" step="0.05" value="1.0"></label>
           <label>intensity gain <input id="intensityGain" type="range" min="0.4" max="2.5" step="0.1" value="1.0"></label>
-          <label>point colors <select id="pointColormap" title="Map lidar intensity to RGB">
+          <label>point colors <select id="pointColormap" aria-label="Point cloud colormap" title="Map lidar intensity to RGB">
             <option value="turbo" selected>Turbo</option>
             <option value="paper">Paper ink (light bg)</option>
             <option value="viridis">Viridis</option>
             <option value="plasma">Plasma</option>
             <option value="jet">Jet</option>
             <option value="grayscale">Grayscale</option>
-            <option value="classic">Classic (blue→amber)</option>
+            <option value="classic">Classic (blue&rarr;amber)</option>
           </select></label>
           <label title="Use min/max of this frame so intensity uses the full palette (helps flat/binary channels)"><input id="pointIntensityNormalize" type="checkbox" checked> normalize intensity (frame)</label>
           <label title="Show a color scale bar mapping intensity values to colors"><input id="showColorbar" type="checkbox"> show colorbar</label>
-          <label title="Atmospheric depth fade"><input type="checkbox" id="advFogEnable" unchecked> Scene fog</label>
+        </div>
+        <div class="hud-panel__section-title adv-section">Camera &amp; depth</div>
+        <p class="hud-panel__hint">Clip planes cut geometry outside their range &mdash; extreme values can empty the view.</p>
+        <div class="hud-grid">
+          <label title="Atmospheric depth fade"><input type="checkbox" id="advFogEnable"> Scene fog</label>
           <label>fog start <input id="fogNear" type="range" min="20" max="280" step="5" value="90"><span class="adv-out" id="fogNearOut">90</span></label>
           <label>fog end <input id="fogFar" type="range" min="80" max="600" step="10" value="230"><span class="adv-out" id="fogFarOut">230</span></label>
           <label>camera near <input id="camNear" type="range" min="0.05" max="5" step="0.05" value="0.1"><span class="adv-out" id="camNearOut">0.10</span></label>
           <label>camera far <input id="camFar" type="range" min="200" max="5000" step="50" value="1000"><span class="adv-out" id="camFarOut">1000</span></label>
-          <label title="Show velocity arrows for boxes that include vx/vy metadata; arrows sit slightly above the box and use the same color as the box"><input type="checkbox" id="advShowVelocityVectors"> Velocity vectors</label>
-          <label title="Master toggle for animated emphasis markers"><input type="checkbox" id="fxEnableEmphasis" unchecked> Emphasis effects</label>
-          <label title="False negatives: expanding ring under the box"><input type="checkbox" id="fxFnRing" unchecked> FN shockwave ring</label>
-          <label>point size <input id="pointSize" type="range" min="0.02" max="0.25" step="0.01" value="0.08"></label>
-          <label>point opacity <input id="pointOpacity" type="range" min="0.2" max="1.0" step="0.05" value="1.0"></label>
-          <label title="False positives: larger pulsing beacon at the box center"><input type="checkbox" id="fxFpPulse" unchecked> FP pulse beacon</label>
-          <label title="High-error true positives: object-hugging aura tied to the box footprint"><input type="checkbox" id="fxTpQuality" unchecked> TP severity aura</label>
-          <label title="Only emphasize objects above the severe threshold"><input type="checkbox" id="highlightSevereOnly"> Highlight severe only</label>
         </div>
-        <div id="spotlightHud" hidden>
-          <div class="spotlight-head">
-            <strong>Error spotlight</strong>
-            <span class="spotlight-chip" id="spotlightChip">idle</span>
-          </div>
-          <div class="spotlight-row"><span>Mode</span><select id="spotlightMode"><option value="composite" selected>Composite</option><option value="fn">FN hotspots</option></select></div>
-          <div class="spotlight-row"><span>Current</span><code id="spotlightCurrent">No hotspot selected</code></div>
-          <div class="spotlight-row"><span>Rank</span><code id="spotlightRank">—</code></div>
-          <div class="spotlight-row"><span>Severity</span><code id="spotlightRate">—</code></div>
-          <div class="spotlight-row"><span>Counts</span><code id="spotlightCount">—</code></div>
-          <div class="spotlight-row"><span>Worst object</span><code id="spotlightWorst">—</code></div>
-          <div class="spotlight-row"><span>Reason</span><code id="spotlightReason">—</code></div>
-          <div class="spotlight-actions">
-            <button type="button" id="spotlightPrevBtn">Prev hotspot</button>
-            <button type="button" id="spotlightNextBtn">Next hotspot</button>
-            <button type="button" id="spotlightPlayBtn">Tour hotspots</button>
-          </div>
-          <div id="spotlightNote" class="spotlight-note">Ranks hard moments using composite severity by default, with FN-only mode still available.</div>
+        <div class="hud-panel__section-title adv-section">Emphasis effects</div>
+        <div class="hud-grid">
+          <label title="Show velocity arrows for boxes that include vx/vy metadata; arrows sit slightly above the box and use the same color as the box"><input type="checkbox" id="advShowVelocityVectors"> Velocity vectors</label>
+          <label title="Master toggle for animated emphasis markers"><input type="checkbox" id="fxEnableEmphasis"> Emphasis effects</label>
+          <label title="False negatives: expanding ring under the box"><input type="checkbox" id="fxFnRing"> FN shockwave ring</label>
+          <label title="False positives: larger pulsing beacon at the box center"><input type="checkbox" id="fxFpPulse"> FP pulse beacon</label>
+          <label title="High-error true positives: object-hugging aura tied to the box footprint"><input type="checkbox" id="fxTpQuality"> TP severity aura</label>
+          <label title="Only emphasize objects above the severe threshold"><input type="checkbox" id="highlightSevereOnly"> Highlight severe only</label>
         </div>
       </details>
     </div>
     <div id="inspectPanel" class="inspect-panel">
       <div class="hud-header-bar">
         <div class="hud-drag-handle panel-drag-handle" id="inspectDragHandle" title="Drag to move · double-click to reset position">Inspector</div>
-        <button type="button" class="inspect-panel-hide" id="inspectHideBtn" title="Hide inspector panel">✕</button>
+        <button type="button" class="inspect-panel-hide" id="inspectHideBtn" aria-label="Hide inspector panel" title="Hide inspector panel">✕</button>
       </div>
       <div class="inspect-panel__body">
         <div id="inspectHud" hidden>
           <div class="inspect-head">
             <div class="inspect-title-stack">
               <div class="inspect-headline">
-                <strong>Inspector</strong>
+                <strong>Selected object</strong>
                 <span class="inspect-chip" id="inspectTypeChip">none</span>
               </div>
               <div class="inspect-subchips">
@@ -691,9 +810,15 @@
               <div class="inspect-card inspect-hero-card">
                 <strong>Error focus</strong>
                 <canvas id="inspectErrorGlyph" width="680" height="340"></canvas>
+                <div class="inspect-note">Ground-truth box vs. prediction in the ego plane; the offset is the match error.</div>
                 <div id="inspectSummary" class="inspect-summary"></div>
               </div>
-              <div class="inspect-info-grid">
+              <div class="inspect-tabs" role="tablist" aria-label="Inspector detail">
+                <button type="button" class="inspect-tab is-active" id="inspectTabPose" role="tab" aria-selected="true" aria-controls="inspectTabPanelPose" data-tab="pose">Pose</button>
+                <button type="button" class="inspect-tab" id="inspectTabMatch" role="tab" aria-selected="false" aria-controls="inspectTabPanelMatch" data-tab="match">Match</button>
+                <button type="button" class="inspect-tab" id="inspectTabContext" role="tab" aria-selected="false" aria-controls="inspectTabPanelContext" data-tab="context">Context</button>
+              </div>
+              <div class="inspect-info-grid" id="inspectTabPanelPose" role="tabpanel" aria-labelledby="inspectTabPose">
                 <div class="inspect-card">
                   <strong>Pose</strong>
                   <div class="inspect-meta">
@@ -712,6 +837,8 @@
                     <div class="inspect-row"><span>Trail</span><code id="inspectMotion">-</code></div>
                   </div>
                 </div>
+              </div>
+              <div class="inspect-info-grid" id="inspectTabPanelMatch" role="tabpanel" aria-labelledby="inspectTabMatch" hidden>
                 <div class="inspect-card">
                   <strong>Match quality</strong>
                   <div class="inspect-meta">
@@ -729,6 +856,17 @@
                   </div>
                 </div>
                 <div class="inspect-card">
+                  <strong>Pair snapshot</strong>
+                  <div class="inspect-kpi-grid">
+                    <div class="inspect-kpi"><span class="inspect-kpi-label">Center</span><code id="inspectKpiCenter">-</code></div>
+                    <div class="inspect-kpi"><span class="inspect-kpi-label">Plane</span><code id="inspectKpiPlane">-</code></div>
+                    <div class="inspect-kpi"><span class="inspect-kpi-label">|Yaw|</span><code id="inspectKpiYaw">-</code></div>
+                    <div class="inspect-kpi"><span class="inspect-kpi-label">XY drift</span><code id="inspectKpiXY">-</code></div>
+                  </div>
+                </div>
+              </div>
+              <div class="inspect-info-grid" id="inspectTabPanelContext" role="tabpanel" aria-labelledby="inspectTabContext" hidden>
+                <div class="inspect-card">
                   <strong>Context</strong>
                   <div class="inspect-meta">
                     <div class="inspect-row inspect-row--context"><span>Topic</span><code id="inspectTopic">-</code></div>
@@ -736,15 +874,6 @@
                     <div class="inspect-row inspect-row--context"><span>Run</span><code id="inspectRun">-</code></div>
                     <div class="inspect-row inspect-row--context"><span>Dataset</span><code id="inspectDataset">-</code></div>
                     <div class="inspect-row inspect-row--context"><span>Scenario</span><code id="inspectScenario">-</code></div>
-                  </div>
-                </div>
-                <div class="inspect-card">
-                  <strong>Pair snapshot</strong>
-                  <div class="inspect-kpi-grid">
-                    <div class="inspect-kpi"><span class="inspect-kpi-label">Center</span><code id="inspectKpiCenter">-</code></div>
-                    <div class="inspect-kpi"><span class="inspect-kpi-label">Plane</span><code id="inspectKpiPlane">-</code></div>
-                    <div class="inspect-kpi"><span class="inspect-kpi-label">|Yaw|</span><code id="inspectKpiYaw">-</code></div>
-                    <div class="inspect-kpi"><span class="inspect-kpi-label">XY drift</span><code id="inspectKpiXY">-</code></div>
                   </div>
                 </div>
               </div>
@@ -764,4 +893,4 @@
 </div>
 <script type="importmap">{"imports":{"three":"/static/viewer_three/three.module.js","three/addons/":"/static/viewer_three/jsm/"}}</script>
 <script>window.__T4_VIEWER_QS__ = "__QS__";</script>
-<script type="module" src="/static/viewer_three/app/main.js?v=20260824e"></script></body></html>
+<script type="module" src="/static/viewer_three/app/main.js?v=20260824f"></script></body></html>
